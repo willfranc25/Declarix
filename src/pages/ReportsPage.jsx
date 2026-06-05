@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate, getMonthName } from '../utils/formatters';
 import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
@@ -11,7 +11,8 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [templateBuffer, setTemplateBuffer] = useState(null);
-  const [templateName, setTemplateName] = useState('');
+  const [templateName, setTemplateName] = useState('Cargando plantilla predeterminada...');
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(true);
 
   // Filter invoices by date range
   const filtered = useMemo(() => {
@@ -36,7 +37,28 @@ export default function ReportsPage() {
     totalAmount: acc.totalAmount + (inv.totalAmount || 0),
   }), { count: 0, netAmount: 0, ivaAmount: 0, specificTax: 0, totalAmount: 0 }), [filtered]);
 
-  // Template upload
+  // Cargar plantilla por defecto al iniciar
+  useEffect(() => {
+    const loadDefaultTemplate = async () => {
+      try {
+        const response = await fetch('/template.xlsm');
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          setTemplateBuffer(buffer);
+        } else {
+          setTemplateName(''); // No se encontró
+        }
+      } catch (error) {
+        console.error('Error cargando plantilla por defecto:', error);
+        setTemplateName('');
+      } finally {
+        setIsLoadingTemplate(false);
+      }
+    };
+    loadDefaultTemplate();
+  }, []);
+
+  // Template upload (Sobreescribe la predeterminada)
   const handleTemplateUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
