@@ -1677,3 +1677,89 @@ img { max-width: 100%; height: auto; }
     --color-border-light: rgba(255, 255, 255, 0.15);
   }
 }
+
+/* Login page animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(59, 130, 246, 0.5), 0 0 60px rgba(6, 182, 212, 0.3); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.login-card {
+  animation: slideUp 0.5s ease-out 0.1s both;
+}
+
+.login-logo {
+  animation: slideUp 0.5s ease-out;
+}
+
+.login-logo-icon {
+  animation: pulse 3s ease-in-out infinite;
+}
+
+.login-tabs-indicator {
+  transition: transform var(--transition-slow) ease-out;
+}
+
+.login-form-panel {
+  animation: fadeIn 0.25s ease-out;
+}
+
+.login-info {
+  animation: fadeIn 0.5s ease-out 0.4s both;
+}
+
+.btn-primary {
+  transition: all var(--transition-base);
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(71, 85, 105, 0.4);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+button[role="tab"]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+
+.alert-danger {
+  animation: slideUp 0.3s ease-out, shake 0.5s ease-out;
+}

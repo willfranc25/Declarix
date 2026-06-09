@@ -49,209 +49,326 @@ export default function LoginPage() {
   };
 
   const switchMode = (mode) => {
-    setIsLogin(mode === 'login');
-    setError('');
-    setShowMagicLink(false);
+    const newIsLogin = mode === 'login';
+    if (newIsLogin !== isLogin) {
+      setIsLogin(newIsLogin);
+      setError('');
+      setShowMagicLink(false);
+    }
   };
 
+  const tabs = [
+    { id: 'login', label: 'Iniciar Sesión', isActive: isLogin },
+    { id: 'register', label: 'Registro', isActive: !isLogin },
+  ];
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl shadow-lg">
-            <span className="text-3xl">📋</span>
+    <>
+      <style>{`
+        .login-wrapper {
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: var(--space-6);
+          position: relative;
+          overflow: hidden;
+          background: var(--color-bg-primary);
+        }
+        .login-logo {
+          position: absolute;
+          top: var(--space-8);
+          left: var(--space-8);
+          display: flex;
+          align-items: center;
+          gap: var(--space-3);
+          z-index: 20;
+        }
+        .login-card {
+          width: 100%;
+          max-width: 440px;
+          padding: var(--space-10);
+          position: relative;
+          z-index: 10;
+          border-radius: 24px;
+          background-color: var(--color-bg-elevated);
+          border: 1px solid var(--color-border);
+          box-shadow: var(--shadow-xl);
+          margin-top: 0;
+        }
+        .login-title {
+          font-size: var(--font-size-3xl);
+          font-weight: 700;
+          color: var(--color-text-primary);
+          letter-spacing: -0.02em;
+          margin: 0;
+          line-height: 1.2;
+        }
+        .login-options-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: -4px;
+        }
+        @media (max-width: 600px) {
+          .login-wrapper {
+            padding: var(--space-4);
+            justify-content: flex-start;
+          }
+          .login-logo {
+            position: relative;
+            top: 0;
+            left: 0;
+            margin-bottom: var(--space-8);
+            margin-top: var(--space-6);
+            align-self: flex-start;
+          }
+          .login-card {
+            padding: var(--space-6);
+            border-radius: 16px;
+          }
+          .login-title {
+            font-size: 24px; /* Evita que el texto desborde */
+          }
+          .login-options-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+            margin-top: 4px;
+          }
+        }
+      `}</style>
+      <div className="login-wrapper">
+        
+        {/* Background glowing effects to match dark theme */}
+        <div style={{
+          position: 'absolute',
+          top: '-10%', left: '-10%',
+          width: '40%', height: '40%',
+          borderRadius: '50%',
+          background: 'var(--color-accent)',
+          opacity: '0.1',
+          filter: 'blur(100px)',
+          pointerEvents: 'none'
+        }}></div>
+        <div style={{
+          position: 'absolute',
+          bottom: '-10%', right: '-10%',
+          width: '40%', height: '40%',
+          borderRadius: '50%',
+          background: 'var(--color-cyan)',
+          opacity: '0.1',
+          filter: 'blur(100px)',
+          pointerEvents: 'none'
+        }}></div>
+
+        {/* Top Left Logo */}
+        <div className="login-logo">
+          <div style={{
+            width: '40px', height: '40px',
+            background: 'var(--color-accent)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: 'var(--shadow-glow)',
+            flexShrink: 0
+          }}>
+            <span style={{ fontSize: '20px' }}>📋</span>
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-            Saludent
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">Gestor de Boletas F29</p>
+          <span style={{
+            fontSize: 'var(--font-size-xl)',
+            fontWeight: '700',
+            color: 'var(--color-text-primary)'
+          }}>Saludent</span>
         </div>
 
-        {/* Form Card */}
-        <div className="card p-6 sm:p-8">
-          <div className="space-y-6">
-            {/* Tabs */}
-            <div className="flex border-b border-slate-700" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={isLogin}
-                aria-controls="login-panel"
-                id="login-tab"
-                onClick={() => switchMode('login')}
-                className={`flex-1 py-3 text-center font-medium text-sm transition-all ${
-                  isLogin
-                    ? 'text-blue-400 border-b-2 border-blue-400'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Iniciar Sesión
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={!isLogin}
-                aria-controls="register-panel"
-                id="register-tab"
-                onClick={() => switchMode('register')}
-                className={`flex-1 py-3 text-center font-medium text-sm transition-all ${
-                  !isLogin
-                    ? 'text-blue-400 border-b-2 border-blue-400'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Registro
-              </button>
+        {/* Center Card */}
+        <div className="card login-card">
+          
+          <div style={{ marginBottom: 'var(--space-8)' }}>
+            <p style={{
+              fontSize: 'var(--font-size-base)',
+              color: 'var(--color-text-tertiary)',
+              marginBottom: 'var(--space-2)',
+              fontWeight: '500'
+            }}>
+              {isLogin ? 'Ingresa tus datos' : 'Crea tu cuenta'}
+            </p>
+            <h1 className="login-title">
+              {isLogin ? 'Bienvenido de nuevo' : 'Regístrate'}
+            </h1>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div style={{
+              marginBottom: 'var(--space-6)',
+              padding: 'var(--space-3)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-danger-bg)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              color: 'var(--color-danger)',
+              fontSize: 'var(--font-size-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)'
+            }}>
+              <span aria-hidden="true">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            <div>
+              <input
+                id="email"
+                type="email"
+                className="form-input"
+                style={{
+                  padding: '14px 16px',
+                  fontSize: 'var(--font-size-md)',
+                  borderRadius: 'var(--radius-lg)'
+                }}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Correo electrónico"
+                required
+                autoComplete="email"
+                disabled={loading}
+              />
             </div>
 
-            {/* Error */}
-            {error && (
-              <div
-                className="alert alert-danger text-sm p-3"
-                role="alert"
-                style={{ animation: 'slideUp 0.3s ease-out' }}
-              >
-                <span className="flex items-center gap-2">
-                  <span>⚠️</span>
-                  <span>{error}</span>
-                </span>
+            {(!isLogin || !showMagicLink) && (
+              <div style={{ animation: 'slideUp 0.25s ease-out' }}>
+                <input
+                  id="password"
+                  type="password"
+                  className="form-input"
+                  style={{
+                    padding: '14px 16px',
+                    fontSize: 'var(--font-size-md)',
+                    borderRadius: 'var(--radius-lg)'
+                  }}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Contraseña"
+                  required={!showMagicLink}
+                  minLength={6}
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  disabled={loading}
+                />
               </div>
             )}
 
-            {/* Form */}
-            <form
-              onSubmit={handleSubmit}
-              className="space-y-4"
-              id={isLogin ? 'login-panel' : 'register-panel'}
-              role="tabpanel"
-              aria-labelledby={isLogin ? 'login-tab' : 'register-tab'}
-            >
-              <div className="form-group">
-                <label htmlFor="email" className="form-label">
-                  Email
+            {isLogin && !showMagicLink && (
+              <div className="login-options-row">
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  fontSize: 'var(--font-size-sm)',
+                  color: 'var(--color-text-secondary)',
+                  fontWeight: '500'
+                }}>
+                  <input type="checkbox" style={{
+                    width: '16px', height: '16px',
+                    accentColor: 'var(--color-accent)',
+                    flexShrink: 0
+                  }} />
+                  Recordarme 30 días
                 </label>
-                <input
-                  id="email"
-                  type="email"
-                  className="form-input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  required
-                  autoComplete="email"
-                  disabled={loading}
-                  aria-describedby="email-hint"
-                />
-                <span id="email-hint" className="text-xs text-slate-500">Te enviaremos el enlace mágico aquí</span>
+                <button type="button" style={{
+                  background: 'none', border: 'none',
+                  color: 'var(--color-accent-light)',
+                  fontSize: 'var(--font-size-sm)',
+                  fontWeight: '500', cursor: 'pointer', padding: 0
+                }}>
+                  ¿Olvidaste tu contraseña?
+                </button>
               </div>
+            )}
 
-              {(!isLogin || !showMagicLink) && (
-                <div className="form-group">
-                  <label htmlFor="password" className="form-label">
-                    Contraseña
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    className="form-input"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required={!showMagicLink}
-                    minLength={6}
-                    autoComplete={isLogin ? "current-password" : "new-password"}
-                    disabled={loading}
-                  />
-                  {!isLogin && (
-                    <p className="text-xs text-slate-500 mt-1">Mínimo 6 caracteres</p>
-                  )}
-                </div>
-              )}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                fontSize: 'var(--font-size-md)',
+                borderRadius: 'var(--radius-lg)',
+                marginTop: 'var(--space-2)'
+              }}
+              disabled={loading}
+            >
+              {loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Regístrate')}
+            </button>
+          </form>
 
-              <button
-                type="submit"
-                className="btn btn-primary w-full py-3 text-base"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <span className="spinner mr-2" style={{ width: '18px', height: '18px' }} />
-                    <span>Cargando...</span>
-                  </>
-                ) : isLogin ? (
-                  'Entrar'
-                ) : (
-                  'Crear Cuenta'
-                )}
-              </button>
-            </form>
-
-            {/* Magic Link Option */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-700" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-slate-800/50 text-slate-500">o continúa con</span>
-              </div>
-            </div>
-
+          {/* Secondary Options */}
+          <div style={{ marginTop: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <button
               type="button"
               onClick={() => setShowMagicLink(!showMagicLink)}
-              className="btn btn-secondary w-full py-2"
+              className="btn btn-secondary"
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                fontSize: 'var(--font-size-md)',
+                borderRadius: 'var(--radius-lg)'
+              }}
               disabled={loading}
-              aria-expanded={showMagicLink}
             >
-              {showMagicLink ? 'Volver a contraseña' : 'Enlace mágico por email'}
+              <span style={{ fontSize: '20px', marginRight: '8px' }}>✨</span>
+              {showMagicLink ? 'Volver a usar contraseña' : 'Iniciar con Enlace Mágico'}
             </button>
 
             {showMagicLink && (
-              <form
-                onSubmit={handleMagicLink}
-                className="space-y-4 mt-4 pt-4 border-t border-slate-700 animate-slide-up"
-              >
-                <p className="text-sm text-slate-400 text-center">
-                  Te enviaremos un enlace para entrar sin contraseña
-                </p>
-                <div className="form-group">
-                  <label htmlFor="magicEmail" className="form-label">Email</label>
-                  <input
-                    id="magicEmail"
-                    type="email"
-                    className="form-input"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu@email.com"
-                    required
-                    autoComplete="email"
-                    disabled={loading}
-                  />
-                </div>
+              <form onSubmit={handleMagicLink} style={{ animation: 'slideUp 0.3s ease-out', marginTop: 'var(--space-2)' }}>
                 <button
                   type="submit"
-                  className="btn btn-secondary w-full py-2"
+                  className="btn btn-ghost"
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    fontSize: 'var(--font-size-md)',
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'var(--color-text-primary)',
+                    color: 'var(--color-bg-primary)',
+                    fontWeight: '600'
+                  }}
                   disabled={loading}
                 >
-                  {loading ? 'Enviando...' : 'Enviar enlace'}
+                  {loading ? 'Enviando...' : 'Enviar enlace a mi correo'}
                 </button>
               </form>
             )}
-
-            {/* Footer */}
-            <p className="text-center text-xs text-slate-500 pt-2 border-t border-slate-700">
-              Al continuar, aceptas los términos de uso y política de privacidad
-            </p>
           </div>
-        </div>
 
-        {/* Info */}
-        <div className="text-center mt-6 text-sm text-slate-500">
-          <p>🔒 Tus datos están seguros y solo tú puedes verlos</p>
-          <p className="mt-1">Funciona offline · PWA instalable · Sync en la nube</p>
+          <div style={{
+            marginTop: 'var(--space-8)',
+            textAlign: 'center',
+            fontSize: 'var(--font-size-sm)',
+            color: 'var(--color-text-secondary)',
+            fontWeight: '500'
+          }}>
+            {isLogin ? '¿No tienes una cuenta?' : '¿Ya tienes una cuenta?'} {' '}
+            <button 
+              type="button"
+              onClick={() => switchMode(isLogin ? 'register' : 'login')}
+              style={{
+                background: 'none', border: 'none', padding: 0,
+                color: 'var(--color-accent-light)',
+                fontWeight: '600', cursor: 'pointer'
+              }}
+            >
+              {isLogin ? 'Regístrate' : 'Inicia Sesión'}
+            </button>
+          </div>
+
         </div>
       </div>
-    </div>
+    </>
   );
 }
