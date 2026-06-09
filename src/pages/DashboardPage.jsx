@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate, getMonthName, getStatusLabel, getStatusVariant } from '../utils/formatters';
@@ -6,6 +6,11 @@ import { getInvoicesForMonth, generateCategorySummary, buildYearMonths } from '.
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const PIE_COLORS = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1'];
+
+const MONTH_SHORT_NAMES = [
+  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+];
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -36,6 +41,40 @@ export default function DashboardPage() {
   const activeYear = selectedYear ?? defaultDate.year;
   const activeMonth = selectedMonth ?? defaultDate.month;
 
+  // Picker States
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(activeYear);
+  const pickerRef = useRef(null);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  // Dynamically calculate the minimum year from invoices or default to 5 years ago
+  const minYear = useMemo(() => {
+    const currentY = new Date().getFullYear();
+    if (invoices.length === 0) return currentY - 5;
+    const years = invoices.map(inv => Number(inv.date.split('-')[0])).filter(y => !isNaN(y));
+    if (years.length === 0) return currentY - 5;
+    return Math.min(...years, currentY - 5);
+  }, [invoices]);
+
+  // Click outside listener to close the picker on desktop
+  useEffect(() => {
+    if (!showPicker) return;
+    const handleOutsideClick = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showPicker]);
+
   const monthInvoices = useMemo(() => getInvoicesForMonth(invoices, activeYear, activeMonth), [invoices, activeYear, activeMonth]);
 
   const metrics = useMemo(() => ({
@@ -53,36 +92,278 @@ export default function DashboardPage() {
     [invoices]
   );
 
-  const goToPrevMonth = () => {
-    setSelectedMonth((m) => m === 1 ? 12 : m - 1);
-    if (activeMonth === 1) setSelectedYear((y) => y - 1);
-  };
-
-  const goToNextMonth = () => {
-    const now = new Date();
-    const nm = activeMonth === 12 ? 1 : activeMonth + 1;
-    const ny = activeMonth === 12 ? activeYear + 1 : activeYear;
-    if (ny > now.getFullYear() || (ny === now.getFullYear() && nm > now.getMonth() + 1)) return;
-    setSelectedMonth(nm);
-    setSelectedYear(ny);
-  };
-
   if (isLoading) {
     return <div className="loading-screen"><div className="spinner" /><span>Cargando datos...</span></div>;
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <style>{`
+        .datepicker-container {
+          position: relative;
+        }
+
+        .picker-toggle-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 44px;
+          padding: 0 var(--space-4);
+          font-size: var(--font-size-base);
+          font-weight: 600;
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--color-border);
+          background: var(--color-bg-elevated);
+          backdrop-filter: blur(12px);
+          color: var(--color-text-primary);
+          cursor: pointer;
+          transition: all var(--transition-base);
+          user-select: none;
+        }
+
+        .picker-toggle-btn:hover {
+          border-color: rgba(59, 130, 246, 0.4);
+          background: var(--color-bg-hover);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .picker-toggle-btn:focus-visible {
+          outline: 2px solid var(--color-accent);
+          outline-offset: 2px;
+        }
+
+        .datepicker-popover {
+          position: absolute;
+          top: calc(100% + 8px);
+          right: 0;
+          z-index: 1000;
+          width: 280px;
+          background: var(--color-bg-secondary);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-xl);
+          box-shadow: var(--shadow-lg);
+          backdrop-filter: blur(20px);
+          padding: var(--space-4);
+          animation: pickerFadeIn 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes pickerFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .datepicker-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: var(--space-3);
+          border-bottom: 1px solid var(--color-border-light);
+          padding-bottom: var(--space-2);
+        }
+
+        .datepicker-year-nav {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          border-radius: var(--radius-md);
+          border: 1px solid transparent;
+          background: transparent;
+          color: var(--color-text-secondary);
+          font-size: 1.1rem;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+
+        .datepicker-year-nav:hover:not(:disabled) {
+          background: var(--color-bg-hover);
+          color: var(--color-text-primary);
+          border-color: var(--color-border);
+        }
+
+        .datepicker-year-nav:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+
+        .datepicker-year-display {
+          font-size: var(--font-size-md);
+          font-weight: 700;
+          color: var(--color-text-primary);
+          user-select: none;
+        }
+
+        .datepicker-months-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: var(--space-2);
+        }
+
+        .datepicker-month-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 44px;
+          border-radius: var(--radius-md);
+          border: 1px solid transparent;
+          background: var(--color-surface-light);
+          color: var(--color-text-primary);
+          font-family: var(--font-family);
+          font-size: var(--font-size-sm);
+          font-weight: 500;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          user-select: none;
+        }
+
+        .datepicker-month-btn:hover:not(:disabled) {
+          background: var(--color-bg-hover);
+          border-color: var(--color-border);
+        }
+
+        .datepicker-month-btn.active {
+          background: var(--gradient-primary);
+          color: white;
+          font-weight: 700;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+        }
+
+        .datepicker-month-btn:disabled {
+          opacity: 0.25;
+          cursor: not-allowed;
+          background: transparent;
+          color: var(--color-text-muted);
+        }
+
+        .datepicker-backdrop {
+          display: none;
+        }
+
+        @media (max-width: 768px) {
+          .datepicker-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 999;
+          }
+
+          .datepicker-popover {
+            position: fixed;
+            top: auto;
+            bottom: var(--space-6);
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%);
+            width: calc(100% - 32px);
+            max-width: 320px;
+            box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5), var(--shadow-xl);
+            z-index: 1000;
+            animation: pickerSlideUp 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+          }
+
+          @keyframes pickerSlideUp {
+            from {
+              opacity: 0;
+              transform: translate(-50%, 20px);
+            }
+            to {
+              opacity: 1;
+              transform: translate(-50%, 0);
+            }
+          }
+
+          .table td, .table th {
+            padding: 12px 16px;
+          }
+
+          .btn-sm {
+            min-height: 44px;
+            padding: 0 var(--space-4);
+          }
+        }
+      `}</style>
+
       {/* Header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">Resumen de gastos y métricas</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="btn btn-ghost btn-icon" onClick={goToPrevMonth} title="Mes anterior">◀</button>
-          <span className="font-semibold">{getMonthName(activeMonth)} {activeYear}</span>
-          <button className="btn btn-ghost btn-icon" onClick={goToNextMonth} title="Mes siguiente">▶</button>
+        <div className="datepicker-container" ref={pickerRef}>
+          <button
+            type="button"
+            className="picker-toggle-btn"
+            onClick={() => {
+              setShowPicker(!showPicker);
+              setPickerYear(activeYear);
+            }}
+            aria-label="Seleccionar fecha"
+            aria-expanded={showPicker}
+          >
+            <span>📅</span>
+            <span>{getMonthName(activeMonth)} {activeYear}</span>
+            <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>▼</span>
+          </button>
+
+          {showPicker && (
+            <>
+              <div className="datepicker-backdrop" onClick={() => setShowPicker(false)} />
+              <div className="datepicker-popover">
+                <div className="datepicker-header">
+                  <button
+                    type="button"
+                    className="datepicker-year-nav"
+                    onClick={() => setPickerYear((y) => y - 1)}
+                    disabled={pickerYear <= minYear}
+                    aria-label="Año anterior"
+                  >
+                    ◀
+                  </button>
+                  <span className="datepicker-year-display">{pickerYear}</span>
+                  <button
+                    type="button"
+                    className="datepicker-year-nav"
+                    onClick={() => setPickerYear((y) => y + 1)}
+                    disabled={pickerYear >= currentYear}
+                    aria-label="Año siguiente"
+                  >
+                    ▶
+                  </button>
+                </div>
+                <div className="datepicker-months-grid">
+                  {MONTH_SHORT_NAMES.map((name, index) => {
+                    const m = index + 1;
+                    const isSelected = activeYear === pickerYear && activeMonth === m;
+                    const isFuture = pickerYear > currentYear || (pickerYear === currentYear && m > currentMonth);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`datepicker-month-btn ${isSelected ? 'active' : ''}`}
+                        disabled={isFuture}
+                        onClick={() => {
+                          setSelectedYear(pickerYear);
+                          setSelectedMonth(m);
+                          setShowPicker(false);
+                        }}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -251,11 +532,11 @@ export default function DashboardPage() {
               <tbody>
                 {recentInvoices.map((inv) => (
                   <tr key={inv.id} className="clickable" onClick={() => navigate(`/invoices/${inv.id}`)}>
-                    <td>{formatDate(inv.date)}</td>
-                    <td className="truncate" style={{ maxWidth: 180 }}>{inv.providerName}</td>
-                    <td className="table-mobile-hidden text-muted">{inv.expenseType}</td>
-                    <td className="text-right text-mono">{formatCurrency(inv.totalAmount || 0)}</td>
-                    <td className="text-center">
+                    <td data-label="Fecha">{formatDate(inv.date)}</td>
+                    <td data-label="Proveedor" className="truncate" style={{ maxWidth: 180 }}>{inv.providerName}</td>
+                    <td data-label="Tipo Gasto" className="table-mobile-hidden text-muted">{inv.expenseType}</td>
+                    <td data-label="Total" className="text-right text-mono">{formatCurrency(inv.totalAmount || 0)}</td>
+                    <td data-label="Estado" className="text-center">
                       <span className={`badge badge-${getStatusVariant(inv.status)}`}>
                         {getStatusLabel(inv.status)}
                       </span>

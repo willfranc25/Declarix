@@ -16,7 +16,7 @@ import { generateMonthlySummary, generateCategorySummary } from '../utils/calcul
  * @param {ArrayBuffer} templateBuffer - Buffer del archivo template
  * @param {Object} headerData - Datos del encabezado
  */
-export async function exportToRendicion(invoices, templateBuffer, headerData = {}) {
+export async function exportToRendicion(invoices, templateBuffer, headerData = {}, customMapping = null) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
 
@@ -34,6 +34,21 @@ export async function exportToRendicion(invoices, templateBuffer, headerData = {
     targetWs.getCell('B14').value = headerData.rut;
   }
 
+  // Mapeo por defecto si no se entrega uno personalizado
+  const mapping = customMapping || {
+    providerName: 'A',
+    providerRut: 'B',
+    documentType: 'C',
+    documentNumber: 'D',
+    date: 'E',
+    detail: 'F',
+    expenseType: 'G',
+    netAmount: 'H',
+    totalBoletaServicios: 'I',
+    totalBoletaHonorarios: 'J',
+    specificTax: 'K'
+  };
+
   // Escribir datos en filas 21-45 (1-indexed en ExcelJS)
   const maxRows = 25;
   const startRow = 21;
@@ -43,30 +58,24 @@ export async function exportToRendicion(invoices, templateBuffer, headerData = {
     const inv = invoices[i];
 
     if (inv) {
-      targetWs.getCell(`A${rowNum}`).value = inv.providerName || '';
-      targetWs.getCell(`B${rowNum}`).value = inv.providerRut || '';
-      targetWs.getCell(`C${rowNum}`).value = inv.documentType || '';
-      targetWs.getCell(`D${rowNum}`).value = String(inv.documentNumber || '');
-      targetWs.getCell(`E${rowNum}`).value = formatDate(inv.date) || '';
-      targetWs.getCell(`F${rowNum}`).value = inv.detail || '';
-      targetWs.getCell(`G${rowNum}`).value = inv.expenseType || '';
-      targetWs.getCell(`H${rowNum}`).value = Number(inv.netAmount) || 0;
-      targetWs.getCell(`I${rowNum}`).value = Number(inv.totalBoletaServicios) || 0;
-      targetWs.getCell(`J${rowNum}`).value = Number(inv.totalBoletaHonorarios) || 0;
-      targetWs.getCell(`K${rowNum}`).value = Number(inv.specificTax) || 0;
+      if (mapping.providerName) targetWs.getCell(`${mapping.providerName}${rowNum}`).value = inv.providerName || '';
+      if (mapping.providerRut) targetWs.getCell(`${mapping.providerRut}${rowNum}`).value = inv.providerRut || '';
+      if (mapping.documentType) targetWs.getCell(`${mapping.documentType}${rowNum}`).value = inv.documentType || '';
+      if (mapping.documentNumber) targetWs.getCell(`${mapping.documentNumber}${rowNum}`).value = String(inv.documentNumber || '');
+      if (mapping.date) targetWs.getCell(`${mapping.date}${rowNum}`).value = formatDate(inv.date) || '';
+      if (mapping.detail) targetWs.getCell(`${mapping.detail}${rowNum}`).value = inv.detail || '';
+      if (mapping.expenseType) targetWs.getCell(`${mapping.expenseType}${rowNum}`).value = inv.expenseType || '';
+      if (mapping.netAmount) targetWs.getCell(`${mapping.netAmount}${rowNum}`).value = Number(inv.netAmount) || 0;
+      if (mapping.totalBoletaServicios) targetWs.getCell(`${mapping.totalBoletaServicios}${rowNum}`).value = Number(inv.totalBoletaServicios) || 0;
+      if (mapping.totalBoletaHonorarios) targetWs.getCell(`${mapping.totalBoletaHonorarios}${rowNum}`).value = Number(inv.totalBoletaHonorarios) || 0;
+      if (mapping.specificTax) targetWs.getCell(`${mapping.specificTax}${rowNum}`).value = Number(inv.specificTax) || 0;
     } else {
-      // Limpiar celdas sin romper las fórmulas (usar null en vez de string vacío)
-      targetWs.getCell(`A${rowNum}`).value = null;
-      targetWs.getCell(`B${rowNum}`).value = null;
-      targetWs.getCell(`C${rowNum}`).value = null;
-      targetWs.getCell(`D${rowNum}`).value = null;
-      targetWs.getCell(`E${rowNum}`).value = null;
-      targetWs.getCell(`F${rowNum}`).value = null;
-      targetWs.getCell(`G${rowNum}`).value = null;
-      targetWs.getCell(`H${rowNum}`).value = null;
-      targetWs.getCell(`I${rowNum}`).value = null;
-      targetWs.getCell(`J${rowNum}`).value = null;
-      targetWs.getCell(`K${rowNum}`).value = null;
+      // Limpiar celdas sin romper las fórmulas
+      Object.values(mapping).forEach(colLetter => {
+        if (colLetter && typeof colLetter === 'string') {
+          targetWs.getCell(`${colLetter.toUpperCase()}${rowNum}`).value = null;
+        }
+      });
     }
   }
 
