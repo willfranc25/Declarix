@@ -1,0 +1,70 @@
+## Contexto
+Proyecto: De Clarix - Gestor de boletas para declaracion de impuestos (Chile).
+Stack: React + Vite + TypeScript (parcial), Zustand, IndexedDB/Supabase, Recharts, react-router-dom.
+NO es e-commerce. Es para que una contadora (hermana del usuario) cargue boletas, las revise y exporte a plantilla Saludent (.xlsm) para F29.
+
+Estado actual: Conectado a Supabase (nube). Datos sincronizados entre local, Vercel y movil.
+
+## Mejoras a implementar (FASE 1 - Core reliability + UX carga masiva)
+
+### 1. Validacion cruzada + reintento automatico en extraccion IA (vlmService.js)
+- Agregar funcion validateExtractedData(data) que verifique:
+  - RUT valido (digito verificador chileno)
+  - neto + IVA = total (para facturas/NC)
+  - totalBoletaServicios/Honorarios > 0 si corresponde
+  - fecha <= hoy, montos >= 0
+  - expenseType en EXPENSE_TYPES
+- Si falla validacion -> reintentar extraccion hasta 2 veces mas (max 3 total) con prompt corregido
+- Log de errores para debugging
+
+### 2. Carga masiva multi-archivo con cola (UploadPage.jsx)
+- Dropzone acepte multiples archivos (multiple attribute)
+- Cola de procesamiento: estado 'pending' -> 'processing' -> 'done'/'error'
+- UI: lista de archivos con progreso individual + barra global
+- Procesar en background (no bloquear UI), 1 a la vez para no saturar API
+- Boton 'Revisar todos' -> pantalla de revision en lote (BatchReviewPage.jsx nueva)
+- Deteccion duplicados: mismo RUT + mismo nro doc + misma fecha -> marcar (warning)
+
+### 3. Pantalla revision en lote (BatchReviewPage.jsx NUEVA)
+- Tabla editable tipo spreadsheet (como Excel):
+  - Columnas: Proveedor, RUT, Tipo Doc, Nro Doc, Fecha, Tipo Gasto, Neto, IVA, Total, Estado
+  - Filas editables inline (click -> input)
+  - Validacion en tiempo real (RUT verde/rojo, totales coherentes)
+  - Checkbox por fila + 'Seleccionar todo'
+  - Botones: 'Guardar seleccionados', 'Guardar todos', 'Descartar seleccionados'
+  - Navegacion teclado: Tab/Enter/Escape, Flechas entre celdas
+
+### 4. Filtros tributarios + estado 'Declarado' (InvoicesPage.jsx + store)
+- Filtros rapidos predefinidos (botones): 'Este mes', 'Mes anterior', 'Trimestre actual', 'Ano tributario'
+- Nueva columna/estado en invoice: taxStatus: 'pending' | 'reviewed' | 'declared'
+- Badge visual: amarillo Pendiente -> azul Revisado -> verde Declarado
+- Agregar a store: updateTaxStatus(id, status), filtro por taxStatus
+- Resumen IVA para F29 (nueva tarjeta en Dashboard o Reports):
+  - Neto compras, IVA credito, IVA debito, Total por mes
+  - Boton 'Copiar para F29' -> clipboard formato tabla
+
+### 5. Mapeo visual plantilla Saludent (ReportsPage.jsx)
+- UI: 'Configurar mapping' -> modal con dos columnas:
+  - Izquierda: campos de la app (Fecha, RUT Proveedor, Razon Social, Tipo Doc, Nro Doc, Neto, IVA, Total, etc.)
+  - Derecha: input para letra de columna Excel (A, B, C...) + preview de celda
+- Guardar mapping por empresa (key: saludent_mapping_{rutEmpresa} en settings)
+- Validacion pre-export: 'Faltan 3 RUTs, 2 fechas invalidas, 1 total=0' -> lista clickeable para saltar a corregir
+
+## Archivos a modificar/crear:
+1. src/services/vlmService.js - validacion + reintento
+2. src/pages/UploadPage.jsx - multi-file + cola
+3. src/pages/BatchReviewPage.jsx - NUEVO
+4. src/pages/InvoicesPage.jsx - filtros tributarios + taxStatus
+5. src/store/invoiceStore.js - taxStatus actions
+6. src/pages/ReportsPage.jsx - mapping visual + validacion pre-export
+7. src/App.jsx - ruta /batch-review
+8. src/components/Layout/Sidebar.jsx - link a Revision en lote
+
+## Reglas:
+- TypeScript estricto donde sea posible
+- Mantener compatibilidad Supabase/IndexedDB
+- No romper funcionamiento actual
+- Codigo limpio, comentado en espanol
+- Estilo visual consistente con el resto (Tailwind-like classes)
+
+IMPLEMENTA TODO LO ANTERIOR. Genera/edita los archivos completos.

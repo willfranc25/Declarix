@@ -1,5 +1,6 @@
 import { EXPENSE_TYPES } from '../data/expenseTypes';
 import { getStorageProvider } from './storage/StorageProvider';
+import { validateRut } from '../utils/rutValidator';
 
 /**
  * Prompt de extracción para modelos de visión (OpenAI GPT-4o, Gemini, etc.)
@@ -34,10 +35,10 @@ Reglas de montos:
 - "totalAmount": siempre el monto total final del documento
 
 Reglas de campos:
-- "providerRut": buscar RUT, R.U.T. seguido de números como 12.345.678-9
-- "date": convertir DD/MM/YYYY a YYYY-MM-DD
-- "detail": describir brevemente qué se compró
-- Retornar null o 0 para campos no visibles en la imagen
+- "providerRut": buscar RUT, R.U.T. seguido de números como 12.345.678-9. Debe tener dígito verificador válido.
+- "date": convertir DD/MM/YYYY o similar a formato estándar YYYY-MM-DD.
+- "detail": describir brevemente qué se compró.
+- Retornar null o 0 para campos no visibles en la imagen.
 
 Categorías válidas para "expenseType":
 ${EXPENSE_TYPES.join(', ')}
@@ -86,9 +87,100 @@ function tryParseJson(raw) {
 }
 
 /**
+ * Valida los datos extraídos por la IA aplicando reglas de negocio chilenas.
+ */
+export function validateExtractedData(data) {
+  const errors = [];
+
+  // 1. RUT válido (dígito verificador chileno)
+  if (!data.providerRut) {
+    errors.push('Falta el RUT del proveedor o emisor.');
+  } else if (!validateRut(data.providerRut)) {
+    errors.push(`RUT del proveedor inválido: "${data.providerRut}"`);
+  }
+
+  // 2. neto + IVA = total (para facturas/NC)
+  const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(data.documentType);
+  if (isInvoiceOrNC) {
+    const net = Number(data.netAmount) || 0;
+    const iva = Number(data.ivaAmount) || 0;
+    const total = Number(data.totalAmount) || 0;
+    const sum = net + iva;
+    if (Math.abs(sum - total) > 2) {
+      errors.push(`Cálculo de montos inconsistente para Factura/NC: Neto (${net}) + IVA (${iva}) = ${sum}, pero el Total es ${total}.`);
+    }
+  }
+
+  // 3. totalBoletaServicios/Honorarios > 0 si corresponde
+  const isBoleta = ['Boleta', 'Boleta Electrónica'].includes(data.documentType);
+  if (isBoleta) {
+    const totalBoletaServicios = Number(data.totalBoletaServicios) || 0;
+    if (totalBoletaServicios <= 0) {
+      errors.push(`Para Boletas, el campo "totalBoletaServicios" debe ser mayor a 0 (actual: ${totalBoletaServicios}).`);
+    }
+  }
+
+  const isHonorarios = data.documentType === 'Boleta de Honorarios';
+  if (isHonorarios) {
+    const totalBoletaHonorarios = Number(data.totalBoletaHonorarios) || 0;
+    if (totalBoletaHonorarios <= 0) {
+      errors.push(`Para Boletas de Honorarios, el campo "totalBoletaHonorarios" debe ser mayor a 0 (actual: ${totalBoletaHonorarios}).`);
+    }
+  }
+
+  // 4. fecha <= hoy, montos >= 0
+  if (!data.date) {
+    errors.push('Falta la fecha del documento.');
+  } else {
+    // Validar formato YYYY-MM-DD
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(data.date)) {
+      errors.push(`Formato de fecha inválido (debe ser YYYY-MM-DD): "${data.date}"`);
+    } else {
+      const docDate = new Date(data.date + 'T00:00:00');
+      const today = new Date();
+      // Remover horas de hoy
+      today.setHours(23, 59, 59, 999);
+      if (isNaN(docDate.getTime())) {
+        errors.push(`Fecha no válida: "${data.date}"`);
+      } else if (docDate > today) {
+        errors.push(`La fecha del documento no puede ser futura: "${data.date}"`);
+      }
+    }
+  }
+
+  // Validar montos no negativos
+  const numericFields = ['netAmount', 'totalBoletaServicios', 'totalBoletaHonorarios', 'specificTax', 'ivaAmount', 'totalAmount'];
+  for (const field of numericFields) {
+    if (data[field] !== undefined && data[field] !== null) {
+      const val = Number(data[field]);
+      if (isNaN(val) || val < 0) {
+        errors.push(`El monto "${field}" no puede ser negativo ni inválido (actual: ${data[field]}).`);
+      }
+    }
+  }
+
+  // 5. expenseType en EXPENSE_TYPES
+  if (!data.expenseType) {
+    errors.push('Falta el tipo de gasto (expenseType).');
+  } else if (!EXPENSE_TYPES.includes(data.expenseType)) {
+    errors.push(`El tipo de gasto "${data.expenseType}" no se encuentra entre las categorías válidas.`);
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
  * Extrae datos de un comprobante usando OpenAI Vision API.
  */
-async function extractWithOpenAI(apiKey, base64Image, mimeType) {
+async function extractWithOpenAI(apiKey, base64Image, mimeType, feedback = '') {
+  const prompt = feedback
+    ? `${EXTRACTION_PROMPT}\n\nATENCIÓN: En un intento anterior, la extracción falló por las siguientes razones:\n${feedback}\nPor favor corrige estos errores en esta nueva respuesta y asegúrate de cumplir con todas las reglas de negocio descritas en el prompt.`
+    : EXTRACTION_PROMPT;
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -101,7 +193,7 @@ async function extractWithOpenAI(apiKey, base64Image, mimeType) {
         {
           role: 'user',
           content: [
-            { type: 'text', text: EXTRACTION_PROMPT },
+            { type: 'text', text: prompt },
             {
               type: 'image_url',
               image_url: { url: `data:${mimeType};base64,${base64Image}` },
@@ -126,8 +218,11 @@ async function extractWithOpenAI(apiKey, base64Image, mimeType) {
 /**
  * Extrae datos de un comprobante usando Google Gemini API.
  */
-async function extractWithGemini(apiKey, base64Image, mimeType) {
+async function extractWithGemini(apiKey, base64Image, mimeType, feedback = '') {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const prompt = feedback
+    ? `${EXTRACTION_PROMPT}\n\nATENCIÓN: En un intento anterior, la extracción falló por las siguientes razones:\n${feedback}\nPor favor corrige estos errores en esta nueva respuesta y asegúrate de cumplir con todas las reglas de negocio descritas en el prompt.`
+    : EXTRACTION_PROMPT;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -136,7 +231,7 @@ async function extractWithGemini(apiKey, base64Image, mimeType) {
       contents: [
         {
           parts: [
-            { text: EXTRACTION_PROMPT },
+            { text: prompt },
             {
               inline_data: {
                 mime_type: mimeType,
@@ -165,7 +260,8 @@ async function extractWithGemini(apiKey, base64Image, mimeType) {
 
 /**
  * Servicio principal de extracción VLM.
- * Detecta el proveedor configurado y llama a la API correspondiente.
+ * Detecta el proveedor configurado, llama a la API correspondiente y
+ * realiza reintentos automáticos si falla la validación cruzada.
  */
 export async function extractInvoiceData(imageFile) {
   const storage = getStorageProvider();
@@ -183,36 +279,72 @@ export async function extractInvoiceData(imageFile) {
   const base64Image = await fileToBase64(imageFile);
   const mimeType = imageFile.type || 'image/jpeg';
 
-  let rawResponse;
-  if (provider === 'openai') {
-    rawResponse = await extractWithOpenAI(apiKey, base64Image, mimeType);
-  } else {
-    rawResponse = await extractWithGemini(apiKey, base64Image, mimeType);
-  }
+  let attempt = 0;
+  let feedback = '';
+  let parsed = null;
+  const maxAttempts = 3;
 
-  const parsed = tryParseJson(rawResponse);
-  if (!parsed) {
-    console.error("Error al parsear la respuesta del modelo. Respuesta cruda:", rawResponse);
-    throw new Error('No se pudo interpretar la respuesta del modelo de IA. Intenta con otra imagen.');
-  }
+  while (attempt < maxAttempts) {
+    attempt++;
+    console.log(`[VLM Service] Intento ${attempt}/${maxAttempts} de extracción para: ${imageFile.name}`);
 
-  // Validar que expenseType sea una categoría válida
-  if (parsed.expenseType && !EXPENSE_TYPES.includes(parsed.expenseType)) {
-    // Intentar match parcial
-    const lower = parsed.expenseType.toLowerCase();
-    const match = EXPENSE_TYPES.find((t) => t.toLowerCase().includes(lower) || lower.includes(t.toLowerCase()));
-    parsed.expenseType = match || '';
-  }
+    try {
+      let rawResponse;
+      if (provider === 'openai') {
+        rawResponse = await extractWithOpenAI(apiKey, base64Image, mimeType, feedback);
+      } else {
+        rawResponse = await extractWithGemini(apiKey, base64Image, mimeType, feedback);
+      }
 
-  // Asegurar que todos los campos numéricos son números
-  const numericFields = ['netAmount', 'totalBoletaServicios', 'totalBoletaHonorarios', 'specificTax', 'ivaAmount', 'totalAmount'];
-  for (const field of numericFields) {
-    if (parsed[field] === null || parsed[field] === undefined) {
-      parsed[field] = 0;
-    } else {
-      parsed[field] = Number(parsed[field]) || 0;
+      parsed = tryParseJson(rawResponse);
+      if (!parsed) {
+        console.error(`[VLM Service] [Intento ${attempt}] Respuesta no JSON:`, rawResponse);
+        feedback = `La respuesta recibida no era un JSON válido. Asegúrate de responder estrictamente en formato JSON válido.`;
+        if (attempt >= maxAttempts) {
+          throw new Error('No se pudo interpretar la respuesta del modelo de IA tras 3 intentos. Asegúrate de que la imagen sea legible.');
+        }
+        continue;
+      }
+
+      // Intentar match inteligente/parcial para expenseType
+      if (parsed.expenseType && !EXPENSE_TYPES.includes(parsed.expenseType)) {
+        const lower = parsed.expenseType.toLowerCase();
+        const match = EXPENSE_TYPES.find((t) => t.toLowerCase().includes(lower) || lower.includes(t.toLowerCase()));
+        parsed.expenseType = match || '';
+      }
+
+      // Asegurar que todos los campos numéricos son números
+      const numericFields = ['netAmount', 'totalBoletaServicios', 'totalBoletaHonorarios', 'specificTax', 'ivaAmount', 'totalAmount'];
+      for (const field of numericFields) {
+        if (parsed[field] === null || parsed[field] === undefined) {
+          parsed[field] = 0;
+        } else {
+          parsed[field] = Number(parsed[field]) || 0;
+        }
+      }
+
+      // Validar datos extraídos
+      const validation = validateExtractedData(parsed);
+      if (validation.isValid) {
+        console.log(`[VLM Service] [Intento ${attempt}] Extracción exitosa y validada.`);
+        return parsed;
+      } else {
+        const errorsStr = validation.errors.join('; ');
+        console.warn(`[VLM Service] [Intento ${attempt}] Falló la validación:`, validation.errors);
+        feedback = validation.errors.map((err, i) => `${i + 1}. ${err}`).join('\n');
+        
+        if (attempt >= maxAttempts) {
+          throw new Error(`La extracción falló la validación final:\n${errorsStr}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[VLM Service] Error en intento ${attempt}:`, err);
+      if (attempt >= maxAttempts) {
+        throw err;
+      }
+      feedback = `Ocurrió un error al consultar la API: ${err.message}. Por favor reintenta y asegúrate de seguir las instrucciones.`;
     }
   }
 
-  return parsed;
+  throw new Error('No se pudo extraer la información del documento.');
 }

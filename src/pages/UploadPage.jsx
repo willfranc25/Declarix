@@ -1,39 +1,88 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { extractInvoiceData } from '../services/vlmService';
-import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
-import { formatRut, validateRut } from '../utils/rutValidator';
+import { cleanRut, formatRut, validateRut } from '../utils/rutValidator';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// Custom toast hook for the toast notification system
+const useToast = () => {
+  const [toasts, setToasts] = useState([]);
+  
+  const addToast = useCallback((message, type = 'info') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
+  return { toasts, addToast, setToasts };
+};
 
 export default function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
-  const { addInvoice } = useInvoiceStore();
+  const { invoices, setBatchInvoices, clearBatchInvoices } = useInvoiceStore();
 
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  const [queue, setQueue] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedData, setExtractedData] = useState(null);
-  const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [globalError, setGlobalError] = useState(null);
 
+  const { toasts, addToast, setToasts } = useToast();
+
+  // Validar un archivo individual
   const validateFile = (file) => {
-    if (!ALLOWED_TYPES.includes(file.type)) return 'Formato no válido. Solo JPEG, PNG o WEBP.';
-    if (file.size > MAX_FILE_SIZE) return 'Archivo muy grande. Máximo 10 MB.';
+    if (!ALLOWED_TYPES.includes(file.type)) return 'Solo se permiten imágenes JPEG, PNG o WEBP.';
+    if (file.size > MAX_FILE_SIZE) return 'El tamaño máximo es de 10 MB.';
     return null;
   };
 
-  const handleFileSelect = (file) => {
-    const err = validateFile(file);
-    if (err) { setError(err); return; }
-    setSelectedFile(file);
-    setError(null);
-    setExtractedData(null);
-    setPreviewUrl(URL.createObjectURL(file));
+  // Manejar la selección de múltiples archivos
+  const handleFilesAdded = (filesList) => {
+    const newItems = [];
+    let hasInvalidFiles = false;
+
+    for (let i = 0; i < filesList.length; i++) {
+      const file = filesList[i];
+      const error = validateFile(file);
+      if (error) {
+        hasInvalidFiles = true;
+        continue;
+      }
+
+      // Evitar agregar archivos repetidos a la cola actual (por nombre y tamaño)
+      if (queue.some(q => q.name === file.name && q.size === file.size)) {
+        continue;
+      }
+
+      newItems.push({
+        id: Math.random().toString(36).substring(2, 11),
+        file,
+        name: file.name,
+        size: file.size,
+        status: 'pending',
+        progress: 0,
+        error: null,
+        extractedData: null,
+        isDuplicate: false,
+        tempPreviewUrl: URL.createObjectURL(file)
+      });
+    }
+
+    if (hasInvalidFiles) {
+      const errorMsg = 'Algunos archivos fueron ignorados porque no son imágenes válidas o superan los 10MB.';
+      setGlobalError(errorMsg);
+      addToast(errorMsg, 'error');
+    }
+
+    if (newItems.length > 0) {
+      setQueue(prev => [...prev, ...newItems]);
+      addToast(`${newItems.length} archivo(s) agregado(s) a la cola.`, 'success');
+    }
   };
 
   const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
@@ -41,248 +90,408 @@ export default function UploadPage() {
   const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
   const handleDrop = (e) => {
     e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleFileSelect(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFilesAdded(files);
+    }
   };
 
-  const handleProcess = async () => {
-    if (!selectedFile) return;
-    setIsProcessing(true);
-    setError(null);
-    try {
-      const data = await extractInvoiceData(selectedFile);
-      setExtractedData({
-        providerName: data.providerName || '',
-        providerRut: data.providerRut || '',
-        documentType: data.documentType || 'Boleta',
-        documentNumber: data.documentNumber || '',
-        date: data.date || new Date().toISOString().split('T')[0],
-        detail: data.detail || '',
-        expenseType: data.expenseType || '',
-        netAmount: data.netAmount || 0,
-        totalBoletaServicios: data.totalBoletaServicios || 0,
-        totalBoletaHonorarios: data.totalBoletaHonorarios || 0,
-        specificTax: data.specificTax || 0,
-        ivaAmount: data.ivaAmount || 0,
-        totalAmount: data.totalAmount || 0,
-        status: 'pending',
-        notes: '',
-      });
-    } catch (err) {
-      setError(err.message || 'Error al procesar la imagen.');
-    } finally {
+  // Procesamiento secuencial de la cola en background
+  useEffect(() => {
+    const processQueue = async () => {
+      // Buscar el primer archivo pendiente
+      const nextIndex = queue.findIndex(item => item.status === 'pending');
+      if (nextIndex === -1) {
+        setIsProcessing(false);
+        return;
+      }
+
+      setIsProcessing(true);
+
+      // Clonar la cola para actualizar el estado actual
+      const updatedQueue = [...queue];
+      const currentItem = { ...updatedQueue[nextIndex] };
+      
+      currentItem.status = 'processing';
+      currentItem.progress = 20;
+      updatedQueue[nextIndex] = currentItem;
+      setQueue([...updatedQueue]);
+
+      try {
+        // Extraer usando el VLM
+        const data = await extractInvoiceData(currentItem.file);
+        
+        // Simular progreso incremental
+        currentItem.progress = 80;
+        updatedQueue[nextIndex] = currentItem;
+        setQueue([...updatedQueue]);
+
+        // Detección de duplicados: mismo RUT + mismo nro doc + misma fecha
+        const isDuplicate = invoices.some(inv => {
+          if (!inv.providerRut || !data.providerRut) return false;
+          const cleanStoreRut = cleanRut(inv.providerRut);
+          const cleanExtractedRut = cleanRut(data.providerRut);
+          return (
+            cleanStoreRut === cleanExtractedRut &&
+            String(inv.documentNumber).trim() === String(data.documentNumber).trim() &&
+            inv.date === data.date
+          );
+        });
+
+        currentItem.status = 'done';
+        currentItem.progress = 100;
+        currentItem.isDuplicate = isDuplicate;
+        currentItem.extractedData = {
+          providerName: data.providerName || '',
+          providerRut: data.providerRut ? formatRut(data.providerRut) : '',
+          documentType: data.documentType || 'Boleta',
+          documentNumber: data.documentNumber || '',
+          date: data.date || new Date().toISOString().split('T')[0],
+          detail: data.detail || '',
+          expenseType: data.expenseType || '',
+          netAmount: data.netAmount || 0,
+          totalBoletaServicios: data.totalBoletaServicios || 0,
+          totalBoletaHonorarios: data.totalBoletaHonorarios || 0,
+          specificTax: data.specificTax || 0,
+          ivaAmount: data.ivaAmount || 0,
+          totalAmount: data.totalAmount || 0,
+          taxStatus: 'pending',
+          status: 'pending',
+          notes: data.notes || '',
+        };
+
+        if (isDuplicate) {
+          addToast(`Procesado: ${currentItem.name} (Posible Duplicado)`, 'warning');
+        } else {
+          addToast(`Procesado con éxito: ${currentItem.name}`, 'success');
+        }
+      } catch (err) {
+        console.error(`Error procesando archivo ${currentItem.name}:`, err);
+        currentItem.status = 'error';
+        currentItem.progress = 100;
+        currentItem.error = err.message || 'Error desconocido al procesar.';
+        addToast(`Error al procesar ${currentItem.name}: ${currentItem.error}`, 'error');
+      }
+
+      updatedQueue[nextIndex] = currentItem;
+      setQueue([...updatedQueue]);
       setIsProcessing(false);
+    };
+
+    if (!isProcessing) {
+      processQueue();
     }
+  }, [queue, isProcessing, invoices, addToast]);
+
+  // Limpiar cola entera
+  const handleClearQueue = () => {
+    // Liberar URLs de previsualización para evitar fugas de memoria
+    queue.forEach(item => {
+      if (item.tempPreviewUrl) {
+        URL.revokeObjectURL(item.tempPreviewUrl);
+      }
+    });
+    setQueue([]);
+    setIsProcessing(false);
+    setGlobalError(null);
+    clearBatchInvoices();
+    addToast('Cola de procesamiento limpia.', 'info');
   };
 
-  const handleFieldChange = (field, value) => {
-    setExtractedData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSave = async () => {
-    if (!extractedData) return;
-    setIsSaving(true);
-    try {
-      await addInvoice(extractedData, selectedFile);
-      navigate('/invoices');
-    } catch (err) {
-      setError(err.message || 'Error al guardar.');
-    } finally {
-      setIsSaving(false);
+  // Eliminar un archivo específico de la cola
+  const handleRemoveItem = (id) => {
+    const item = queue.find(q => q.id === id);
+    if (item?.tempPreviewUrl) {
+      URL.revokeObjectURL(item.tempPreviewUrl);
     }
+    setQueue(prev => prev.filter(q => q.id !== id));
+    addToast('Archivo removido de la cola.', 'info');
   };
 
-  const handleReset = () => {
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    setExtractedData(null);
-    setError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  // Avanzar a la pantalla de revisión en lote
+  const handleReviewAll = () => {
+    const processedItems = queue.filter(item => item.status === 'done');
+    if (processedItems.length === 0) return;
+
+    // Mapear los datos guardando la referencia del archivo para la subida posterior
+    const batchInvoicesData = processedItems.map(item => ({
+      id: item.id,
+      ...item.extractedData,
+      file: item.file
+    }));
+
+    setBatchInvoices(batchInvoicesData);
+    navigate('/batch-review');
   };
+
+  // Estadísticas globales para la barra de progreso
+  const totalFiles = queue.length;
+  const processedFiles = queue.filter(item => item.status === 'done' || item.status === 'error').length;
+  const successfulFiles = queue.filter(item => item.status === 'done').length;
+  const globalProgress = totalFiles > 0 ? Math.round((processedFiles / totalFiles) * 100) : 0;
 
   return (
-    <div className="space-y-6 animate-fade-in" style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div className="space-y-6 animate-fade-in upload-page-container" style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <style>{`
+        .upload-page-container button,
+        .upload-page-container .btn {
+          min-height: 44px;
+          min-width: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.1s ease, background-color 0.2s ease, opacity 0.2s ease;
+        }
+
+        .upload-page-container button:active:not(:disabled),
+        .upload-page-container .btn:active:not(:disabled) {
+          transform: scale(0.95) !important;
+        }
+
+        .upload-page-container .drop-zone {
+          min-height: 120px;
+        }
+
+        .upload-page-container .queue-item {
+          min-height: 44px;
+        }
+
+        @keyframes toastSlideIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .toast-item {
+          animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
+
       <div className="page-header">
         <div>
-          <h1 className="page-title">Cargar Boleta</h1>
-          <p className="page-subtitle">Sube una foto y la IA extraerá los datos automáticamente</p>
+          <h1 className="page-title">Carga Masiva de Boletas</h1>
+          <p className="page-subtitle">Sube múltiples comprobantes y la IA los procesará en cola secuencialmente.</p>
         </div>
       </div>
 
-      {error && (
-        <div className="alert alert-danger">
-          <span>⚠️</span>
-          <div style={{ flex: 1 }}>{error}</div>
-          <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>✕</button>
+      {globalError && (
+        <div className="alert alert-danger flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <div>{globalError}</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setGlobalError(null)}>✕</button>
         </div>
       )}
 
-      {/* Step 1: Upload */}
-      {!extractedData && (
-        <div className="card">
-          {!selectedFile ? (
-            <>
-              <div
-                className={`drop-zone ${isDragging ? 'dragging' : ''}`}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <div className="drop-zone-icon">📸</div>
-                <p className="drop-zone-text">
-                  <strong>Haz clic para seleccionar</strong> o arrastra una imagen aquí
-                </p>
-                <p className="drop-zone-hint">JPEG, PNG o WEBP hasta 10 MB</p>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={ALLOWED_TYPES.join(',')}
-                onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
-                style={{ display: 'none' }}
-              />
-            </>
-          ) : (
-            <div className="space-y-4">
-              <h3 className="card-title">Vista previa</h3>
-              {previewUrl && (
-                <div className="image-preview">
-                  <img src={previewUrl} alt="Vista previa del comprobante" />
-                </div>
-              )}
-              <div className="text-sm text-muted">
-                <strong>Archivo:</strong> {selectedFile.name} — <strong>Tamaño:</strong> {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-              </div>
-
-              {isProcessing && (
-                <div className="flex items-center gap-3">
-                  <div className="spinner" />
-                  <span className="text-muted animate-pulse">Procesando imagen con IA...</span>
-                </div>
-              )}
-
-              {!isProcessing && (
-                <div className="flex gap-3">
-                  <button className="btn btn-primary btn-lg" onClick={handleProcess}>
-                    🤖 Extraer datos con IA
-                  </button>
-                  <button className="btn btn-secondary" onClick={handleReset}>
-                    Cancelar
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+      {/* Zona de Dropzone */}
+      <div className="card">
+        <div
+          className={`drop-zone ${isDragging ? 'dragging' : ''}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ padding: '40px 20px', cursor: 'pointer' }}
+        >
+          <div className="drop-zone-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>📥</div>
+          <p className="drop-zone-text">
+            <strong>Haz clic para seleccionar</strong> o arrastra múltiples imágenes aquí
+          </p>
+          <p className="drop-zone-hint" style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
+            Soporta JPEG, PNG y WEBP (máx. 10 MB por archivo)
+          </p>
         </div>
-      )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
+          style={{ display: 'none' }}
+        />
+      </div>
 
-      {/* Step 2: Review extracted data */}
-      {extractedData && (
-        <div className="card animate-slide-up">
-          <div className="card-header">
-            <h3 className="card-title">✅ Datos Extraídos — Revisa y Confirma</h3>
+      {/* Barra Global de Progreso */}
+      {totalFiles > 0 && (
+        <div className="card p-6 space-y-4" style={{ borderLeft: '4px solid var(--color-accent)' }}>
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              📊 Progreso de Procesamiento
+              {isProcessing && <span className="spinner spinner-sm" />}
+            </h3>
+            <span className="text-sm font-medium bg-slate-800 px-3 py-1 rounded-full text-slate-300">
+              {processedFiles} de {totalFiles} procesados ({successfulFiles} exitosos)
+            </span>
           </div>
 
-          <div className="flex gap-6" style={{ flexWrap: 'wrap' }}>
-            {/* Image thumbnail */}
-            {previewUrl && (
-              <div style={{ width: 200, flexShrink: 0 }}>
-                <div className="image-preview" style={{ maxHeight: 260 }}>
-                  <img src={previewUrl} alt="Comprobante" />
-                </div>
-              </div>
-            )}
+          <div className="progress-bar-container" style={{ background: 'var(--color-bg-primary)', height: 10, borderRadius: 999, overflow: 'hidden' }}>
+            <div 
+              className="progress-bar" 
+              style={{ 
+                width: `${globalProgress}%`, 
+                height: '100%', 
+                background: 'var(--gradient-accent)',
+                transition: 'width 0.4s ease'
+              }}
+            />
+          </div>
 
-            {/* Form */}
-            <div style={{ flex: 1, minWidth: 300 }}>
-              <div className="form-grid space-y-4">
-                <div className="form-group">
-                  <label className="form-label">Nombre Proveedor</label>
-                  <input className="form-input" value={extractedData.providerName} onChange={(e) => handleFieldChange('providerName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">RUT Proveedor</label>
-                  <input
-                    className="form-input"
-                    value={extractedData.providerRut}
-                    onChange={(e) => handleFieldChange('providerRut', e.target.value)}
-                    onBlur={() => {
-                      if (extractedData.providerRut) handleFieldChange('providerRut', formatRut(extractedData.providerRut));
-                    }}
-                    style={extractedData.providerRut && !validateRut(extractedData.providerRut) ? { borderColor: 'var(--color-warning)' } : {}}
-                  />
-                  {extractedData.providerRut && !validateRut(extractedData.providerRut) && (
-                    <span className="form-error">RUT inválido</span>
+          <div className="flex justify-between items-center flex-wrap gap-3 pt-2">
+            <div className="flex gap-3">
+              <button 
+                className="btn btn-primary" 
+                onClick={handleReviewAll} 
+                disabled={successfulFiles === 0}
+              >
+                📝 Revisar todos ({successfulFiles} listos)
+              </button>
+              <button 
+                className="btn btn-secondary" 
+                onClick={handleClearQueue}
+              >
+                Limpiar Cola
+              </button>
+            </div>
+            {isProcessing && (
+              <span className="text-sm text-amber-500 flex items-center gap-1 animate-pulse">
+                ⚙️ Extrayendo datos en segundo plano...
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Cola de Archivos */}
+      {queue.length > 0 && (
+        <div className="card">
+          <div className="card-header border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
+            <h3 className="card-title">Cola de Archivos</h3>
+            <span className="text-xs text-slate-400">Procesamiento secuencial activo</span>
+          </div>
+
+          <div className="divide-y divide-slate-800 space-y-4">
+            {queue.map((item) => (
+              <div key={item.id} className="flex gap-4 py-4 items-start flex-wrap md:flex-nowrap queue-item">
+                {/* Miniatura o Icono */}
+                <div style={{ width: 60, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)' }}>
+                  {item.tempPreviewUrl ? (
+                    <img src={item.tempPreviewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '1.5rem' }}>📄</div>
                   )}
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Tipo Documento</label>
-                  <select className="form-select" value={extractedData.documentType} onChange={(e) => handleFieldChange('documentType', e.target.value)}>
-                    {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">N° Documento</label>
-                  <input className="form-input" value={extractedData.documentNumber} onChange={(e) => handleFieldChange('documentNumber', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Fecha</label>
-                  <input className="form-input" type="date" value={extractedData.date} onChange={(e) => handleFieldChange('date', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Tipo de Gasto</label>
-                  <select className="form-select" value={extractedData.expenseType} onChange={(e) => handleFieldChange('expenseType', e.target.value)}>
-                    <option value="">Seleccionar...</option>
-                    {EXPENSE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Detalle Compra</label>
-                  <input className="form-input" value={extractedData.detail} onChange={(e) => handleFieldChange('detail', e.target.value)} />
+
+                {/* Detalles y Progreso */}
+                <div style={{ flex: 1, minWidth: 200 }} className="space-y-2">
+                  <div className="flex justify-between items-start gap-2 flex-wrap">
+                    <div>
+                      <h4 className="font-medium text-sm text-slate-200 truncate" style={{ maxWidth: 350 }} title={item.name}>
+                        {item.name}
+                      </h4>
+                      <span className="text-xs text-slate-400">
+                        {(item.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    </div>
+
+                    {/* Badge de Estado */}
+                    <div>
+                      {item.status === 'pending' && (
+                        <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
+                          Pendiente
+                        </span>
+                      )}
+                      {item.status === 'processing' && (
+                        <span className="badge animate-pulse" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>
+                          Procesando...
+                        </span>
+                      )}
+                      {item.status === 'done' && (
+                        <div className="flex gap-2 items-center">
+                          {item.isDuplicate && (
+                            <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
+                              ⚠️ Posible Duplicado
+                            </span>
+                          )}
+                          <span className="badge" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
+                            Listo
+                          </span>
+                        </div>
+                      )}
+                      {item.status === 'error' && (
+                        <span className="badge" style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger)' }}>
+                          Error
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Barra de progreso de este archivo */}
+                  <div style={{ width: '100%', height: 4, background: 'var(--color-bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div 
+                      style={{ 
+                        width: `${item.progress}%`, 
+                        height: '100%', 
+                        background: item.status === 'error' ? 'var(--color-danger)' : item.status === 'done' ? 'var(--color-success)' : 'var(--color-accent)',
+                        transition: 'width 0.3s ease'
+                      }}
+                    />
+                  </div>
+
+                  {/* Mostrar errores del archivo */}
+                  {item.status === 'error' && (
+                    <p className="text-xs text-red-400 mt-1">
+                      ⚠️ {item.error}
+                    </p>
+                  )}
+
+                  {/* Mostrar previsualización de datos si ya está listo */}
+                  {item.status === 'done' && item.extractedData && (
+                    <div className="text-xs text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800 space-y-1">
+                      <div className="flex justify-between flex-wrap gap-2">
+                        <span><strong>Prov:</strong> {item.extractedData.providerName || 'N/A'} ({item.extractedData.providerRut || 'Sin RUT'})</span>
+                        <span><strong>N°:</strong> {item.extractedData.documentNumber || 'S/N'}</span>
+                        <span><strong>Monto:</strong> ${Number(item.extractedData.totalAmount).toLocaleString('es-CL')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skeleton loading while processing */}
+                  {item.status === 'processing' && (
+                    <div className="text-xs text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800 space-y-2">
+                      <div className="skeleton skeleton-text" style={{ width: '70%', height: '12px', margin: 0 }} />
+                      <div className="skeleton skeleton-text" style={{ width: '45%', height: '12px', margin: 0 }} />
+                    </div>
+                  )}
                 </div>
 
-                {/* Montos */}
-                <div className="form-group">
-                  <label className="form-label">Neto (Facturas/NC)</label>
-                  <input className="form-input" type="number" value={extractedData.netAmount} onChange={(e) => handleFieldChange('netAmount', Number(e.target.value))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">IVA</label>
-                  <input className="form-input" type="number" value={extractedData.ivaAmount} onChange={(e) => handleFieldChange('ivaAmount', Number(e.target.value))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Total Boleta Servicios</label>
-                  <input className="form-input" type="number" value={extractedData.totalBoletaServicios} onChange={(e) => handleFieldChange('totalBoletaServicios', Number(e.target.value))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Total Boleta Honorarios</label>
-                  <input className="form-input" type="number" value={extractedData.totalBoletaHonorarios} onChange={(e) => handleFieldChange('totalBoletaHonorarios', Number(e.target.value))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Impuesto Específico</label>
-                  <input className="form-input" type="number" value={extractedData.specificTax} onChange={(e) => handleFieldChange('specificTax', Number(e.target.value))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Total</label>
-                  <input className="form-input" type="number" value={extractedData.totalAmount} onChange={(e) => handleFieldChange('totalAmount', Number(e.target.value))} style={{ fontWeight: 700 }} />
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Notas</label>
-                  <textarea className="form-textarea" value={extractedData.notes} onChange={(e) => handleFieldChange('notes', e.target.value)} rows={2} />
+                {/* Botón para remover si no se está procesando */}
+                <div style={{ alignSelf: 'center' }}>
+                  <button 
+                    className="btn btn-ghost btn-sm text-slate-400 hover:text-red-400"
+                    onClick={() => handleRemoveItem(item.id)}
+                    disabled={item.status === 'processing'}
+                    title="Eliminar de la cola"
+                    style={{
+                      minWidth: '44px',
+                      minHeight: '44px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
-
-              <div className="flex gap-3 mt-6">
-                <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? <><div className="spinner" /> Guardando...</> : '💾 Guardar Comprobante'}
-                </button>
-                <button className="btn btn-secondary" onClick={handleReset} disabled={isSaving}>
-                  Descartar
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
@@ -291,8 +500,86 @@ export default function UploadPage() {
       <div className="alert alert-info">
         <span>💡</span>
         <div>
-          <strong>Instrucciones:</strong> Asegúrate de que la imagen sea clara y legible. Tras procesar, podrás revisar y corregir los datos extraídos antes de guardar.
+          <strong>Consejo para carga masiva:</strong> Puedes arrastrar y soltar varias fotos de boletas al mismo tiempo. Se irán extrayendo secuencialmente para no saturar tu cuota de API. Cuando terminen, haz clic en <strong>Revisar todos</strong> para corregir e importarlas masivamente.
         </div>
+      </div>
+
+      {/* Toast container */}
+      <div style={{
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        maxWidth: '350px',
+        width: 'calc(100% - 48px)'
+      }}>
+        {toasts.map(toast => {
+          let bg = 'var(--color-bg-elevated)';
+          let border = '1px solid var(--color-border)';
+          let color = 'var(--color-text-primary)';
+          let icon = 'ℹ️';
+          if (toast.type === 'success') {
+            bg = 'rgba(16, 185, 129, 0.15)';
+            border = '1px solid rgba(16, 185, 129, 0.3)';
+            color = '#34d399';
+            icon = '✅';
+          } else if (toast.type === 'error') {
+            bg = 'rgba(239, 68, 68, 0.15)';
+            border = '1px solid rgba(239, 68, 68, 0.3)';
+            color = '#f87171';
+            icon = '❌';
+          } else if (toast.type === 'warning') {
+            bg = 'rgba(245, 158, 11, 0.15)';
+            border = '1px solid rgba(245, 158, 11, 0.3)';
+            color = '#fbbf24';
+            icon = '⚠️';
+          }
+          return (
+            <div
+              key={toast.id}
+              className="toast-item"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: bg,
+                border: border,
+                color: color,
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
+            >
+              <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{icon}</span>
+              <span style={{ flex: 1, color: 'var(--color-text-primary)' }}>{toast.message}</span>
+              <button
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  minHeight: '44px',
+                  minWidth: '44px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

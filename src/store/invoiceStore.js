@@ -4,9 +4,13 @@ import { SAMPLE_INVOICES } from '../data/sampleData';
 
 const useInvoiceStore = create((set, get) => ({
   invoices: [],
+  batchInvoices: [],
   filters: {},
   isLoading: false,
   error: null,
+
+  setBatchInvoices: (batchInvoices) => set({ batchInvoices }),
+  clearBatchInvoices: () => set({ batchInvoices: [] }),
 
   /**
    * Carga todos los comprobantes desde el provider de almacenamiento.
@@ -89,6 +93,13 @@ const useInvoiceStore = create((set, get) => ({
   },
 
   /**
+   * Actualiza el estado tributario de un comprobante.
+   */
+  updateTaxStatus: async (id, taxStatus) => {
+    return get().updateInvoice(id, { taxStatus });
+  },
+
+  /**
    * Establece filtros.
    */
   setFilters: (newFilters) => {
@@ -112,12 +123,17 @@ const useInvoiceStore = create((set, get) => ({
         const m = new Date(inv.date).getMonth() + 1;
         if (m !== filters.month) return false;
       }
+      if (filters.months !== undefined) {
+        const m = new Date(inv.date).getMonth() + 1;
+        if (!filters.months.includes(m)) return false;
+      }
       if (filters.year !== undefined) {
         const y = new Date(inv.date).getFullYear();
         if (y !== filters.year) return false;
       }
       if (filters.expenseType && inv.expenseType !== filters.expenseType) return false;
       if (filters.status && inv.status !== filters.status) return false;
+      if (filters.taxStatus && (inv.taxStatus || 'pending') !== filters.taxStatus) return false;
       if (filters.providerSearch && filters.providerSearch.trim()) {
         const search = filters.providerSearch.toLowerCase().trim();
         if (!inv.providerName.toLowerCase().includes(search)) return false;
