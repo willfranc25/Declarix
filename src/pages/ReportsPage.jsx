@@ -41,7 +41,13 @@ export default function ReportsPage() {
   
   const templateInputRef = useRef(null);
 
-  const [selectedMonth, setSelectedMonth] = useState('');
+  // Filter States
+  const [filterText, setFilterText] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [expenseType, setExpenseType] = useState('');
+  const [documentType, setDocumentType] = useState('');
+
   const [templateBuffer, setTemplateBuffer] = useState(null);
   const [templateName, setTemplateName] = useState('Cargando plantilla predeterminada...');
   const [templateSize, setTemplateSize] = useState(null);
@@ -175,11 +181,32 @@ export default function ReportsPage() {
     }
   };
 
-  // Filtrar comprobantes por mes seleccionado
+  // Filtrar comprobantes por los criterios avanzados
   const filtered = useMemo(() => {
-    if (!selectedMonth) return invoices;
-    return invoices.filter((inv) => inv.date && inv.date.startsWith(selectedMonth));
-  }, [invoices, selectedMonth]);
+    return invoices.filter((inv) => {
+      // 1. Filtro de Texto (Proveedor, RUT o Detalle)
+      if (filterText) {
+        const term = filterText.toLowerCase();
+        const matchesText = 
+          (inv.providerName && inv.providerName.toLowerCase().includes(term)) ||
+          (inv.providerRut && inv.providerRut.toLowerCase().includes(term)) ||
+          (inv.detail && inv.detail.toLowerCase().includes(term));
+        if (!matchesText) return false;
+      }
+
+      // 2. Filtro de Rango de Fechas
+      if (dateFrom && inv.date < dateFrom) return false;
+      if (dateTo && inv.date > dateTo) return false;
+
+      // 3. Filtro por Tipo de Gasto
+      if (expenseType && inv.expenseType !== expenseType) return false;
+
+      // 4. Filtro por Tipo de Documento
+      if (documentType && inv.documentType !== documentType) return false;
+
+      return true;
+    });
+  }, [invoices, filterText, dateFrom, dateTo, expenseType, documentType]);
 
   // Calcular Resumen IVA para F29
   const f29Summary = useMemo(() => {
@@ -444,28 +471,87 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Date Filter: Native Month Picker */}
+      {/* Filtros Avanzados */}
       <div className="card">
-        <h3 className="card-title mb-4">Filtrar por Mes</h3>
-        <div className="filters-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="form-group" style={{ flex: '1', minWidth: '200px' }}>
-            <label className="form-label">Seleccionar Mes</label>
-            <input 
-              className="form-input" 
-              type="month" 
-              value={selectedMonth} 
-              onChange={(e) => setSelectedMonth(e.target.value)} 
-              style={{ minHeight: '44px' }}
-            />
-          </div>
-          <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+        <h3 className="card-title mb-4 flex justify-between items-center flex-wrap gap-2">
+          <span>🔍 Filtros de Búsqueda</span>
+          {(filterText || dateFrom || dateTo || expenseType || documentType) && (
             <button 
               className="btn btn-ghost btn-sm" 
-              onClick={() => setSelectedMonth('')}
-              style={{ minHeight: '44px', display: 'flex', alignItems: 'center' }}
+              onClick={() => {
+                setFilterText('');
+                setDateFrom('');
+                setDateTo('');
+                setExpenseType('');
+                setDocumentType('');
+              }}
             >
-              Limpiar filtro
+              Limpiar filtros ✕
             </button>
+          )}
+        </h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
+          {/* Búsqueda por Texto */}
+          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="form-label">Buscar Proveedor, RUT o Detalle</label>
+            <input 
+              className="form-input" 
+              type="text" 
+              placeholder="Ej. Sodimac, 76.123.456-7..."
+              value={filterText} 
+              onChange={(e) => setFilterText(e.target.value)} 
+            />
+          </div>
+
+          {/* Rango de Fechas */}
+          <div className="form-group">
+            <label className="form-label">Desde Fecha</label>
+            <input 
+              className="form-input" 
+              type="date" 
+              value={dateFrom} 
+              onChange={(e) => setDateFrom(e.target.value)} 
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Hasta Fecha</label>
+            <input 
+              className="form-input" 
+              type="date" 
+              value={dateTo} 
+              onChange={(e) => setDateTo(e.target.value)} 
+            />
+          </div>
+
+          {/* Tipo de Documento */}
+          <div className="form-group">
+            <label className="form-label">Tipo de Documento</label>
+            <select 
+              className="form-input"
+              value={documentType}
+              onChange={(e) => setDocumentType(e.target.value)}
+            >
+              <option value="">Todos los documentos</option>
+              {DOCUMENT_TYPES.map(doc => (
+                <option key={doc} value={doc}>{doc}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Tipo de Gasto */}
+          <div className="form-group">
+            <label className="form-label">Categoría de Gasto</label>
+            <select 
+              className="form-input"
+              value={expenseType}
+              onChange={(e) => setExpenseType(e.target.value)}
+            >
+              <option value="">Todas las categorías</option>
+              {EXPENSE_TYPES.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

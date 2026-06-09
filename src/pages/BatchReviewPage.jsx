@@ -213,6 +213,7 @@ export default function BatchReviewPage() {
 
   // Guardar seleccionados
   const handleSaveSelected = async () => {
+    if (isSaving) return;
     const selectedRows = rows.filter(r => selectedIds.includes(r.id));
     if (selectedRows.length === 0) return;
 
@@ -266,6 +267,7 @@ export default function BatchReviewPage() {
 
   // Guardar todos
   const handleSaveAll = async () => {
+    if (isSaving) return;
     if (rows.length === 0) return;
 
     // Verificar si hay errores

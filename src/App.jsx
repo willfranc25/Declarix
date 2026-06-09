@@ -89,19 +89,19 @@ function AppRoutes() {
 
       {/* Protected routes */}
       <Route
-        path="/"
+        path="/*"
         element={
           <ProtectedRoute>
             <AppLayout>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
-                  <Route path="/upload" element={<UploadPage />} />
-                  <Route path="/batch-review" element={<BatchReviewPage />} />
-                  <Route path="/invoices" element={<InvoicesPage />} />
-                  <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="upload" element={<UploadPage />} />
+                  <Route path="batch-review" element={<BatchReviewPage />} />
+                  <Route path="invoices" element={<InvoicesPage />} />
+                  <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+                  <Route path="reports" element={<ReportsPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
                 </Routes>
               </Suspense>
             </AppLayout>
