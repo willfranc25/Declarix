@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import Icon from '../components/ui/Icon';
 
 export default function LoginPage() {
   const { login, signup, loginWithMagicLink } = useAuth();
@@ -173,7 +174,7 @@ export default function LoginPage() {
             boxShadow: 'var(--shadow-glow)',
             flexShrink: 0
           }}>
-            <span style={{ fontSize: '20px' }}>📋</span>
+            <Icon name="document" size={22} style={{ color: 'white' }} />
           </div>
           <span style={{
             fontSize: 'var(--font-size-xl)',
@@ -213,7 +214,7 @@ export default function LoginPage() {
               alignItems: 'center',
               gap: 'var(--space-2)'
             }}>
-              <span aria-hidden="true">⚠️</span>
+              <Icon name="alert" size={16} aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
@@ -320,8 +321,8 @@ export default function LoginPage() {
               }}
               disabled={loading}
             >
-              <span style={{ fontSize: '20px', marginRight: '8px' }}>✨</span>
-              {showMagicLink ? 'Volver a usar contraseña' : 'Iniciar con Enlace Mágico'}
+              <Icon name="sparkles" size={18} style={{ marginRight: '8px' }} />
+              {showMagicLink ? 'Volver a usar contraseña' : 'Iniciar con enlace mágico'}
             </button>
 
             {showMagicLink && (

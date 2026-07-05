@@ -6,6 +6,7 @@ import { exportToRendicion, exportToExcel, exportToCSV, downloadFile } from '../
 import { validateRut, cleanRut, formatRut } from '../utils/rutValidator';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
+import Icon from '../components/ui/Icon';
 
 const DEFAULT_MAPPING = {
   providerName: 'A',
@@ -408,7 +409,7 @@ export default function ReportsPage() {
         </div>
         <div className="flex gap-2">
           <button className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setShowMappingModal(true)}>
-            ⚙️ Configurar Mapping
+            <Icon name="settings" /> Configurar mapping
           </button>
         </div>
       </div>
@@ -416,7 +417,7 @@ export default function ReportsPage() {
       {/* Filtros Avanzados */}
       <div className="card">
         <h3 className="card-title mb-4 flex justify-between items-center flex-wrap gap-2">
-          <span>🔍 Filtros de Búsqueda</span>
+          <span><Icon name="search" />Filtros de búsqueda</span>
           {(filterText || dateFrom || dateTo || expenseType || documentType) && (
             <button 
               className="btn btn-ghost btn-sm" 
@@ -428,7 +429,7 @@ export default function ReportsPage() {
                 setDocumentType('');
               }}
             >
-              Limpiar filtros ✕
+              Limpiar filtros <Icon name="x" size={14} />
             </button>
           )}
         </h3>
@@ -502,7 +503,7 @@ export default function ReportsPage() {
       {preExportIssues.length > 0 && (
         <div className="card" style={{ borderLeft: '4px solid var(--color-danger)' }}>
           <h3 className="card-title text-red-400 mb-2">
-            ⚠️ Advertencias Pre-Exportación ({preExportIssues.length})
+            <Icon name="alert" style={{ color: 'var(--color-danger)' }} /> Advertencias pre-exportación ({preExportIssues.length})
           </h3>
           <p className="text-xs text-slate-400 mb-4">
             Resumen de problemas: <strong className="text-red-400">{preExportSummaryText}</strong>. Haz clic en cualquier fila para corregir de inmediato.
@@ -534,7 +535,7 @@ export default function ReportsPage() {
                     {issue.errors.map((err, i) => <span key={i}>• {err}</span>)}
                   </div>
                 </div>
-                <span style={{ fontSize: '0.75rem', textDecoration: 'underline', color: 'var(--color-accent-light)' }}>Corregir ✏️</span>
+                <span style={{ fontSize: '0.75rem', textDecoration: 'underline', color: 'var(--color-accent-light)' }}>Corregir</span>
               </div>
             ))}
           </div>
@@ -644,7 +645,7 @@ export default function ReportsPage() {
 
         {/* Template upload instruction */}
         <div className="alert alert-info mb-4">
-          <span>📄</span>
+          <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
           <div style={{ flex: 1 }}>
             <strong>Exportar a Rendición:</strong> Arrastra la plantilla Excel (.xlsm) al recuadro de abajo para cargarla. Se rellenará con los datos filtrados según el mapping.
           </div>
@@ -684,7 +685,9 @@ export default function ReportsPage() {
             
             {templateBuffer ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <div style={{ fontSize: '3rem' }}>📊</div>
+                <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)' }}>
+                  <Icon name="table" size={24} />
+                </div>
                 <div style={{ fontWeight: '600', color: 'var(--color-text-primary)', wordBreak: 'break-all' }}>
                   {templateName}
                 </div>
@@ -712,7 +715,9 @@ export default function ReportsPage() {
               </div>
             ) : (
               <>
-                <div style={{ fontSize: '3rem' }}>📥</div>
+                <div className="empty-state-icon">
+                  <Icon name="upload" size={24} />
+                </div>
                 <div>
                   <p className="font-semibold" style={{ margin: 0 }}>Arrastra la plantilla Excel aquí</p>
                   <p className="text-xs text-slate-400" style={{ margin: '4px 0 0 0' }}>O haz clic para seleccionar archivo (.xlsm, .xlsx)</p>
@@ -728,7 +733,7 @@ export default function ReportsPage() {
               disabled={!templateBuffer}
               style={{ flex: 1, minHeight: '44px' }}
             >
-              📊 Exportar a Rendición
+              <Icon name="table" /> Exportar a rendición
             </button>
           </div>
         </div>
@@ -736,8 +741,8 @@ export default function ReportsPage() {
         <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-4)' }}>
           <p className="text-sm text-muted mb-4">Exportaciones simples:</p>
           <div className="export-actions flex gap-3 flex-wrap" style={{ width: '100%' }}>
-            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportExcel}>📗 Excel Simple</button>
-            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportCSV}>📄 CSV</button>
+            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportExcel}><Icon name="download" /> Excel simple</button>
+            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportCSV}><Icon name="document" /> CSV</button>
           </div>
         </div>
       </div>
@@ -747,19 +752,19 @@ export default function ReportsPage() {
         <div className="modal-overlay" onClick={() => setShowMappingModal(false)}>
           <div className="modal mapping-modal-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">⚙️ Configurar Mapping de Columnas Excel</h3>
+              <h3 className="modal-title">Configurar mapping de columnas Excel</h3>
               <button 
                 className="modal-close" 
                 onClick={() => setShowMappingModal(false)}
                 style={{ width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                ✕
+                <Icon name="x" size={18} />
               </button>
             </div>
             
             <div className="modal-body space-y-4" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               <div className="alert alert-info text-xs">
-                <span>💡</span>
+                <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
                   Configura a qué letra de columna Excel (A, B, C...) corresponde cada campo en la hoja "base" de la plantilla. Se guarda de forma independiente para cada empresa.
                 </div>
@@ -826,7 +831,7 @@ export default function ReportsPage() {
 
             <div className="modal-actions">
               <button className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setShowMappingModal(false)}>Cancelar</button>
-              <button className="btn btn-primary" style={{ minHeight: '44px' }} onClick={handleSaveMapping}>💾 Guardar Mapping</button>
+              <button className="btn btn-primary" style={{ minHeight: '44px' }} onClick={handleSaveMapping}>Guardar mapping</button>
             </div>
           </div>
         </div>
@@ -838,14 +843,14 @@ export default function ReportsPage() {
           <div className="modal" style={{ maxWidth: '700px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
             <form onSubmit={handleSaveEditingInvoice}>
               <div className="modal-header">
-                <h3 className="modal-title">✏️ Corregir Comprobante</h3>
+                <h3 className="modal-title">Corregir comprobante</h3>
                 <button 
                   type="button" 
                   className="modal-close" 
                   onClick={() => setEditingInvoice(null)}
                   style={{ width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  ✕
+                  <Icon name="x" size={18} />
                 </button>
               </div>
 
@@ -983,7 +988,7 @@ export default function ReportsPage() {
 
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setEditingInvoice(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" style={{ minHeight: '44px' }}>💾 Guardar Cambios</button>
+                <button type="submit" className="btn btn-primary" style={{ minHeight: '44px' }}>Guardar cambios</button>
               </div>
             </form>
           </div>

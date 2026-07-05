@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { exportBackup, importBackup, validateBackupFile } from '../services/backupService';
 import { getCurrentTheme, toggleTheme } from '../utils/theme';
+import Icon from '../components/ui/Icon';
 
 export default function SettingsPage() {
   const [vlmProvider, setVlmProvider] = useState('gemini');
@@ -74,12 +75,12 @@ export default function SettingsPage() {
     try {
       const result = await exportBackup();
       if (result.success) {
-        alert(`✅ Backup creado: ${result.filename}\n📄 ${result.invoices} comprobantes\n🖼️ ${result.images} imágenes`);
+        alert(`Backup creado: ${result.filename}\n${result.invoices} comprobantes, ${result.images} imágenes`);
       } else {
-        alert('❌ Error: ' + result.error);
+        alert('Error: ' + result.error);
       }
     } catch (err) {
-      alert('❌ Error inesperado: ' + err.message);
+      alert('Error inesperado: ' + err.message);
     } finally {
       setExporting(false);
     }
@@ -95,13 +96,13 @@ export default function SettingsPage() {
     try {
       const validation = await validateBackupFile(file);
       if (!validation.valid) {
-        alert('❌ Archivo inválido: ' + (validation.error || 'No contiene invoices.json'));
+        alert('Archivo inválido: ' + (validation.error || 'No contiene invoices.json'));
         return;
       }
 
       if (!window.confirm(`¿Importar ${validation.invoiceCount} comprobantes? ` +
         `Esto ${validation.hasMetadata ? 'incluye settings e imágenes' : 'solo importa comprobantes'}.` +
-        `\n\n⚠️ Se hará upsert (actualiza si existe, crea si no).`)) {
+        `\n\nSe hará upsert (actualiza si existe, crea si no).`)) {
         return;
       }
 
@@ -109,17 +110,17 @@ export default function SettingsPage() {
       setImportResult(result);
 
       if (result.success) {
-        alert(`✅ Importación completada:\n` +
-          `📄 ${result.invoices} comprobantes\n` +
-          `🖼️ ${result.images} imágenes\n` +
-          `⚙️ ${result.settings} settings\n` +
-          (result.errors.length ? `\n⚠️ ${result.errors.length} errores (ver consola)` : ''));
+        alert(`Importación completada:\n` +
+          `${result.invoices} comprobantes\n` +
+          `${result.images} imágenes\n` +
+          `${result.settings} settings` +
+          (result.errors.length ? `\n${result.errors.length} errores (ver consola)` : ''));
         window.location.reload();
       } else {
-        alert('❌ Error: ' + result.error);
+        alert('Error: ' + result.error);
       }
     } catch (err) {
-      alert('❌ Error inesperado: ' + err.message);
+      alert('Error inesperado: ' + err.message);
     } finally {
       setImporting(false);
       setFileInputKey(k => k + 1);
@@ -175,7 +176,7 @@ export default function SettingsPage() {
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h3 className="card-title" style={{ marginBottom: 4 }}>🎨 Apariencia</h3>
+            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="swatch" />Apariencia</h3>
             <p className="text-sm text-muted" style={{ margin: 0 }}>
               Tema actual: {theme === 'light' ? 'Claro' : 'Oscuro'}
             </p>
@@ -185,14 +186,15 @@ export default function SettingsPage() {
             style={{ minHeight: '44px' }}
             onClick={() => setTheme(toggleTheme())}
           >
-            {theme === 'light' ? '🌙 Cambiar a oscuro' : '☀️ Cambiar a claro'}
+            <Icon name={theme === 'light' ? 'moon' : 'sun'} />
+            {theme === 'light' ? 'Cambiar a oscuro' : 'Cambiar a claro'}
           </button>
         </div>
       </div>
 
       {/* Extracción con IA: incluida, sin configuración */}
       <div className="card">
-        <h3 className="card-title" style={{ marginBottom: 8 }}>🤖 Extracción con IA</h3>
+        <h3 className="card-title" style={{ marginBottom: 8 }}><Icon name="sparkles" />Extracción con IA</h3>
         <p className="text-sm text-muted" style={{ margin: 0 }}>
           La extracción automática de datos desde las fotos de tus boletas está incluida
           en tu cuenta. No necesitas configurar nada.
@@ -214,10 +216,8 @@ export default function SettingsPage() {
             userSelect: 'none'
           }}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>🧩 Opciones avanzadas</h3>
-          <span style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>
-            {openAccordions.advanced ? '▲' : '▼'}
-          </span>
+          <h3 className="card-title" style={{ margin: 0 }}><Icon name="key" />Opciones avanzadas</h3>
+          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.advanced ? 'open' : ''}`} />
         </div>
 
         {openAccordions.advanced && (
@@ -254,14 +254,14 @@ export default function SettingsPage() {
                     title={showKey ? 'Ocultar' : 'Mostrar'}
                     style={{ minHeight: '44px', width: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {showKey ? '🙈' : '👁️'}
+                    <Icon name={showKey ? 'eye-off' : 'eye'} size={18} />
                   </button>
                 </div>
               </div>
 
               {vlmProvider === 'gemini' && (
                 <div className="alert alert-info">
-                  <span>💡</span>
+                  <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
                     Obtén tu API Key gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Modelo usado: Gemini 2.5 Flash.
                   </div>
@@ -270,7 +270,7 @@ export default function SettingsPage() {
 
               {vlmProvider === 'openai' && (
                 <div className="alert alert-info">
-                  <span>💡</span>
+                  <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
                     Obtén tu API Key en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform</a>. Modelo usado: GPT-4o-mini.
                   </div>
@@ -279,10 +279,12 @@ export default function SettingsPage() {
 
               <div className="flex gap-3 items-center">
                 <button className="btn btn-primary" onClick={handleSave} disabled={isSaving} style={{ minHeight: '44px' }}>
-                  {isSaving ? <><div className="spinner" /> Guardando...</> : '💾 Guardar Configuración'}
+                  {isSaving ? <><div className="spinner" /> Guardando...</> : 'Guardar configuración'}
                 </button>
                 {saved && (
-                  <span className="text-sm" style={{ color: 'var(--color-success)' }}>✅ Guardado correctamente</span>
+                  <span className="text-sm flex items-center gap-2" style={{ color: 'var(--color-success)' }}>
+                    <Icon name="check" size={14} /> Guardado correctamente
+                  </span>
                 )}
               </div>
             </div>
@@ -305,10 +307,8 @@ export default function SettingsPage() {
             userSelect: 'none'
           }}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>💾 Respaldo y Restauración</h3>
-          <span style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>
-            {openAccordions.backup ? '▲' : '▼'}
-          </span>
+          <h3 className="card-title" style={{ margin: 0 }}><Icon name="archive" />Respaldo y restauración</h3>
+          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.backup ? 'open' : ''}`} />
         </div>
 
         {openAccordions.backup && (
@@ -319,7 +319,7 @@ export default function SettingsPage() {
 
             <div className="settings-actions flex flex-wrap gap-3 mb-4">
               <button className="btn btn-primary" onClick={handleExport} disabled={exporting} style={{ minHeight: '44px' }}>
-                {exporting ? <><div className="spinner" /> Generando ZIP...</> : '📥 Exportar Backup Completo'}
+                {exporting ? <><div className="spinner" /> Generando ZIP...</> : <><Icon name="download" /> Exportar backup</>}
               </button>
 
               <label className="btn btn-secondary cursor-pointer" style={{ display: 'flex', alignItems: 'center', minHeight: '44px' }}>
@@ -330,15 +330,15 @@ export default function SettingsPage() {
                   onChange={handleFileSelect}
                   style={{ display: 'none' }}
                 />
-                {importing ? <><div className="spinner" /> Importando...</> : '📤 Restaurar desde ZIP'}
+                {importing ? <><div className="spinner" /> Importando...</> : <><Icon name="upload" /> Restaurar desde ZIP</>}
               </label>
             </div>
 
             {importResult && (
               <div className="alert alert-info" style={{ fontSize: '0.9rem' }}>
                 <strong>Última importación:</strong><br/>
-                📄 {importResult.invoices} comprobantes · 🖼️ {importResult.images} imágenes · ⚙️ {importResult.settings} settings
-                {importResult.errors.length > 0 && <> <br/> {'⚠️ '} {importResult.errors.length} errores (ver consola del navegador) </>}
+                {importResult.invoices} comprobantes · {importResult.images} imágenes · {importResult.settings} settings
+                {importResult.errors.length > 0 && <> <br/> {importResult.errors.length} errores (ver consola del navegador) </>}
               </div>
             )}
 
@@ -370,10 +370,8 @@ export default function SettingsPage() {
             userSelect: 'none'
           }}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>📦 Datos</h3>
-          <span style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>
-            {openAccordions.data ? '▲' : '▼'}
-          </span>
+          <h3 className="card-title" style={{ margin: 0 }}><Icon name="database" />Datos</h3>
+          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.data ? 'open' : ''}`} />
         </div>
 
         {openAccordions.data && (
@@ -382,7 +380,7 @@ export default function SettingsPage() {
               Los datos se guardan en tu navegador (IndexedDB) y sincronizan con Supabase si está configurado.
             </p>
             <button className="btn btn-danger w-full text-center" onClick={handleClearData} style={{ minHeight: '44px' }}>
-              🗑️ Eliminar todos los comprobantes
+              <Icon name="trash" /> Eliminar todos los comprobantes
             </button>
           </div>
         )}
@@ -403,10 +401,8 @@ export default function SettingsPage() {
             userSelect: 'none'
           }}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>ℹ️ Acerca de</h3>
-          <span style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>
-            {openAccordions.about ? '▲' : '▼'}
-          </span>
+          <h3 className="card-title" style={{ margin: 0 }}><Icon name="info" />Acerca de</h3>
+          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.about ? 'open' : ''}`} />
         </div>
 
         {openAccordions.about && (

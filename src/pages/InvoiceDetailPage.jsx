@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { formatCurrency, formatDate, formatDateTime, getStatusLabel, getStatusVariant } from '../utils/formatters';
+import Icon from '../components/ui/Icon';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
@@ -91,7 +92,7 @@ export default function InvoiceDetailPage() {
             <option value="reviewed">Revisado</option>
             <option value="approved">Aprobado</option>
           </select>
-          <button className="btn btn-danger btn-sm" onClick={() => setShowDeleteModal(true)}>🗑️ Eliminar</button>
+          <button className="btn btn-danger btn-sm" onClick={() => setShowDeleteModal(true)}><Icon name="trash" /> Eliminar</button>
         </div>
       </div>
 
@@ -112,7 +113,9 @@ export default function InvoiceDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-              <div style={{ fontSize: 48, opacity: 0.3 }}>🖼️</div>
+              <div className="empty-state-icon">
+                <Icon name="photo" size={24} />
+              </div>
               <p className="text-muted mt-4">Sin imagen adjunta</p>
             </div>
           )}

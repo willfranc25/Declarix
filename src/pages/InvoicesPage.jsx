@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
+import Icon from '../components/ui/Icon';
 
 // Subcomponent for each invoice row, supporting swipe actions on mobile
 function InvoiceRow({ 
@@ -180,17 +181,17 @@ function InvoiceRow({
                 : 'var(--color-warning)',
           }}
         >
-          <option value="pending" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>⚠️ Pendiente</option>
-          <option value="reviewed" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>ℹ️ Revisado</option>
-          <option value="declared" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>✅ Declarado</option>
+          <option value="pending" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Pendiente</option>
+          <option value="reviewed" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Revisado</option>
+          <option value="declared" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Declarado</option>
         </select>
       </td>
 
       {/* Acciones */}
       <td data-label="Acciones" className="table-mobile-hidden text-center">
         <div className="flex items-center justify-center gap-1">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)} title="Ver">👁️</button>
-          <button className="btn btn-ghost btn-sm text-red-400" onClick={() => setDeleteId(inv.id)} title="Eliminar">🗑️</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)} title="Ver"><Icon name="eye" /></button>
+          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => setDeleteId(inv.id)} title="Eliminar"><Icon name="trash" /></button>
         </div>
       </td>
     </>
@@ -241,7 +242,7 @@ function InvoiceRow({
             }}
             title="Ver"
           >
-            👁️
+            <Icon name="eye" size={18} />
           </button>
           <button 
             className="swipe-action-btn delete" 
@@ -252,7 +253,7 @@ function InvoiceRow({
             }}
             title="Eliminar"
           >
-            🗑️
+            <Icon name="trash" size={18} />
           </button>
         </div>
       </tr>
@@ -471,7 +472,7 @@ export default function InvoicesPage() {
       {error && (
         <div className="alert alert-danger flex justify-between items-center">
           <span>{error}</span>
-          <button className="btn btn-ghost btn-sm" onClick={clearError}>✕</button>
+          <button className="btn btn-ghost btn-sm" onClick={clearError}><Icon name="x" size={16} /></button>
         </div>
       )}
 
@@ -493,7 +494,7 @@ export default function InvoicesPage() {
           }} 
           onClick={() => handlePresetFilter('this_month')}
         >
-          📅 Este Mes
+          Este mes
         </button>
         <button 
           className="btn btn-secondary btn-sm" 
@@ -510,7 +511,7 @@ export default function InvoicesPage() {
           }} 
           onClick={() => handlePresetFilter('prev_month')}
         >
-          📅 Mes Anterior
+          Mes anterior
         </button>
         <button 
           className="btn btn-secondary btn-sm" 
@@ -527,7 +528,7 @@ export default function InvoicesPage() {
           }} 
           onClick={() => handlePresetFilter('this_quarter')}
         >
-          📊 Trimestre Actual
+          Trimestre actual
         </button>
         <button 
           className="btn btn-secondary btn-sm" 
@@ -544,7 +545,7 @@ export default function InvoicesPage() {
           }} 
           onClick={() => handlePresetFilter('tax_year')}
         >
-          💼 Año Tributario ({new Date().getFullYear()})
+          Año tributario ({new Date().getFullYear()})
         </button>
       </div>
 
@@ -583,9 +584,9 @@ export default function InvoicesPage() {
             <label className="form-label">Estado Trib.</label>
             <select className="form-select" value={filters.taxStatus || ''} onChange={(e) => setFilters({ taxStatus: e.target.value || undefined })}>
               <option value="">Todos</option>
-              <option value="pending">⚠️ Pendiente</option>
-              <option value="reviewed">ℹ️ Revisado</option>
-              <option value="declared">✅ Declarado</option>
+              <option value="pending">Pendiente</option>
+              <option value="reviewed">Revisado</option>
+              <option value="declared">Declarado</option>
             </select>
           </div>
           <div className="form-group">
@@ -620,7 +621,7 @@ export default function InvoicesPage() {
       ) : filteredInvoices.length === 0 ? (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">📭</div>
+            <div className="empty-state-icon"><Icon name="document" size={24} /></div>
             <h3 className="empty-state-title">Sin comprobantes</h3>
             <p className="empty-state-text">No se encontraron comprobantes con los filtros aplicados.</p>
           </div>
@@ -676,7 +677,7 @@ export default function InvoicesPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Confirmar eliminación</h3>
-              <button className="modal-close" onClick={() => setDeleteId(null)} disabled={isDeleting}>✕</button>
+              <button className="modal-close" onClick={() => setDeleteId(null)} disabled={isDeleting}><Icon name="x" size={18} /></button>
             </div>
             <div className="modal-body">
               <p style={{ color: 'var(--color-text-secondary)' }}>¿Estás seguro de que deseas eliminar este comprobante? Esta acción no se puede deshacer.</p>

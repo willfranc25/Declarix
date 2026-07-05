@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { validateRut, formatRut } from '../utils/rutValidator';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
+import Icon from '../components/ui/Icon';
 
 const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
@@ -334,7 +335,9 @@ export default function BatchReviewPage() {
     return (
       <div className="space-y-6 text-center py-12 animate-fade-in">
         <div className="card max-w-md mx-auto p-8 space-y-6">
-          <div style={{ fontSize: '4rem' }}>🗃️</div>
+          <div className="empty-state-icon">
+            <Icon name="archive" size={24} />
+          </div>
           <h2 className="text-xl font-bold">No hay comprobantes cargados en lote</h2>
           <p className="text-slate-400 text-sm">
             Para revisar comprobantes en lote, primero debes subir imágenes en la pantalla de Carga Masiva.
@@ -424,7 +427,7 @@ export default function BatchReviewPage() {
             onClick={handleSelectAll}
             style={{ minHeight: '44px' }}
           >
-            {selectedIds.length === rows.length ? '⬜ Deseleccionar Todo' : '☑️ Seleccionar Todo'}
+            {selectedIds.length === rows.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </button>
           
           <select 
@@ -460,7 +463,7 @@ export default function BatchReviewPage() {
             disabled={selectedIds.length === 0 || isSaving}
             style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', minHeight: '44px' }}
           >
-            🗑️ Descartar ({selectedIds.length})
+            <Icon name="trash" /> Descartar ({selectedIds.length})
           </button>
           <button 
             className="btn btn-secondary" 
@@ -468,7 +471,7 @@ export default function BatchReviewPage() {
             disabled={selectedIds.length === 0 || isSaving}
             style={{ minHeight: '44px' }}
           >
-            💾 Guardar Seleccionados ({selectedIds.length})
+            Guardar seleccionados ({selectedIds.length})
           </button>
           <button 
             className="btn btn-primary" 
@@ -476,7 +479,7 @@ export default function BatchReviewPage() {
             disabled={isSaving}
             style={{ minHeight: '44px' }}
           >
-            💾 Guardar Todos ({rows.length})
+            Guardar todos ({rows.length})
           </button>
         </div>
       </div>
@@ -537,7 +540,7 @@ export default function BatchReviewPage() {
                           title={Object.values(errors).join(', ')} 
                           style={{ color: 'var(--color-danger)', cursor: 'help' }}
                         >
-                          ⚠️
+                          <Icon name="alert" size={14} />
                         </span>
                       ) : (
                         <span style={{ color: 'var(--color-success)' }}>✓</span>
@@ -624,7 +627,7 @@ export default function BatchReviewPage() {
         {/* Visor de Documento Lateral */}
         <div className="card document-viewer-card p-4 space-y-4" style={{ position: 'sticky', top: '20px' }}>
           <h3 className="font-semibold border-b border-slate-800 pb-2 flex justify-between items-center text-sm">
-            <span>🖼️ Documento Activo</span>
+            <span><Icon name="photo" />Documento activo</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
               {rows.findIndex(r => r.id === activeRowId) + 1} de {rows.length}
             </span>
@@ -662,7 +665,7 @@ export default function BatchReviewPage() {
                 className="btn btn-secondary w-full text-center text-xs"
                 style={{ padding: '6px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                🔍 Abrir imagen en pestaña nueva
+                <Icon name="search" size={14} style={{ verticalAlign: -2, marginRight: 4 }} />Abrir imagen en pestaña nueva
               </a>
             </div>
           ) : (
@@ -675,7 +678,7 @@ export default function BatchReviewPage() {
 
       {/* Manual de Navegación */}
       <div className="alert alert-info text-xs">
-        <strong>Manual de Teclado:</strong> Usa <strong>Tab / Shift+Tab</strong> para moverte horizontalmente, y <strong>↑ / ↓</strong> o la tecla <strong>Enter</strong> para moverte verticalmente. Presiona <strong>Escape</strong> para cancelar tu edición y restaurar el valor anterior. Si hay errores (como un RUT incorrecto), se marcará con una advertencia (⚠️).
+        <strong>Manual de Teclado:</strong> Usa <strong>Tab / Shift+Tab</strong> para moverte horizontalmente, y <strong>↑ / ↓</strong> o la tecla <strong>Enter</strong> para moverte verticalmente. Presiona <strong>Escape</strong> para cancelar tu edición y restaurar el valor anterior. Si hay errores (como un RUT incorrecto), se marcará con una advertencia.
       </div>
     </div>
   );

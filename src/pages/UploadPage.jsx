@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { extractInvoiceData } from '../services/vlmService';
 import { compressImage } from '../utils/imageCompression';
+import Icon from '../components/ui/Icon';
 import { cleanRut, formatRut, validateRut } from '../utils/rutValidator';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -288,10 +289,10 @@ export default function UploadPage() {
       {globalError && (
         <div className="alert alert-danger flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <span>⚠️</span>
+            <Icon name="alert" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
             <div>{globalError}</div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => setGlobalError(null)}>✕</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setGlobalError(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
 
@@ -306,7 +307,9 @@ export default function UploadPage() {
           onClick={() => fileInputRef.current?.click()}
           style={{ padding: '40px 20px', cursor: 'pointer' }}
         >
-          <div className="drop-zone-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>📥</div>
+          <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)', marginBottom: '1rem' }}>
+            <Icon name="camera" size={24} />
+          </div>
           <p className="drop-zone-text">
             <strong>Haz clic para seleccionar</strong> o arrastra múltiples imágenes aquí
           </p>
@@ -330,7 +333,7 @@ export default function UploadPage() {
         <div className="card p-6 space-y-4" style={{ borderLeft: '4px solid var(--color-accent)' }}>
           <div className="flex justify-between items-center flex-wrap gap-2">
             <h3 className="font-semibold text-lg flex items-center gap-2">
-              📊 Progreso de Procesamiento
+              Progreso de procesamiento
               {isProcessing && <span className="spinner spinner-sm" />}
             </h3>
             <span className="text-sm font-medium bg-slate-800 px-3 py-1 rounded-full text-slate-300">
@@ -357,7 +360,7 @@ export default function UploadPage() {
                 onClick={handleReviewAll} 
                 disabled={successfulFiles === 0}
               >
-                📝 Revisar todos ({successfulFiles} listos)
+                <Icon name="pencil" /> Revisar todos ({successfulFiles} listos)
               </button>
               <button 
                 className="btn btn-secondary" 
@@ -368,7 +371,7 @@ export default function UploadPage() {
             </div>
             {isProcessing && (
               <span className="text-sm text-amber-500 flex items-center gap-1 animate-pulse">
-                ⚙️ Extrayendo datos en segundo plano...
+                Extrayendo datos en segundo plano...
               </span>
             )}
           </div>
@@ -391,7 +394,9 @@ export default function UploadPage() {
                   {item.tempPreviewUrl ? (
                     <img src={item.tempPreviewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '1.5rem' }}>📄</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>
+                      <Icon name="document" size={22} />
+                    </div>
                   )}
                 </div>
 
@@ -423,7 +428,7 @@ export default function UploadPage() {
                         <div className="flex gap-2 items-center">
                           {item.isDuplicate && (
                             <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
-                              ⚠️ Posible Duplicado
+                              Posible duplicado
                             </span>
                           )}
                           <span className="badge" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
@@ -454,7 +459,7 @@ export default function UploadPage() {
                   {/* Mostrar errores del archivo */}
                   {item.status === 'error' && (
                     <p className="text-xs text-red-400 mt-1">
-                      ⚠️ {item.error}
+                      <Icon name="alert" size={14} style={{ verticalAlign: -2, marginRight: 4 }} />{item.error}
                     </p>
                   )}
 
@@ -493,7 +498,7 @@ export default function UploadPage() {
                       justifyContent: 'center'
                     }}
                   >
-                    ✕
+                    <Icon name="x" size={16} />
                   </button>
                 </div>
               </div>
@@ -504,7 +509,7 @@ export default function UploadPage() {
 
       {/* Instructions */}
       <div className="alert alert-info">
-        <span>💡</span>
+        <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
         <div>
           <strong>Consejo para carga masiva:</strong> Puedes arrastrar y soltar varias fotos de boletas al mismo tiempo. Se irán extrayendo secuencialmente para no saturar tu cuota de API. Cuando terminen, haz clic en <strong>Revisar todos</strong> para corregir e importarlas masivamente.
         </div>
@@ -526,22 +531,22 @@ export default function UploadPage() {
           let bg = 'var(--color-bg-elevated)';
           let border = '1px solid var(--color-border)';
           let color = 'var(--color-text-primary)';
-          let icon = 'ℹ️';
+          let iconName = 'info';
           if (toast.type === 'success') {
-            bg = 'rgba(16, 185, 129, 0.15)';
-            border = '1px solid rgba(16, 185, 129, 0.3)';
-            color = '#34d399';
-            icon = '✅';
+            bg = 'var(--color-success-bg)';
+            border = '1px solid var(--color-success-border)';
+            color = 'var(--color-success)';
+            iconName = 'check-circle';
           } else if (toast.type === 'error') {
-            bg = 'rgba(239, 68, 68, 0.15)';
-            border = '1px solid rgba(239, 68, 68, 0.3)';
-            color = '#f87171';
-            icon = '❌';
+            bg = 'var(--color-danger-bg)';
+            border = '1px solid var(--color-danger-border)';
+            color = 'var(--color-danger)';
+            iconName = 'alert';
           } else if (toast.type === 'warning') {
-            bg = 'rgba(245, 158, 11, 0.15)';
-            border = '1px solid rgba(245, 158, 11, 0.3)';
-            color = '#fbbf24';
-            icon = '⚠️';
+            bg = 'var(--color-warning-bg)';
+            border = '1px solid var(--color-warning-border)';
+            color = 'var(--color-warning)';
+            iconName = 'alert';
           }
           return (
             <div
@@ -562,7 +567,7 @@ export default function UploadPage() {
                 fontWeight: 500,
               }}
             >
-              <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{icon}</span>
+              <Icon name={iconName} size={18} style={{ flexShrink: 0 }} />
               <span style={{ flex: 1, color: 'var(--color-text-primary)' }}>{toast.message}</span>
               <button
                 onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
@@ -581,7 +586,7 @@ export default function UploadPage() {
                   minWidth: '44px',
                 }}
               >
-                ✕
+                <Icon name="x" size={16} />
               </button>
             </div>
           );

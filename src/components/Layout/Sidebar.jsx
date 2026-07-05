@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCurrentTheme, toggleTheme } from '../../utils/theme';
+import Icon from '../ui/Icon';
 
 const navItems = [
   {
@@ -104,7 +105,9 @@ export default function Sidebar() {
       <aside className="app-sidebar" role="navigation" aria-label="Navegación principal">
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <div className="sidebar-logo-icon" aria-hidden="true">📋</div>
+            <div className="sidebar-logo-icon" aria-hidden="true">
+              <Icon name="document" size={20} />
+            </div>
             <div className="sidebar-logo-text">
               <h1>Declarix</h1>
               <p>Gestión de comprobantes</p>

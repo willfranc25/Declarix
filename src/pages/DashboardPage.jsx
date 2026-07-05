@@ -4,6 +4,7 @@ import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate, getMonthName, getStatusLabel, getStatusVariant } from '../utils/formatters';
 import { getInvoicesForMonth, generateCategorySummary, buildYearMonths } from '../utils/calculations';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import Icon from '../components/ui/Icon';
 
 const PIE_COLORS = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1'];
 
@@ -309,9 +310,8 @@ export default function DashboardPage() {
             aria-label="Seleccionar fecha"
             aria-expanded={showPicker}
           >
-            <span>📅</span>
             <span>{getMonthName(activeMonth)} {activeYear}</span>
-            <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>▼</span>
+            <Icon name="chevron-down" size={14} style={{ opacity: 0.7 }} />
           </button>
 
           {showPicker && (
@@ -326,7 +326,7 @@ export default function DashboardPage() {
                     disabled={pickerYear <= minYear}
                     aria-label="Año anterior"
                   >
-                    ◀
+                    <Icon name="chevron-left" size={16} />
                   </button>
                   <span className="datepicker-year-display">{pickerYear}</span>
                   <button
@@ -336,7 +336,7 @@ export default function DashboardPage() {
                     disabled={pickerYear >= currentYear}
                     aria-label="Año siguiente"
                   >
-                    ▶
+                    <Icon name="chevron-right" size={16} />
                   </button>
                 </div>
                 <div className="datepicker-months-grid">
@@ -368,13 +368,24 @@ export default function DashboardPage() {
       </div>
 
       {invoices.length === 0 && (
-        <div className="alert alert-info">📊 No hay comprobantes aún. Sube tu primera boleta para ver tus datos.</div>
+        <div className="card empty-state">
+          <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)' }}>
+            <Icon name="camera" size={24} />
+          </div>
+          <div className="empty-state-title">Aún no hay comprobantes</div>
+          <p className="empty-state-text">
+            Sube la foto de tu primera boleta y la IA extraerá los datos por ti.
+          </p>
+          <button className="btn btn-primary mt-4" onClick={() => navigate('/upload')}>
+            <Icon name="upload" /> Subir primera boleta
+          </button>
+        </div>
       )}
 
       {/* Metric Cards */}
       <div className="grid-metrics">
         <div className="metric-card">
-          <div className="metric-icon blue">💰</div>
+          <div className="metric-icon blue"><Icon name="cash" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total Gastado</div>
             <div className="metric-value">{formatCurrency(metrics.total)}</div>
@@ -382,7 +393,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon cyan">📊</div>
+          <div className="metric-icon cyan"><Icon name="chart" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total Neto</div>
             <div className="metric-value">{formatCurrency(metrics.neto)}</div>
@@ -390,7 +401,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon yellow">🧾</div>
+          <div className="metric-icon yellow"><Icon name="receipt" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total IVA</div>
             <div className="metric-value">{formatCurrency(metrics.iva)}</div>
@@ -398,7 +409,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon green">📄</div>
+          <div className="metric-icon green"><Icon name="document" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Comprobantes</div>
             <div className="metric-value">{metrics.count}</div>
@@ -505,7 +516,7 @@ export default function DashboardPage() {
               </defs>
             </BarChart>
           </ResponsiveContainer>
-          <p className="text-xs text-muted text-center mt-2">💡 Haz clic en una barra para ver ese mes</p>
+          <p className="text-xs text-muted text-center mt-2">Haz clic en una barra para ver ese mes</p>
         </div>
       </div>
 
