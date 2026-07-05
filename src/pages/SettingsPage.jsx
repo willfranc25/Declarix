@@ -3,6 +3,8 @@ import { getStorageProvider } from '../services/storage/StorageProvider';
 import { exportBackup, importBackup, validateBackupFile } from '../services/backupService';
 import { getCurrentTheme, toggleTheme } from '../utils/theme';
 import Icon from '../components/ui/Icon';
+import { ConfirmDialog } from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 
 export default function SettingsPage() {
   const [vlmProvider, setVlmProvider] = useState('gemini');
@@ -18,6 +20,9 @@ export default function SettingsPage() {
   const [importResult, setImportResult] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [theme, setTheme] = useState(getCurrentTheme());
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [pendingImport, setPendingImport] = useState(null);
+  const { addToast } = useToast();
 
   // Accordion states
   const [openAccordions, setOpenAccordions] = useState({
@@ -56,18 +61,23 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      alert('Error al guardar: ' + err.message);
+      addToast('Error al guardar: ' + err.message, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleClearData = async () => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar TODOS los comprobantes? Esta acción no se puede deshacer.')) return;
-    const storage = getStorageProvider();
-    await storage.clearAll();
-    alert('Datos eliminados. Recarga la página.');
-    window.location.reload();
+  const handleConfirmClear = async () => {
+    try {
+      const storage = getStorageProvider();
+      await storage.clearAll();
+      setConfirmClear(false);
+      addToast('Todos los comprobantes fueron eliminados.', 'success');
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setConfirmClear(false);
+      addToast('Error al eliminar: ' + err.message, 'error');
+    }
   };
 
   const handleExport = async () => {
@@ -75,12 +85,12 @@ export default function SettingsPage() {
     try {
       const result = await exportBackup();
       if (result.success) {
-        alert(`Backup creado: ${result.filename}\n${result.invoices} comprobantes, ${result.images} imágenes`);
+        addToast(`Backup creado: ${result.filename} (${result.invoices} comprobantes, ${result.images} imágenes)`, 'success');
       } else {
-        alert('Error: ' + result.error);
+        addToast('Error al crear el backup: ' + result.error, 'error');
       }
     } catch (err) {
-      alert('Error inesperado: ' + err.message);
+      addToast('Error inesperado: ' + err.message, 'error');
     } finally {
       setExporting(false);
     }
@@ -90,39 +100,43 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setImporting(true);
     setImportResult(null);
-
     try {
       const validation = await validateBackupFile(file);
       if (!validation.valid) {
-        alert('Archivo inválido: ' + (validation.error || 'No contiene invoices.json'));
+        addToast('Archivo inválido: ' + (validation.error || 'No contiene invoices.json'), 'error');
+        setFileInputKey(k => k + 1);
         return;
       }
+      setPendingImport({ file, validation });
+    } catch (err) {
+      addToast('Error inesperado: ' + err.message, 'error');
+      setFileInputKey(k => k + 1);
+    }
+  };
 
-      if (!window.confirm(`¿Importar ${validation.invoiceCount} comprobantes? ` +
-        `Esto ${validation.hasMetadata ? 'incluye settings e imágenes' : 'solo importa comprobantes'}.` +
-        `\n\nSe hará upsert (actualiza si existe, crea si no).`)) {
-        return;
-      }
-
-      const result = await importBackup(file, { overwrite: true, importImages: true, importSettings: true });
+  const handleConfirmImport = async () => {
+    if (!pendingImport) return;
+    setImporting(true);
+    try {
+      const result = await importBackup(pendingImport.file, { overwrite: true, importImages: true, importSettings: true });
       setImportResult(result);
 
       if (result.success) {
-        alert(`Importación completada:\n` +
-          `${result.invoices} comprobantes\n` +
-          `${result.images} imágenes\n` +
-          `${result.settings} settings` +
-          (result.errors.length ? `\n${result.errors.length} errores (ver consola)` : ''));
-        window.location.reload();
+        addToast(
+          `Importación completada: ${result.invoices} comprobantes, ${result.images} imágenes` +
+          (result.errors.length ? ` (${result.errors.length} errores, ver consola)` : ''),
+          result.errors.length ? 'warning' : 'success'
+        );
+        setTimeout(() => window.location.reload(), 1200);
       } else {
-        alert('Error: ' + result.error);
+        addToast('Error al importar: ' + result.error, 'error');
       }
     } catch (err) {
-      alert('Error inesperado: ' + err.message);
+      addToast('Error inesperado: ' + err.message, 'error');
     } finally {
       setImporting(false);
+      setPendingImport(null);
       setFileInputKey(k => k + 1);
     }
   };
@@ -379,7 +393,7 @@ export default function SettingsPage() {
             <p className="text-sm text-muted">
               Los datos se guardan en tu navegador (IndexedDB) y sincronizan con Supabase si está configurado.
             </p>
-            <button className="btn btn-danger w-full text-center" onClick={handleClearData} style={{ minHeight: '44px' }}>
+            <button className="btn btn-danger w-full text-center" onClick={() => setConfirmClear(true)} style={{ minHeight: '44px' }}>
               <Icon name="trash" /> Eliminar todos los comprobantes
             </button>
           </div>
@@ -428,6 +442,35 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Eliminar todos los comprobantes"
+          message={'Se eliminarán TODOS los comprobantes y sus imágenes.\nEsta acción no se puede deshacer.'}
+          confirmLabel="Eliminar todo"
+          danger
+          onConfirm={handleConfirmClear}
+          onCancel={() => setConfirmClear(false)}
+        />
+      )}
+
+      {pendingImport && (
+        <ConfirmDialog
+          title="Restaurar backup"
+          message={
+            `¿Importar ${pendingImport.validation.invoiceCount} comprobantes? ` +
+            `Esto ${pendingImport.validation.hasMetadata ? 'incluye settings e imágenes' : 'solo importa comprobantes'}.\n\n` +
+            'Se hará upsert: actualiza si existe, crea si no.'
+          }
+          confirmLabel="Importar"
+          loading={importing}
+          onConfirm={handleConfirmImport}
+          onCancel={() => {
+            setPendingImport(null);
+            setFileInputKey(k => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

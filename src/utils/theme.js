@@ -31,9 +31,9 @@ export function applyTheme(theme) {
   }
 }
 
-/** Aplica el tema guardado (default: oscuro). Llamar una vez al arrancar. */
+/** Aplica el tema guardado (default: claro). Llamar una vez al arrancar. */
 export function initTheme() {
-  applyTheme(getStoredTheme() || 'dark');
+  applyTheme(getStoredTheme() || 'light');
 }
 
 /** Alterna el tema, lo persiste y devuelve el tema resultante. */

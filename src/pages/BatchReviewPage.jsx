@@ -4,6 +4,8 @@ import useInvoiceStore from '../store/invoiceStore';
 import { validateRut, formatRut } from '../utils/rutValidator';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
+import { ConfirmDialog } from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 
 const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
@@ -33,6 +35,9 @@ export default function BatchReviewPage() {
   const [activeRowId, setActiveRowId] = useState(null);
   const [previewImageUrl, setPreviewImageUrl] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Confirmación pendiente: 'save-selected' | 'save-all' | 'discard' | null
+  const [confirmAction, setConfirmAction] = useState(null);
+  const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
   const editingCellRef = useRef(null);
@@ -221,11 +226,13 @@ export default function BatchReviewPage() {
     // Verificar si hay errores en las filas seleccionadas
     const hasErrors = selectedRows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
-      if (!window.confirm('Algunos de los registros seleccionados tienen errores. ¿Deseas guardarlos de todas formas?')) {
-        return;
-      }
+      setConfirmAction('save-selected');
+      return;
     }
+    await performSaveSelected();
+  };
 
+  const performSaveSelected = async () => {
     setIsSaving(true);
     let successCount = 0;
     const remaining = [];
@@ -259,7 +266,7 @@ export default function BatchReviewPage() {
     setBatchInvoices(remaining);
     setSelectedIds([]);
     setIsSaving(false);
-    alert(`Se guardaron ${successCount} comprobantes.`);
+    addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
 
     if (remaining.length === 0) {
       navigate('/invoices');
@@ -274,11 +281,13 @@ export default function BatchReviewPage() {
     // Verificar si hay errores
     const hasErrors = rows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
-      if (!window.confirm('Algunos registros en la lista contienen errores. ¿Deseas guardarlos de todas formas?')) {
-        return;
-      }
+      setConfirmAction('save-all');
+      return;
     }
+    await performSaveAll();
+  };
 
+  const performSaveAll = async () => {
     setIsSaving(true);
     let successCount = 0;
     const remaining = [];
@@ -307,7 +316,7 @@ export default function BatchReviewPage() {
     setBatchInvoices(remaining);
     setSelectedIds([]);
     setIsSaving(false);
-    alert(`Se guardaron ${successCount} comprobantes.`);
+    addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
 
     if (remaining.length === 0) {
       navigate('/invoices');
@@ -317,17 +326,20 @@ export default function BatchReviewPage() {
   // Descartar seleccionados (Bulk Delete)
   const handleDiscardSelected = () => {
     if (selectedIds.length === 0) return;
-    if (window.confirm(`¿Estás seguro de que deseas descartar las ${selectedIds.length} filas seleccionadas?`)) {
-      const remaining = rows.filter(r => !selectedIds.includes(r.id));
-      setRows(remaining);
-      setBatchInvoices(remaining);
-      setSelectedIds([]);
-      if (remaining.length > 0) {
-        setActiveRowId(remaining[0].id);
-      } else {
-        setActiveRowId(null);
-      }
+    setConfirmAction('discard');
+  };
+
+  const performDiscard = () => {
+    const remaining = rows.filter(r => !selectedIds.includes(r.id));
+    setRows(remaining);
+    setBatchInvoices(remaining);
+    setSelectedIds([]);
+    if (remaining.length > 0) {
+      setActiveRowId(remaining[0].id);
+    } else {
+      setActiveRowId(null);
     }
+    addToast('Filas descartadas.', 'info');
   };
 
   // Volver a UploadPage si no hay datos (Empty State)
@@ -680,6 +692,48 @@ export default function BatchReviewPage() {
       <div className="alert alert-info text-xs">
         <strong>Manual de Teclado:</strong> Usa <strong>Tab / Shift+Tab</strong> para moverte horizontalmente, y <strong>↑ / ↓</strong> o la tecla <strong>Enter</strong> para moverte verticalmente. Presiona <strong>Escape</strong> para cancelar tu edición y restaurar el valor anterior. Si hay errores (como un RUT incorrecto), se marcará con una advertencia.
       </div>
+
+      {confirmAction === 'save-selected' && (
+        <ConfirmDialog
+          title="Guardar con errores"
+          message="Algunos de los registros seleccionados tienen errores. ¿Deseas guardarlos de todas formas?"
+          confirmLabel="Guardar igualmente"
+          loading={isSaving}
+          onConfirm={async () => {
+            await performSaveSelected();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {confirmAction === 'save-all' && (
+        <ConfirmDialog
+          title="Guardar con errores"
+          message="Algunos registros en la lista contienen errores. ¿Deseas guardarlos de todas formas?"
+          confirmLabel="Guardar igualmente"
+          loading={isSaving}
+          onConfirm={async () => {
+            await performSaveAll();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {confirmAction === 'discard' && (
+        <ConfirmDialog
+          title="Descartar filas"
+          message={`¿Descartar las ${selectedIds.length} filas seleccionadas? Se perderá lo extraído para esas boletas.`}
+          confirmLabel="Descartar"
+          danger
+          onConfirm={() => {
+            performDiscard();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   );
 }

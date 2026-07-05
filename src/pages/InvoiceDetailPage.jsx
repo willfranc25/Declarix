@@ -4,6 +4,8 @@ import useInvoiceStore from '../store/invoiceStore';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { formatCurrency, formatDate, formatDateTime, getStatusLabel, getStatusVariant } from '../utils/formatters';
 import Icon from '../components/ui/Icon';
+import { ConfirmDialog } from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
@@ -13,6 +15,7 @@ export default function InvoiceDetailPage() {
   const [imageUrl, setImageUrl] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
@@ -48,8 +51,11 @@ export default function InvoiceDetailPage() {
     setIsDeleting(true);
     try {
       await deleteInvoice(id);
+      addToast('Comprobante eliminado.', 'success');
       navigate('/invoices');
-    } catch {} finally {
+    } catch (err) {
+      addToast('Error al eliminar: ' + err.message, 'error');
+    } finally {
       setIsDeleting(false);
     }
   };
@@ -146,25 +152,15 @@ export default function InvoiceDetailPage() {
 
       {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => !isDeleting && setShowDeleteModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Confirmar eliminación</h3>
-              <button className="modal-close" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="modal-body">
-              <p style={{ color: 'var(--color-text-secondary)' }}>¿Eliminar este comprobante de <strong>{invoice.providerName}</strong>? Esta acción no se puede deshacer.</p>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>Cancelar</button>
-              <button className="btn btn-danger" onClick={handleDelete} disabled={isDeleting}>
-                {isDeleting ? 'Eliminando...' : 'Eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Confirmar eliminación"
+          message={`¿Eliminar este comprobante de ${invoice.providerName}? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar"
+          danger
+          loading={isDeleting}
+          onConfirm={handleDelete}
+          onCancel={() => !isDeleting && setShowDeleteModal(false)}
+        />
       )}
     </div>
   );

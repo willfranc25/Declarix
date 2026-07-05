@@ -1,28 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { extractInvoiceData } from '../services/vlmService';
 import { compressImage } from '../utils/imageCompression';
 import Icon from '../components/ui/Icon';
+import { useToast } from '../components/ui/Toast';
 import { cleanRut, formatRut, validateRut } from '../utils/rutValidator';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-
-// Custom toast hook for the toast notification system
-const useToast = () => {
-  const [toasts, setToasts] = useState([]);
-  
-  const addToast = useCallback((message, type = 'info') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
-  }, []);
-
-  return { toasts, addToast, setToasts };
-};
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -34,7 +20,7 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 
-  const { toasts, addToast, setToasts } = useToast();
+  const { addToast } = useToast();
 
   // Validar un archivo individual
   const validateFile = (file) => {
@@ -515,83 +501,6 @@ export default function UploadPage() {
         </div>
       </div>
 
-      {/* Toast container */}
-      <div style={{
-        position: 'fixed',
-        bottom: '24px',
-        right: '24px',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        maxWidth: '350px',
-        width: 'calc(100% - 48px)'
-      }}>
-        {toasts.map(toast => {
-          let bg = 'var(--color-bg-elevated)';
-          let border = '1px solid var(--color-border)';
-          let color = 'var(--color-text-primary)';
-          let iconName = 'info';
-          if (toast.type === 'success') {
-            bg = 'var(--color-success-bg)';
-            border = '1px solid var(--color-success-border)';
-            color = 'var(--color-success)';
-            iconName = 'check-circle';
-          } else if (toast.type === 'error') {
-            bg = 'var(--color-danger-bg)';
-            border = '1px solid var(--color-danger-border)';
-            color = 'var(--color-danger)';
-            iconName = 'alert';
-          } else if (toast.type === 'warning') {
-            bg = 'var(--color-warning-bg)';
-            border = '1px solid var(--color-warning-border)';
-            color = 'var(--color-warning)';
-            iconName = 'alert';
-          }
-          return (
-            <div
-              key={toast.id}
-              className="toast-item"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                background: bg,
-                border: border,
-                color: color,
-                backdropFilter: 'blur(8px)',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-              }}
-            >
-              <Icon name={iconName} size={18} style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, color: 'var(--color-text-primary)' }}>{toast.message}</span>
-              <button
-                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: '1rem',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  lineHeight: 1,
-                  minHeight: '44px',
-                  minWidth: '44px',
-                }}
-              >
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

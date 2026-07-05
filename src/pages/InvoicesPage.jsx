@@ -4,6 +4,8 @@ import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
+import { ConfirmDialog } from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 
 // Subcomponent for each invoice row, supporting swipe actions on mobile
 function InvoiceRow({ 
@@ -287,6 +289,7 @@ export default function InvoicesPage() {
 
   const [deleteId, setDeleteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const { addToast } = useToast();
 
   // Mobile and Pull-to-Refresh states
   const [isMobile, setIsMobile] = useState(false);
@@ -365,8 +368,10 @@ export default function InvoicesPage() {
     try {
       await deleteInvoice(deleteId);
       setDeleteId(null);
+      addToast('Comprobante eliminado.', 'success');
     } catch (err) {
       console.error(err);
+      addToast('Error al eliminar: ' + err.message, 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -673,23 +678,15 @@ export default function InvoicesPage() {
 
       {/* Delete Modal */}
       {deleteId && (
-        <div className="modal-overlay" onClick={() => !isDeleting && setDeleteId(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Confirmar eliminación</h3>
-              <button className="modal-close" onClick={() => setDeleteId(null)} disabled={isDeleting}><Icon name="x" size={18} /></button>
-            </div>
-            <div className="modal-body">
-              <p style={{ color: 'var(--color-text-secondary)' }}>¿Estás seguro de que deseas eliminar este comprobante? Esta acción no se puede deshacer.</p>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setDeleteId(null)} disabled={isDeleting}>Cancelar</button>
-              <button className="btn btn-danger" onClick={handleDelete} disabled={isDeleting}>
-                {isDeleting ? 'Eliminando...' : 'Eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Confirmar eliminación"
+          message="¿Estás seguro de que deseas eliminar este comprobante? Esta acción no se puede deshacer."
+          confirmLabel="Eliminar"
+          danger
+          loading={isDeleting}
+          onConfirm={handleDelete}
+          onCancel={() => !isDeleting && setDeleteId(null)}
+        />
       )}
     </div>
   );

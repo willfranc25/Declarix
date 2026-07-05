@@ -7,6 +7,8 @@ import { validateRut, cleanRut, formatRut } from '../utils/rutValidator';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
+import { ConfirmDialog, useDialogBehavior } from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 
 const DEFAULT_MAPPING = {
   providerName: 'A',
@@ -63,6 +65,15 @@ export default function ReportsPage() {
   // States para Corrección Inline
   const [editingInvoice, setEditingInvoice] = useState(null);
 
+  // Confirmación de exportación con advertencias pendientes
+  const [confirmExport, setConfirmExport] = useState(false);
+
+  const { addToast } = useToast();
+  const mappingModalRef = useRef(null);
+  const editModalRef = useRef(null);
+  useDialogBehavior(mappingModalRef, () => setShowMappingModal(false), showMappingModal);
+  useDialogBehavior(editModalRef, () => setEditingInvoice(null), Boolean(editingInvoice));
+
   // Lista de RUTs de empresas emisoras o proveedoras para sugerir mapping
   const distinctInvoicesRuts = useMemo(() => {
     const ruts = new Set();
@@ -108,11 +119,11 @@ export default function ReportsPage() {
   // Guardar configuración del mapping
   const handleSaveMapping = async () => {
     if (!rutEmpresa) {
-      alert('Especifica el RUT de la empresa para asociar este mapping.');
+      addToast('Especifica el RUT de la empresa para asociar este mapping.', 'warning');
       return;
     }
     if (!validateRut(rutEmpresa)) {
-      alert('El RUT de la empresa ingresado no es válido.');
+      addToast('El RUT de la empresa ingresado no es válido.', 'warning');
       return;
     }
 
@@ -124,10 +135,10 @@ export default function ReportsPage() {
         upperMapping[k] = (mapping[k] || '').toUpperCase();
       });
       await storage.saveSetting(key, upperMapping);
-      alert(`Mapping guardado con éxito para la empresa RUT ${formatRut(rutEmpresa)}.`);
+      addToast(`Mapping guardado para la empresa RUT ${formatRut(rutEmpresa)}.`, 'success');
       setShowMappingModal(false);
     } catch (err) {
-      alert('Error al guardar el mapping: ' + err.message);
+      addToast('Error al guardar el mapping: ' + err.message, 'error');
     }
   };
 
@@ -271,31 +282,33 @@ export default function ReportsPage() {
   }, [preExportIssues]);
 
   // Export handlers
-  const handleExportRendicion = async () => {
-    if (!templateBuffer) {
-      alert('Primero carga la plantilla Excel (.xlsm o .xlsx)');
-      return;
-    }
-
-    if (preExportIssues.length > 0) {
-      if (!window.confirm(`Advertencia: Faltan datos críticos en ${preExportIssues.length} comprobante(s) (${preExportSummaryText}). ¿Quieres exportar de todas formas?`)) {
-        return;
-      }
-    }
-
+  const doExportRendicion = async () => {
     try {
       const activeMapping = rutEmpresa ? mapping : null;
       const data = await exportToRendicion(filtered, templateBuffer, {
         fechaRendicion: formatDate(new Date().toISOString().split('T')[0]),
         rut: rutEmpresa || ''
       }, activeMapping);
-      
+
       const filename = `Rendicion-${new Date().toISOString().split('T')[0]}.xlsx`;
       const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       downloadFile(data, filename, mimeType);
+      addToast(`Rendición exportada: ${filename}`, 'success');
     } catch (err) {
-      alert('Error al exportar: ' + err.message);
+      addToast('Error al exportar: ' + err.message, 'error');
     }
+  };
+
+  const handleExportRendicion = () => {
+    if (!templateBuffer) {
+      addToast('Primero carga la plantilla Excel (.xlsm o .xlsx).', 'warning');
+      return;
+    }
+    if (preExportIssues.length > 0) {
+      setConfirmExport(true);
+      return;
+    }
+    doExportRendicion();
   };
 
   const handleExportExcel = async () => {
@@ -303,7 +316,7 @@ export default function ReportsPage() {
       const data = await exportToExcel(filtered, { includeMonthlySheet: true, includeCategorySheet: true });
       downloadFile(data, `Comprobantes-${new Date().toISOString().split('T')[0]}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     } catch (err) {
-      alert('Error al exportar: ' + err.message);
+      addToast('Error al exportar: ' + err.message, 'error');
     }
   };
 
@@ -328,8 +341,9 @@ export default function ReportsPage() {
       const { id, ...updates } = editingInvoice;
       await updateInvoice(id, updates);
       setEditingInvoice(null);
+      addToast('Comprobante corregido.', 'success');
     } catch (err) {
-      alert('Error al corregir el comprobante: ' + err.message);
+      addToast('Error al corregir el comprobante: ' + err.message, 'error');
     }
   };
 
@@ -750,7 +764,7 @@ export default function ReportsPage() {
       {/* Configurar Mapping Modal (Bottom Sheet on Mobile) */}
       {showMappingModal && (
         <div className="modal-overlay" onClick={() => setShowMappingModal(false)}>
-          <div className="modal mapping-modal-dialog" onClick={(e) => e.stopPropagation()}>
+          <div ref={mappingModalRef} className="modal mapping-modal-dialog" role="dialog" aria-modal="true" aria-label="Configurar mapping de columnas Excel" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Configurar mapping de columnas Excel</h3>
               <button 
@@ -840,7 +854,7 @@ export default function ReportsPage() {
       {/* Modal Corrección de Comprobante Inline */}
       {editingInvoice && (
         <div className="modal-overlay" onClick={() => setEditingInvoice(null)}>
-          <div className="modal" style={{ maxWidth: '700px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+          <div ref={editModalRef} className="modal" style={{ maxWidth: '700px', width: '90%' }} role="dialog" aria-modal="true" aria-label="Corregir comprobante" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <form onSubmit={handleSaveEditingInvoice}>
               <div className="modal-header">
                 <h3 className="modal-title">Corregir comprobante</h3>
@@ -993,6 +1007,22 @@ export default function ReportsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {confirmExport && (
+        <ConfirmDialog
+          title="Exportar con advertencias"
+          message={
+            `Faltan datos críticos en ${preExportIssues.length} comprobante(s): ${preExportSummaryText}.\n\n` +
+            '¿Quieres exportar de todas formas? Puedes corregirlos primero desde el panel de advertencias.'
+          }
+          confirmLabel="Exportar igualmente"
+          onConfirm={() => {
+            setConfirmExport(false);
+            doExportRendicion();
+          }}
+          onCancel={() => setConfirmExport(false)}
+        />
       )}
     </div>
   );
