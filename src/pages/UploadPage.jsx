@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
-import { extractInvoiceData } from '../services/vlmService';
-import { compressImage } from '../utils/imageCompression';
+import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
 import { useToast } from '../components/ui/Toast';
-import { cleanRut, formatRut, validateRut } from '../utils/rutValidator';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -13,14 +11,28 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 export default function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
-  const { invoices, setBatchInvoices, clearBatchInvoices } = useInvoiceStore();
+  const { invoices, loadInvoices, setBatchInvoices, clearBatchInvoices } = useInvoiceStore();
 
-  const [queue, setQueue] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  // La cola vive en un store global: la extracción continúa aunque el
+  // usuario navegue a otra página. Esta vista solo la observa.
+  const queue = useUploadQueueStore((s) => s.queue);
+  const isProcessing = useUploadQueueStore((s) => s.isProcessing);
+  const addFiles = useUploadQueueStore((s) => s.addFiles);
+  const removeItem = useUploadQueueStore((s) => s.removeItem);
+  const clearQueue = useUploadQueueStore((s) => s.clearQueue);
+  const retryItem = useUploadQueueStore((s) => s.retryItem);
+  const retryFailed = useUploadQueueStore((s) => s.retryFailed);
+
   const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 
   const { addToast } = useToast();
+
+  // Cargar comprobantes existentes para la detección de duplicados
+  useEffect(() => {
+    if (invoices.length === 0) loadInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Validar un archivo individual
   const validateFile = (file) => {
@@ -31,39 +43,16 @@ export default function UploadPage() {
 
   // Manejar la selección de múltiples archivos
   const handleFilesAdded = async (filesList) => {
-    const newItems = [];
+    const validFiles = [];
     let hasInvalidFiles = false;
 
     for (let i = 0; i < filesList.length; i++) {
       const rawFile = filesList[i];
-      const error = validateFile(rawFile);
-      if (error) {
+      if (validateFile(rawFile)) {
         hasInvalidFiles = true;
         continue;
       }
-
-      // Evitar agregar archivos repetidos a la cola actual (por nombre y tamaño)
-      if (queue.some(q => q.name === rawFile.name && q.size === rawFile.size)) {
-        continue;
-      }
-
-      // Comprimir/redimensionar (fotos de celular pesan 3-10 MB)
-      const file = await compressImage(rawFile);
-
-      newItems.push({
-        id: Math.random().toString(36).substring(2, 11),
-        file,
-        // Nombre/tamaño originales: así la deduplicación por (name, size)
-        // sigue funcionando aunque el archivo interno esté comprimido
-        name: rawFile.name,
-        size: rawFile.size,
-        status: 'pending',
-        progress: 0,
-        error: null,
-        extractedData: null,
-        isDuplicate: false,
-        tempPreviewUrl: URL.createObjectURL(file)
-      });
+      validFiles.push(rawFile);
     }
 
     if (hasInvalidFiles) {
@@ -72,9 +61,11 @@ export default function UploadPage() {
       addToast(errorMsg, 'error');
     }
 
-    if (newItems.length > 0) {
-      setQueue(prev => [...prev, ...newItems]);
-      addToast(`${newItems.length} archivo(s) agregado(s) a la cola.`, 'success');
+    if (validFiles.length > 0) {
+      const added = await addFiles(validFiles);
+      if (added > 0) {
+        addToast(`${added} archivo(s) agregado(s) a la cola.`, 'success');
+      }
     }
   };
 
@@ -89,103 +80,9 @@ export default function UploadPage() {
     }
   };
 
-  // Procesamiento secuencial de la cola en background
-  useEffect(() => {
-    const processQueue = async () => {
-      // Buscar el primer archivo pendiente
-      const nextIndex = queue.findIndex(item => item.status === 'pending');
-      if (nextIndex === -1) {
-        setIsProcessing(false);
-        return;
-      }
-
-      setIsProcessing(true);
-
-      // Clonar la cola para actualizar el estado actual
-      const updatedQueue = [...queue];
-      const currentItem = { ...updatedQueue[nextIndex] };
-      
-      currentItem.status = 'processing';
-      currentItem.progress = 20;
-      updatedQueue[nextIndex] = currentItem;
-      setQueue([...updatedQueue]);
-
-      try {
-        // Extraer usando el VLM
-        const data = await extractInvoiceData(currentItem.file);
-        
-        // Simular progreso incremental
-        currentItem.progress = 80;
-        updatedQueue[nextIndex] = currentItem;
-        setQueue([...updatedQueue]);
-
-        // Detección de duplicados: mismo RUT + mismo nro doc + misma fecha
-        const isDuplicate = invoices.some(inv => {
-          if (!inv.providerRut || !data.providerRut) return false;
-          const cleanStoreRut = cleanRut(inv.providerRut);
-          const cleanExtractedRut = cleanRut(data.providerRut);
-          return (
-            cleanStoreRut === cleanExtractedRut &&
-            String(inv.documentNumber).trim() === String(data.documentNumber).trim() &&
-            inv.date === data.date
-          );
-        });
-
-        currentItem.status = 'done';
-        currentItem.progress = 100;
-        currentItem.isDuplicate = isDuplicate;
-        currentItem.extractedData = {
-          providerName: data.providerName || '',
-          providerRut: data.providerRut ? formatRut(data.providerRut) : '',
-          documentType: data.documentType || 'Boleta',
-          documentNumber: data.documentNumber || '',
-          date: data.date || new Date().toISOString().split('T')[0],
-          detail: data.detail || '',
-          expenseType: data.expenseType || '',
-          netAmount: data.netAmount || 0,
-          totalBoletaServicios: data.totalBoletaServicios || 0,
-          totalBoletaHonorarios: data.totalBoletaHonorarios || 0,
-          specificTax: data.specificTax || 0,
-          ivaAmount: data.ivaAmount || 0,
-          totalAmount: data.totalAmount || 0,
-          taxStatus: 'pending',
-          status: 'pending',
-          notes: data.notes || '',
-        };
-
-        if (isDuplicate) {
-          addToast(`Procesado: ${currentItem.name} (Posible Duplicado)`, 'warning');
-        } else {
-          addToast(`Procesado con éxito: ${currentItem.name}`, 'success');
-        }
-      } catch (err) {
-        console.error(`Error procesando archivo ${currentItem.name}:`, err);
-        currentItem.status = 'error';
-        currentItem.progress = 100;
-        currentItem.error = err.message || 'Error desconocido al procesar.';
-        addToast(`Error al procesar ${currentItem.name}: ${currentItem.error}`, 'error');
-      }
-
-      updatedQueue[nextIndex] = currentItem;
-      setQueue([...updatedQueue]);
-      setIsProcessing(false);
-    };
-
-    if (!isProcessing) {
-      processQueue();
-    }
-  }, [queue, isProcessing, invoices, addToast]);
-
-  // Limpiar cola entera
+  // Limpiar cola entera (el store libera las URLs de previsualización)
   const handleClearQueue = () => {
-    // Liberar URLs de previsualización para evitar fugas de memoria
-    queue.forEach(item => {
-      if (item.tempPreviewUrl) {
-        URL.revokeObjectURL(item.tempPreviewUrl);
-      }
-    });
-    setQueue([]);
-    setIsProcessing(false);
+    clearQueue();
     setGlobalError(null);
     clearBatchInvoices();
     addToast('Cola de procesamiento limpia.', 'info');
@@ -193,11 +90,7 @@ export default function UploadPage() {
 
   // Eliminar un archivo específico de la cola
   const handleRemoveItem = (id) => {
-    const item = queue.find(q => q.id === id);
-    if (item?.tempPreviewUrl) {
-      URL.revokeObjectURL(item.tempPreviewUrl);
-    }
-    setQueue(prev => prev.filter(q => q.id !== id));
+    removeItem(id);
     addToast('Archivo removido de la cola.', 'info');
   };
 
@@ -210,6 +103,7 @@ export default function UploadPage() {
     const batchInvoicesData = processedItems.map(item => ({
       id: item.id,
       ...item.extractedData,
+      isDuplicate: item.isDuplicate,
       file: item.file
     }));
 
@@ -221,6 +115,7 @@ export default function UploadPage() {
   const totalFiles = queue.length;
   const processedFiles = queue.filter(item => item.status === 'done' || item.status === 'error').length;
   const successfulFiles = queue.filter(item => item.status === 'done').length;
+  const failedFiles = queue.filter(item => item.status === 'error').length;
   const globalProgress = totalFiles > 0 ? Math.round((processedFiles / totalFiles) * 100) : 0;
 
   return (
@@ -348,16 +243,25 @@ export default function UploadPage() {
               >
                 <Icon name="pencil" /> Revisar todos ({successfulFiles} listos)
               </button>
-              <button 
-                className="btn btn-secondary" 
+              {failedFiles > 0 && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={retryFailed}
+                  disabled={isProcessing}
+                >
+                  <Icon name="refresh" /> Reintentar fallidos ({failedFiles})
+                </button>
+              )}
+              <button
+                className="btn btn-secondary"
                 onClick={handleClearQueue}
               >
                 Limpiar Cola
               </button>
             </div>
             {isProcessing && (
-              <span className="text-sm text-amber-500 flex items-center gap-1 animate-pulse">
-                Extrayendo datos en segundo plano...
+              <span className="text-sm text-muted flex items-center gap-1">
+                Extrayendo en segundo plano — puedes navegar a otras páginas sin perder el avance.
               </span>
             )}
           </div>
@@ -403,6 +307,11 @@ export default function UploadPage() {
                       {item.status === 'pending' && (
                         <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
                           Pendiente
+                        </span>
+                      )}
+                      {item.status === 'waiting' && (
+                        <span className="badge animate-pulse" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
+                          Esperando cuota...
                         </span>
                       )}
                       {item.status === 'processing' && (
@@ -469,9 +378,25 @@ export default function UploadPage() {
                   )}
                 </div>
 
-                {/* Botón para remover si no se está procesando */}
-                <div style={{ alignSelf: 'center' }}>
-                  <button 
+                {/* Acciones del item */}
+                <div style={{ alignSelf: 'center', display: 'flex', gap: 4 }}>
+                  {item.status === 'error' && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => retryItem(item.id)}
+                      title="Reintentar extracción"
+                      style={{
+                        minWidth: '44px',
+                        minHeight: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Icon name="refresh" size={16} />
+                    </button>
+                  )}
+                  <button
                     className="btn btn-ghost btn-sm text-slate-400 hover:text-red-400"
                     onClick={() => handleRemoveItem(item.id)}
                     disabled={item.status === 'processing'}

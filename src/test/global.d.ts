@@ -55,6 +55,36 @@ declare module '*services/exportService' {
   export function downloadFile(content: any, filename: string, mimeType: string): void;
 }
 
+declare module '*store/uploadQueueStore' {
+  import { StoreApi, UseBoundStore } from 'zustand';
+  export interface QueueItem {
+    id: string;
+    file: File;
+    name: string;
+    size: number;
+    status: 'pending' | 'processing' | 'waiting' | 'done' | 'error';
+    progress: number;
+    error: string | null;
+    extractedData: Record<string, any> | null;
+    isDuplicate: boolean;
+    burstWaits: number;
+    tempPreviewUrl: string;
+  }
+  interface UploadQueueStore {
+    queue: QueueItem[];
+    isProcessing: boolean;
+    lastBatchSummary: { at: number; done: number; errors: number; duplicates: number } | null;
+    addFiles: (files: File[]) => Promise<number>;
+    removeItem: (id: string) => void;
+    removeItems: (ids: string[]) => void;
+    clearQueue: () => void;
+    retryItem: (id: string) => void;
+    retryFailed: () => void;
+  }
+  const useUploadQueueStore: UseBoundStore<StoreApi<UploadQueueStore>>;
+  export default useUploadQueueStore;
+}
+
 declare module '*store/invoiceStore' {
   import { StoreApi, UseBoundStore } from 'zustand';
   interface Invoice {

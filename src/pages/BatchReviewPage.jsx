@@ -6,6 +6,7 @@ import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
+import useUploadQueueStore from '../store/uploadQueueStore';
 
 const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
@@ -37,6 +38,7 @@ export default function BatchReviewPage() {
   const [isSaving, setIsSaving] = useState(false);
   // Confirmación pendiente: 'save-selected' | 'save-all' | 'discard' | null
   const [confirmAction, setConfirmAction] = useState(null);
+  const [showOnlyProblems, setShowOnlyProblems] = useState(false);
   const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
@@ -119,6 +121,18 @@ export default function BatchReviewPage() {
     return errors;
   };
 
+  // Resumen de calidad del lote y filtro "solo con problemas":
+  // con 100 boletas, lo importante es revisar rápido las que fallaron
+  // o parecen duplicadas, no recorrer una a una las correctas.
+  const errorRowIds = new Set(
+    rows.filter((r) => Object.keys(getRowErrors(r)).length > 0).map((r) => r.id)
+  );
+  const dupCount = rows.filter((r) => r.isDuplicate).length;
+  const okCount = rows.length - errorRowIds.size;
+  const visibleRows = showOnlyProblems
+    ? rows.filter((r) => errorRowIds.has(r.id) || r.isDuplicate)
+    : rows;
+
   // Manejar el cambio de valor en una celda
   const handleCellChange = (rowId, key, value) => {
     setRows(prev => prev.map(row => {
@@ -157,19 +171,20 @@ export default function BatchReviewPage() {
     }
   };
 
+  // Opera sobre las filas VISIBLES (respeta el filtro "solo con problemas")
   const handleKeyDown = (e, rowIndex, colIndex) => {
     const colKey = COLUMNS[colIndex].key;
     if (e.key === 'ArrowDown' || e.key === 'Enter') {
       e.preventDefault();
-      if (rowIndex < rows.length - 1) {
+      if (rowIndex < visibleRows.length - 1) {
         focusCell(rowIndex + 1, colKey);
-        setActiveRowId(rows[rowIndex + 1].id);
+        setActiveRowId(visibleRows[rowIndex + 1].id);
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (rowIndex > 0) {
         focusCell(rowIndex - 1, colKey);
-        setActiveRowId(rows[rowIndex - 1].id);
+        setActiveRowId(visibleRows[rowIndex - 1].id);
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
@@ -180,22 +195,22 @@ export default function BatchReviewPage() {
         } else if (rowIndex > 0) {
           // Mover a la última celda de la fila anterior
           focusCell(rowIndex - 1, COLUMNS[COLUMNS.length - 1].key);
-          setActiveRowId(rows[rowIndex - 1].id);
+          setActiveRowId(visibleRows[rowIndex - 1].id);
         }
       } else {
         // Tab: mover a la derecha
         if (colIndex < COLUMNS.length - 1) {
           focusCell(rowIndex, COLUMNS[colIndex + 1].key);
-        } else if (rowIndex < rows.length - 1) {
+        } else if (rowIndex < visibleRows.length - 1) {
           // Mover a la primera celda de la fila siguiente
           focusCell(rowIndex + 1, COLUMNS[0].key);
-          setActiveRowId(rows[rowIndex + 1].id);
+          setActiveRowId(visibleRows[rowIndex + 1].id);
         }
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      if (editingCellRef.current && editingCellRef.current.rowId === rows[rowIndex].id && editingCellRef.current.key === colKey) {
-        handleCellChange(rows[rowIndex].id, colKey, editingCellRef.current.value);
+      if (editingCellRef.current && editingCellRef.current.rowId === visibleRows[rowIndex].id && editingCellRef.current.key === colKey) {
+        handleCellChange(visibleRows[rowIndex].id, colKey, editingCellRef.current.value);
       }
       e.target.blur();
     }
@@ -208,12 +223,12 @@ export default function BatchReviewPage() {
     );
   };
 
-  // Checkbox: Seleccionar todos
+  // Checkbox: Seleccionar todos (los visibles según el filtro)
   const handleSelectAll = () => {
-    if (selectedIds.length === rows.length) {
+    if (selectedIds.length === visibleRows.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(rows.map(r => r.id));
+      setSelectedIds(visibleRows.map(r => r.id));
     }
   };
 
@@ -235,12 +250,14 @@ export default function BatchReviewPage() {
   const performSaveSelected = async () => {
     setIsSaving(true);
     let successCount = 0;
+    const savedIds = [];
     const remaining = [];
 
     for (const row of rows) {
       if (selectedIds.includes(row.id)) {
         try {
-          const { id, file, ...invoiceData } = row;
+          // isDuplicate es metadata de revisión, no un campo del comprobante
+          const { id, file, isDuplicate, ...invoiceData } = row;
           // Normalizar montos
           const cleanData = {
             ...invoiceData,
@@ -253,6 +270,7 @@ export default function BatchReviewPage() {
           };
           await addInvoice(cleanData, file);
           successCount++;
+          savedIds.push(row.id);
         } catch (err) {
           console.error('Error al guardar fila:', row, err);
           remaining.push(row);
@@ -266,6 +284,8 @@ export default function BatchReviewPage() {
     setBatchInvoices(remaining);
     setSelectedIds([]);
     setIsSaving(false);
+    // Sacar de la cola de carga los items ya convertidos en comprobantes
+    useUploadQueueStore.getState().removeItems(savedIds);
     addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
 
     if (remaining.length === 0) {
@@ -290,11 +310,13 @@ export default function BatchReviewPage() {
   const performSaveAll = async () => {
     setIsSaving(true);
     let successCount = 0;
+    const savedIds = [];
     const remaining = [];
 
     for (const row of rows) {
       try {
-        const { id, file, ...invoiceData } = row;
+        // isDuplicate es metadata de revisión, no un campo del comprobante
+        const { id, file, isDuplicate, ...invoiceData } = row;
         const cleanData = {
           ...invoiceData,
           netAmount: Number(invoiceData.netAmount) || 0,
@@ -306,6 +328,7 @@ export default function BatchReviewPage() {
         };
         await addInvoice(cleanData, file);
         successCount++;
+        savedIds.push(row.id);
       } catch (err) {
         console.error('Error al guardar fila:', row, err);
         remaining.push(row);
@@ -316,6 +339,8 @@ export default function BatchReviewPage() {
     setBatchInvoices(remaining);
     setSelectedIds([]);
     setIsSaving(false);
+    // Sacar de la cola de carga los items ya convertidos en comprobantes
+    useUploadQueueStore.getState().removeItems(savedIds);
     addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
 
     if (remaining.length === 0) {
@@ -430,6 +455,25 @@ export default function BatchReviewPage() {
         <div>
           <h1 className="page-title">Revisión en Lote</h1>
           <p className="page-subtitle">Modifica directamente los datos extraídos por la IA en formato planilla Excel.</p>
+          <div className="flex gap-2 flex-wrap items-center mt-2">
+            <span className="badge badge-success">{okCount} OK</span>
+            {errorRowIds.size > 0 && (
+              <span className="badge badge-danger">{errorRowIds.size} con errores</span>
+            )}
+            {dupCount > 0 && (
+              <span className="badge badge-warning">{dupCount} posible(s) duplicado(s)</span>
+            )}
+            {(errorRowIds.size > 0 || dupCount > 0) && (
+              <label className="text-sm flex items-center gap-2" style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={showOnlyProblems}
+                  onChange={(e) => setShowOnlyProblems(e.target.checked)}
+                />
+                Mostrar solo con problemas
+              </label>
+            )}
+          </div>
         </div>
         
         {/* Acciones de Lote */}
@@ -439,7 +483,7 @@ export default function BatchReviewPage() {
             onClick={handleSelectAll}
             style={{ minHeight: '44px' }}
           >
-            {selectedIds.length === rows.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+            {selectedIds.length === visibleRows.length && visibleRows.length > 0 ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </button>
           
           <select 
@@ -505,10 +549,10 @@ export default function BatchReviewPage() {
             <thead>
               <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)' }}>
                 <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedIds.length === rows.length} 
-                    onChange={handleSelectAll} 
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === visibleRows.length && visibleRows.length > 0}
+                    onChange={handleSelectAll}
                     style={{ cursor: 'pointer' }}
                   />
                 </th>
@@ -521,7 +565,7 @@ export default function BatchReviewPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, rowIndex) => {
+              {visibleRows.map((row, rowIndex) => {
                 const errors = getRowErrors(row);
                 const hasRowErrors = Object.keys(errors).length > 0;
                 const isActive = row.id === activeRowId;
@@ -545,17 +589,24 @@ export default function BatchReviewPage() {
                       />
                     </td>
 
-                    {/* Fila Numérica / Indicador Error */}
+                    {/* Fila Numérica / Indicador Error / Duplicado */}
                     <td data-label="Estado" style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>
                       {hasRowErrors ? (
-                        <span 
-                          title={Object.values(errors).join(', ')} 
+                        <span
+                          title={Object.values(errors).join(', ')}
                           style={{ color: 'var(--color-danger)', cursor: 'help' }}
                         >
                           <Icon name="alert" size={14} />
                         </span>
+                      ) : row.isDuplicate ? (
+                        <span
+                          title="Posible duplicado: mismo RUT, N° de documento y fecha que un comprobante existente"
+                          style={{ color: 'var(--color-warning)', cursor: 'help' }}
+                        >
+                          <Icon name="copy" size={14} />
+                        </span>
                       ) : (
-                        <span style={{ color: 'var(--color-success)' }}>✓</span>
+                        <span style={{ color: 'var(--color-success)' }}><Icon name="check" size={14} /></span>
                       )}
                     </td>
 

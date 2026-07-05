@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCurrentTheme, toggleTheme } from '../../utils/theme';
 import Icon from '../ui/Icon';
+import useUploadQueueStore from '../../store/uploadQueueStore';
 
 const navItems = [
   {
@@ -72,6 +73,17 @@ export default function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [theme, setTheme] = useState(getCurrentTheme());
+  // Boletas en proceso de extracción (visible desde cualquier página)
+  const processingCount = useUploadQueueStore(
+    (s) => s.queue.filter((q) => ['pending', 'processing', 'waiting'].includes(q.status)).length
+  );
+
+  const queueBadge = (path) =>
+    path === '/upload' && processingCount > 0 ? (
+      <span className="nav-badge" title={`${processingCount} boleta(s) en proceso`}>
+        {processingCount}
+      </span>
+    ) : null;
 
   const handleLogout = async () => {
     await logout();
@@ -126,6 +138,7 @@ export default function Sidebar() {
             >
               {item.icon}
               <span>{item.label}</span>
+              {queueBadge(item.path)}
             </NavLink>
           ))}
         </nav>
@@ -170,6 +183,7 @@ export default function Sidebar() {
             >
               {item.icon}
               <span>{item.shortLabel}</span>
+              {queueBadge(item.path)}
             </NavLink>
           ))}
           <button
