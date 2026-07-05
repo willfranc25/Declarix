@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+import { supabase } from '../supabaseClient';
+import { getActiveOrganization } from '../organizationService';
 
 // Helper para obtener user_id actual
 async function getCurrentUserId() {
@@ -14,8 +10,27 @@ async function getCurrentUserId() {
   return user.id;
 }
 
+// Las imágenes viven en una carpeta por usuario: <user_id>/<invoiceId>.<ext>
+// (las políticas de storage exigen que el primer segmento sea auth.uid()).
+async function findImagePath(userId, invoiceId) {
+  const { data: files, error } = await supabase.storage
+    .from('images')
+    .list(userId, { search: invoiceId });
+  if (!error && files && files.length > 0) {
+    return `${userId}/${files[0].name}`;
+  }
+  // Fallback legacy: archivos antiguos guardados en la raíz del bucket
+  const { data: legacyFiles } = await supabase.storage
+    .from('images')
+    .list('', { search: invoiceId });
+  if (legacyFiles && legacyFiles.length > 0) {
+    return legacyFiles[0].name;
+  }
+  return null;
+}
+
 const supabaseProvider = {
-  async initialize(sampleData = null) {
+  async initialize() {
     if (!supabase) throw new Error('Configuración de Supabase faltante (.env)');
   },
 
@@ -44,10 +59,13 @@ const supabaseProvider = {
 
   async save(invoiceData) {
     const userId = await getCurrentUserId();
+    const org = await getActiveOrganization();
     const now = new Date().toISOString();
     const invoice = {
       id: uuidv4(),
       user_id: userId,
+      // Solo se incluye si hay organización (BD podría no tener la columna aún)
+      ...(org ? { organization_id: org.id } : {}),
       ...invoiceData,
       createdAt: now,
       updatedAt: now,
@@ -84,41 +102,40 @@ const supabaseProvider = {
       .eq('user_id', userId);
     if (error) throw error;
 
-    // Buscar y borrar imagen asociada si existe
-    const { data: files } = await supabase.storage.from('images').list('', { search: id });
-    if (files && files.length > 0) {
-      await supabase.storage.from('images').remove(files.map(f => f.name));
+    const path = await findImagePath(userId, id);
+    if (path) {
+      await supabase.storage.from('images').remove([path]);
     }
   },
 
   async saveImage(invoiceId, blob) {
-    if (!supabase) throw new Error('Configuración de Supabase faltante (.env)');
+    const userId = await getCurrentUserId();
     const fileExt = blob.type ? blob.type.split('/')[1] : 'jpeg';
-    const fileName = `${invoiceId}.${fileExt}`;
-    const { error } = await supabase.storage.from('images').upload(fileName, blob, { upsert: true });
+    const path = `${userId}/${invoiceId}.${fileExt}`;
+    const { error } = await supabase.storage.from('images').upload(path, blob, { upsert: true });
     if (error) throw error;
   },
 
   async getImage(invoiceId) {
     if (!supabase) return null;
-    const { data: files, error: listError } = await supabase.storage.from('images').list('', { search: invoiceId });
-    if (listError || !files || files.length === 0) return null;
+    const userId = await getCurrentUserId();
+    const path = await findImagePath(userId, invoiceId);
+    if (!path) return null;
 
-    const fileName = files[0].name;
-    const { data, error } = await supabase.storage.from('images').download(fileName);
+    const { data, error } = await supabase.storage.from('images').download(path);
     if (error) return null;
     return data;
   },
 
   async deleteImage(invoiceId) {
-    if (!supabase) throw new Error('Configuración de Supabase faltante (.env)');
-    const { data: files } = await supabase.storage.from('images').list('', { search: invoiceId });
-    if (files && files.length > 0) {
-      await supabase.storage.from('images').remove(files.map(f => f.name));
+    const userId = await getCurrentUserId();
+    const path = await findImagePath(userId, invoiceId);
+    if (path) {
+      await supabase.storage.from('images').remove([path]);
     }
   },
 
-  // Settings con user_id como prefijo
+  // Settings: clave con prefijo de usuario + columna user_id (exigida por RLS)
   async getSetting(key) {
     const userId = await getCurrentUserId();
     const { data, error } = await supabase
@@ -134,20 +151,28 @@ const supabaseProvider = {
     const userId = await getCurrentUserId();
     const { error } = await supabase
       .from('settings')
-      .upsert({ key: `${userId}:${key}`, value });
+      .upsert({ key: `${userId}:${key}`, value, user_id: userId });
     if (error) throw error;
   },
 
   async clearAll() {
     const userId = await getCurrentUserId();
-    await supabase.from('invoices').delete().eq('user_id', userId);
+    const { error } = await supabase.from('invoices').delete().eq('user_id', userId);
+    if (error) throw error;
+
+    // Borrar también las imágenes del usuario para no dejar huérfanas
+    const { data: files } = await supabase.storage.from('images').list(userId, { limit: 1000 });
+    if (files && files.length > 0) {
+      await supabase.storage.from('images').remove(files.map((f) => `${userId}/${f.name}`));
+    }
   },
 
   async importInvoice(invoice) {
     const userId = await getCurrentUserId();
+    const org = await getActiveOrganization();
     const { error } = await supabase
       .from('invoices')
-      .upsert({ ...invoice, user_id: userId });
+      .upsert({ ...(org ? { organization_id: org.id } : {}), ...invoice, user_id: userId });
     if (error) throw error;
   },
 };

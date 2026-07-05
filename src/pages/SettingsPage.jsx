@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { exportBackup, importBackup, validateBackupFile } from '../services/backupService';
+import { getCurrentTheme, toggleTheme } from '../utils/theme';
 
 export default function SettingsPage() {
   const [vlmProvider, setVlmProvider] = useState('gemini');
@@ -15,12 +16,13 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [theme, setTheme] = useState(getCurrentTheme());
 
   // Accordion states
   const [openAccordions, setOpenAccordions] = useState({
-    vlm: true,
     backup: true,
     data: false,
+    advanced: false,
     about: false,
   });
 
@@ -165,14 +167,42 @@ export default function SettingsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Configuración</h1>
-          <p className="page-subtitle">API Keys, respaldos y preferencias</p>
+          <p className="page-subtitle">Respaldos y preferencias</p>
         </div>
       </div>
 
-      {/* VLM API Config Accordion */}
+      {/* Apariencia */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h3 className="card-title" style={{ marginBottom: 4 }}>🎨 Apariencia</h3>
+            <p className="text-sm text-muted" style={{ margin: 0 }}>
+              Tema actual: {theme === 'light' ? 'Claro' : 'Oscuro'}
+            </p>
+          </div>
+          <button
+            className="btn btn-secondary"
+            style={{ minHeight: '44px' }}
+            onClick={() => setTheme(toggleTheme())}
+          >
+            {theme === 'light' ? '🌙 Cambiar a oscuro' : '☀️ Cambiar a claro'}
+          </button>
+        </div>
+      </div>
+
+      {/* Extracción con IA: incluida, sin configuración */}
+      <div className="card">
+        <h3 className="card-title" style={{ marginBottom: 8 }}>🤖 Extracción con IA</h3>
+        <p className="text-sm text-muted" style={{ margin: 0 }}>
+          La extracción automática de datos desde las fotos de tus boletas está incluida
+          en tu cuenta. No necesitas configurar nada.
+        </p>
+      </div>
+
+      {/* Opciones avanzadas (API key propia, opcional) */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div 
-          onClick={() => toggleAccordion('vlm')}
+        <div
+          onClick={() => toggleAccordion('advanced')}
           className="accordion-header"
           style={{
             display: 'flex',
@@ -184,16 +214,18 @@ export default function SettingsPage() {
             userSelect: 'none'
           }}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>🤖 Extracción con IA (VLM)</h3>
+          <h3 className="card-title" style={{ margin: 0 }}>🧩 Opciones avanzadas</h3>
           <span style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>
-            {openAccordions.vlm ? '▲' : '▼'}
+            {openAccordions.advanced ? '▲' : '▼'}
           </span>
         </div>
 
-        {openAccordions.vlm && (
+        {openAccordions.advanced && (
           <div style={{ padding: '20px', borderTop: '1px solid var(--color-border)' }} className="space-y-4">
             <p className="text-sm text-muted">
-              Configura tu API Key para extraer datos automáticamente de las fotos de boletas.
+              Solo para usuarios avanzados: si prefieres usar tu propia cuenta de OpenAI o
+              Google Gemini para la extracción, ingresa aquí tu API Key. Si dejas este campo
+              vacío, se usa el servicio incluido.
             </p>
 
             <div className="space-y-4">
@@ -314,7 +346,7 @@ export default function SettingsPage() {
               <summary style={{ minHeight: '44px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Formato del backup</summary>
               <ul className="mt-2 list-disc list-inside space-y-1">
                 <li><code>invoices.json</code> — Array completo de comprobantes</li>
-                <li><code>settings.json</code> — API keys, mappings Saludent por RUT empresa</li>
+                <li><code>settings.json</code> — Preferencias y mappings de exportación por RUT empresa</li>
                 <li><code>images/</code> — Carpeta con imágenes (nombre = invoiceId.ext)</li>
                 <li><code>metadata.json</code> — Versión, fecha, contadores</li>
               </ul>
@@ -382,7 +414,7 @@ export default function SettingsPage() {
             <div className="detail-info-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="detail-field">
                 <span className="detail-field-label">Aplicación</span>
-                <span className="detail-field-value">Gestor de Boletas Saludent</span>
+                <span className="detail-field-value">Declarix</span>
               </div>
               <div className="detail-field">
                 <span className="detail-field-label">Versión</span>

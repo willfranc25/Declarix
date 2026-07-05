@@ -1,7 +1,7 @@
 /**
- * Tipos de gasto (TIPO DE GASTO) para rendición Saludent.
- * Estos corresponden exactamente a las categorías aceptadas en el
- * formato de rendición de la empresa.
+ * Tipos de gasto (TIPO DE GASTO) para la planilla de rendición.
+ * Corresponden a las categorías aceptadas en el formato de rendición
+ * configurado por la empresa.
  */
 export const EXPENSE_TYPES = [
   'Activo fijo',

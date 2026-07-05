@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import { clearActiveOrganization } from '../services/organizationService';
 
 const AuthContext = createContext(null);
 
@@ -9,6 +10,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!supabase) {
+      // Sin credenciales Supabase: modo local sin autenticación remota
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -26,7 +33,10 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  const noClientError = { data: null, error: new Error('Supabase no está configurado (.env)') };
+
   const login = async (email, password) => {
+    if (!supabase) return noClientError;
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -35,6 +45,7 @@ export function AuthProvider({ children }) {
   };
 
   const signup = async (email, password) => {
+    if (!supabase) return noClientError;
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -43,6 +54,7 @@ export function AuthProvider({ children }) {
   };
 
   const loginWithMagicLink = async (email) => {
+    if (!supabase) return noClientError;
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -53,11 +65,14 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    clearActiveOrganization();
+    if (!supabase) return { error: null };
     const { error } = await supabase.auth.signOut();
     return { error };
   };
 
   const resetPassword = async (email) => {
+    if (!supabase) return noClientError;
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin,
     });

@@ -179,7 +179,7 @@ export default function LoginPage() {
             fontSize: 'var(--font-size-xl)',
             fontWeight: '700',
             color: 'var(--color-text-primary)'
-          }}>Saludent</span>
+          }}>Declarix</span>
         </div>
 
         {/* Center Card */}

@@ -1,10 +1,11 @@
-import ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx';
 import { formatDate } from '../utils/formatters';
 import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
 
+// exceljs y xlsx pesan ~1 MB minificados: se cargan bajo demanda al exportar
+// para no inflar el chunk de la página de Reportes.
+
 /**
- * Exporta comprobantes al formato de rendición Saludent usando la plantilla.
+ * Exporta comprobantes al formato de rendición usando la plantilla de la empresa.
  *
  * Estrategia:
  * 1. Leer la plantilla usando ExcelJS para preservar todo el formato, macros, y logos.
@@ -17,6 +18,7 @@ import { generateMonthlySummary, generateCategorySummary } from '../utils/calcul
  * @param {Object} headerData - Datos del encabezado
  */
 export async function exportToRendicion(invoices, templateBuffer, headerData = {}, customMapping = null) {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
 
@@ -87,7 +89,8 @@ export async function exportToRendicion(invoices, templateBuffer, headerData = {
 /**
  * Exporta a un Excel nuevo simple (sin plantilla) con todas las columnas.
  */
-export function exportToExcel(invoices, options = {}) {
+export async function exportToExcel(invoices, options = {}) {
+  const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
 
   // Hoja principal

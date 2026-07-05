@@ -18,20 +18,22 @@ export async function exportBackup() {
     zip.file('invoices.json', JSON.stringify(invoices, null, 2));
 
     // 3. Obtener y agregar settings
+    // Nota: la API key de IA NUNCA se incluye en el backup (es una credencial;
+    // el ZIP puede compartirse con el contador u otras personas).
     const settings = {};
     try {
       const storageProvider = getStorageProvider();
-      // Settings keys conocidos
-      const keys = ['vlm_provider', 'vlm_api_key'];
-      for (const key of keys) {
-        const value = await storageProvider.getSetting(key);
-        if (value) settings[key] = value;
-      }
-      // También buscar mappings de Saludent
+      const provider = await storageProvider.getSetting('vlm_provider');
+      if (provider) settings.vlm_provider = provider;
+
+      // Mappings de exportación por RUT de empresa (con fallback al
+      // prefijo legacy de versiones anteriores)
       for (const inv of invoices) {
         if (inv.providerRut) {
-          const mappingKey = `saludent_mapping_${inv.providerRut.replace(/[.-]/g, '')}`;
-          const mapping = await storageProvider.getSetting(mappingKey);
+          const rutClean = inv.providerRut.replace(/[.-]/g, '');
+          const mappingKey = `export_mapping_${rutClean}`;
+          const mapping = (await storageProvider.getSetting(mappingKey))
+            || (await storageProvider.getSetting(`saludent_mapping_${rutClean}`));
           if (mapping) settings[mappingKey] = mapping;
         }
       }
@@ -60,7 +62,7 @@ export async function exportBackup() {
     const metadata = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
-      app: 'Saludent - Gestor de Boletas',
+      app: 'Declarix',
       invoiceCount: invoices.length,
       imageCount: imgCount,
       settingsKeys: Object.keys(settings).length
@@ -69,7 +71,7 @@ export async function exportBackup() {
 
     // 6. Generar y descargar ZIP
     const content = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-    const filename = `saludent-backup-${new Date().toISOString().split('T')[0]}.zip`;
+    const filename = `declarix-backup-${new Date().toISOString().split('T')[0]}.zip`;
     saveAs(content, filename);
 
     return { success: true, filename, invoices: invoices.length, images: imgCount };
@@ -87,10 +89,10 @@ export async function exportBackup() {
 export async function importBackup(zipFile, options = { overwrite: true, importImages: true, importSettings: true }) {
   const storage = getStorageProvider();
   const zip = new JSZip();
+  const results = { invoices: 0, images: 0, settings: 0, errors: [] };
 
   try {
     const content = await zip.loadAsync(zipFile);
-    const results = { invoices: 0, images: 0, settings: 0, errors: [] };
 
     // 1. Leer metadata (opcional)
     let metadata = null;
@@ -108,7 +110,11 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
       try {
         const settings = JSON.parse(await content.files['settings.json'].async('text'));
         for (const [key, value] of Object.entries(settings)) {
-          await storage.saveSetting(key, value);
+          // Backups antiguos usan el prefijo legacy de mapping
+          const normalizedKey = key.startsWith('saludent_mapping_')
+            ? key.replace('saludent_mapping_', 'export_mapping_')
+            : key;
+          await storage.saveSetting(normalizedKey, value);
           results.settings++;
         }
         console.log(`Importados ${results.settings} settings`);

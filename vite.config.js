@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
-        name: 'Saludent — Gestor de Boletas',
-        short_name: 'Saludent',
-        description: 'Gestor de boletas y facturas para declaración de impuestos en Chile. Extracción automática con IA y exportación a formato Saludent.',
+        name: 'Declarix — Gestión de Boletas y Facturas',
+        short_name: 'Declarix',
+        description: 'Gestión de boletas y facturas para pymes y contadores en Chile. Extracción automática con IA y exportación a planillas de rendición.',
         theme_color: '#0b1120',
         background_color: '#0b1120',
         display: 'standalone',
@@ -40,7 +40,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/urqgygbejabyukzdjdal\.supabase\.co\/rest\/v1\/.*/,
+            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/rest\/v1\/.*/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api',
@@ -50,7 +50,7 @@ export default defineConfig({
             }
           },
           {
-            urlPattern: /^https:\/\/urqgygbejabyukzdjdal\.supabase\.co\/storage\/v1\/.*/,
+            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/.*/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'supabase-images',

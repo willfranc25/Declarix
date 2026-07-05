@@ -1,49 +1,19 @@
 import { EXPENSE_TYPES } from '../data/expenseTypes';
 import { getStorageProvider } from './storage/StorageProvider';
 import { validateRut } from '../utils/rutValidator';
+import { buildExtractionPrompt } from './extractionPrompt';
+import { supabase } from './supabaseClient';
 
 /**
- * Prompt de extracción para modelos de visión (OpenAI GPT-4o, Gemini, etc.)
- * Adaptado al formato de rendición Saludent.
+ * Servicio de extracción con IA (modelos de visión).
+ *
+ * Camino normal: POST /api/extract — la API key del proveedor vive solo en
+ * el servidor y el consumo queda registrado por usuario.
+ *
+ * Camino avanzado (opcional): si el usuario configuró su propia API key en
+ * Configuración → Opciones avanzadas, se llama directo al proveedor desde
+ * el navegador con esa key.
  */
-const EXTRACTION_PROMPT = `Analiza esta imagen de un comprobante chileno (boleta, factura, boleta de honorarios o nota de crédito).
-
-Extrae los datos y responde SOLAMENTE con un JSON válido, sin ningún otro texto ni markdown.
-
-Formato JSON requerido:
-{
-  "providerName": "nombre del proveedor o emisor",
-  "providerRut": "RUT en formato XX.XXX.XXX-X o null",
-  "documentType": "Factura|Factura Electrónica|Boleta|Boleta Electrónica|Boleta de Honorarios|Nota de Crédito|Otro",
-  "documentNumber": "número del documento o null",
-  "date": "YYYY-MM-DD",
-  "detail": "descripción breve de la compra/servicio",
-  "expenseType": "una de las categorías válidas (ver lista abajo)",
-  "netAmount": número o 0,
-  "totalBoletaServicios": número o 0,
-  "totalBoletaHonorarios": número o 0,
-  "specificTax": número o 0,
-  "ivaAmount": número o 0,
-  "totalAmount": número o 0
-}
-
-Reglas de montos:
-- Si es FACTURA o NOTA DE CRÉDITO: poner el monto neto en "netAmount", el IVA en "ivaAmount"
-- Si es BOLETA normal o de SERVICIOS: poner el total en "totalBoletaServicios", netAmount=0
-- Si es BOLETA DE HONORARIOS: poner el total en "totalBoletaHonorarios", netAmount=0
-- "specificTax": solo para impuesto específico al combustible u otro impuesto especial separado del IVA
-- "totalAmount": siempre el monto total final del documento
-
-Reglas de campos:
-- "providerRut": buscar RUT, R.U.T. seguido de números como 12.345.678-9. Debe tener dígito verificador válido.
-- "date": convertir DD/MM/YYYY o similar a formato estándar YYYY-MM-DD.
-- "detail": describir brevemente qué se compró.
-- Retornar null o 0 para campos no visibles en la imagen.
-
-Categorías válidas para "expenseType":
-${EXPENSE_TYPES.join(', ')}
-
-Elige la categoría que mejor coincida con el contexto de la compra.`;
 
 /**
  * Convierte un File/Blob a base64.
@@ -174,12 +144,40 @@ export function validateExtractedData(data) {
 }
 
 /**
- * Extrae datos de un comprobante usando OpenAI Vision API.
+ * Camino normal: extracción vía backend propio (/api/extract).
+ * La sesión del usuario autentica la llamada; la key del proveedor
+ * nunca llega al navegador.
+ */
+async function extractWithBackend(base64Image, mimeType, feedback = '') {
+  if (!supabase) {
+    throw new Error('La extracción con IA requiere una cuenta. Inicia sesión o configura tu propia API Key en Opciones avanzadas.');
+  }
+  const { data: { session } = {} } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Debes iniciar sesión para usar la extracción con IA.');
+  }
+
+  const response = await fetch('/api/extract', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ imageBase64: base64Image, mimeType, feedback }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'El servicio de extracción no está disponible en este momento.');
+  }
+  return data.text || '';
+}
+
+/**
+ * Camino avanzado: llamada directa a OpenAI con la API key propia del usuario.
  */
 async function extractWithOpenAI(apiKey, base64Image, mimeType, feedback = '') {
-  const prompt = feedback
-    ? `${EXTRACTION_PROMPT}\n\nATENCIÓN: En un intento anterior, la extracción falló por las siguientes razones:\n${feedback}\nPor favor corrige estos errores en esta nueva respuesta y asegúrate de cumplir con todas las reglas de negocio descritas en el prompt.`
-    : EXTRACTION_PROMPT;
+  const prompt = buildExtractionPrompt(feedback);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -216,13 +214,11 @@ async function extractWithOpenAI(apiKey, base64Image, mimeType, feedback = '') {
 }
 
 /**
- * Extrae datos de un comprobante usando Google Gemini API.
+ * Camino avanzado: llamada directa a Google Gemini con la API key propia del usuario.
  */
 async function extractWithGemini(apiKey, base64Image, mimeType, feedback = '') {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const prompt = feedback
-    ? `${EXTRACTION_PROMPT}\n\nATENCIÓN: En un intento anterior, la extracción falló por las siguientes razones:\n${feedback}\nPor favor corrige estos errores en esta nueva respuesta y asegúrate de cumplir con todas las reglas de negocio descritas en el prompt.`
-    : EXTRACTION_PROMPT;
+  const prompt = buildExtractionPrompt(feedback);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -260,21 +256,16 @@ async function extractWithGemini(apiKey, base64Image, mimeType, feedback = '') {
 
 /**
  * Servicio principal de extracción VLM.
- * Detecta el proveedor configurado, llama a la API correspondiente y
- * realiza reintentos automáticos si falla la validación cruzada.
+ * Usa el backend propio por defecto; si el usuario configuró su propia API key
+ * (opción avanzada), llama directo al proveedor. Reintenta automáticamente si
+ * falla la validación cruzada.
  */
 export async function extractInvoiceData(imageFile) {
   const storage = getStorageProvider();
 
-  // Obtener configuración del proveedor de IA
-  const provider = (await storage.getSetting('vlm_provider')) || 'gemini';
-  const apiKey = await storage.getSetting('vlm_api_key');
-
-  if (!apiKey) {
-    throw new Error(
-      'No se ha configurado una API Key. Ve a Configuración para agregar tu clave de OpenAI o Gemini.'
-    );
-  }
+  // Opción avanzada: API key propia del usuario (si existe)
+  const ownProvider = (await storage.getSetting('vlm_provider')) || 'gemini';
+  const ownApiKey = await storage.getSetting('vlm_api_key');
 
   const base64Image = await fileToBase64(imageFile);
   const mimeType = imageFile.type || 'image/jpeg';
@@ -290,10 +281,12 @@ export async function extractInvoiceData(imageFile) {
 
     try {
       let rawResponse;
-      if (provider === 'openai') {
-        rawResponse = await extractWithOpenAI(apiKey, base64Image, mimeType, feedback);
+      if (ownApiKey) {
+        rawResponse = ownProvider === 'openai'
+          ? await extractWithOpenAI(ownApiKey, base64Image, mimeType, feedback)
+          : await extractWithGemini(ownApiKey, base64Image, mimeType, feedback);
       } else {
-        rawResponse = await extractWithGemini(apiKey, base64Image, mimeType, feedback);
+        rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
       }
 
       parsed = tryParseJson(rawResponse);
@@ -332,7 +325,7 @@ export async function extractInvoiceData(imageFile) {
         const errorsStr = validation.errors.join('; ');
         console.warn(`[VLM Service] [Intento ${attempt}] Falló la validación:`, validation.errors);
         feedback = validation.errors.map((err, i) => `${i + 1}. ${err}`).join('\n');
-        
+
         if (attempt >= maxAttempts) {
           throw new Error(`La extracción falló la validación final:\n${errorsStr}`);
         }

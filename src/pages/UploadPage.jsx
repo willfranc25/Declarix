@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { extractInvoiceData } from '../services/vlmService';
+import { compressImage } from '../utils/imageCompression';
 import { cleanRut, formatRut, validateRut } from '../utils/rutValidator';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -42,28 +43,33 @@ export default function UploadPage() {
   };
 
   // Manejar la selección de múltiples archivos
-  const handleFilesAdded = (filesList) => {
+  const handleFilesAdded = async (filesList) => {
     const newItems = [];
     let hasInvalidFiles = false;
 
     for (let i = 0; i < filesList.length; i++) {
-      const file = filesList[i];
-      const error = validateFile(file);
+      const rawFile = filesList[i];
+      const error = validateFile(rawFile);
       if (error) {
         hasInvalidFiles = true;
         continue;
       }
 
       // Evitar agregar archivos repetidos a la cola actual (por nombre y tamaño)
-      if (queue.some(q => q.name === file.name && q.size === file.size)) {
+      if (queue.some(q => q.name === rawFile.name && q.size === rawFile.size)) {
         continue;
       }
+
+      // Comprimir/redimensionar (fotos de celular pesan 3-10 MB)
+      const file = await compressImage(rawFile);
 
       newItems.push({
         id: Math.random().toString(36).substring(2, 11),
         file,
-        name: file.name,
-        size: file.size,
+        // Nombre/tamaño originales: así la deduplicación por (name, size)
+        // sigue funcionando aunque el archivo interno esté comprimido
+        name: rawFile.name,
+        size: rawFile.size,
         status: 'pending',
         progress: 0,
         error: null,

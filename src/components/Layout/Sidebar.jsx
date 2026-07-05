@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getCurrentTheme, toggleTheme } from '../../utils/theme';
 
 const navItems = [
   {
@@ -45,7 +47,7 @@ const navItems = [
   {
     path: '/reports',
     label: 'Reportes',
-    shortLabel: 'F29',
+    shortLabel: 'Reportes',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -68,10 +70,27 @@ const navItems = [
 export default function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [theme, setTheme] = useState(getCurrentTheme());
 
   const handleLogout = async () => {
     await logout();
   };
+
+  const handleToggleTheme = () => {
+    setTheme(toggleTheme());
+  };
+
+  const themeIcon = theme === 'light' ? (
+    // Luna: cambiar a oscuro
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  ) : (
+    // Sol: cambiar a claro
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  );
 
   const logoutIcon = (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,8 +106,8 @@ export default function Sidebar() {
           <div className="sidebar-logo">
             <div className="sidebar-logo-icon" aria-hidden="true">📋</div>
             <div className="sidebar-logo-text">
-              <h1>Saludent</h1>
-              <p>Gestor de Boletas</p>
+              <h1>Declarix</h1>
+              <p>Gestión de comprobantes</p>
             </div>
           </div>
         </div>
@@ -110,6 +129,14 @@ export default function Sidebar() {
 
         <div className="sidebar-footer">
           <button
+            className="nav-link"
+            onClick={handleToggleTheme}
+            aria-label={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+          >
+            {themeIcon}
+            <span>{theme === 'light' ? 'Modo oscuro' : 'Modo claro'}</span>
+          </button>
+          <button
             className="nav-link text-red-400 hover:bg-red-900/20"
             onClick={handleLogout}
             aria-label="Cerrar sesión"
@@ -117,7 +144,7 @@ export default function Sidebar() {
             {logoutIcon}
             <span>Cerrar sesión</span>
           </button>
-          <p className="mt-4 text-center text-xs text-slate-500">© 2025 Saludent</p>
+          <p className="mt-4 text-center text-xs text-slate-500">© 2026 Declarix</p>
         </div>
       </aside>
 

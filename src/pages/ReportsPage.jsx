@@ -88,8 +88,10 @@ export default function ReportsPage() {
       if (!rutEmpresa) return;
       try {
         const storage = getStorageProvider();
-        const key = `saludent_mapping_${cleanRut(rutEmpresa)}`;
-        const saved = await storage.getSetting(key);
+        const rutClean = cleanRut(rutEmpresa);
+        // Fallback al prefijo legacy de versiones anteriores
+        const saved = (await storage.getSetting(`export_mapping_${rutClean}`))
+          || (await storage.getSetting(`saludent_mapping_${rutClean}`));
         if (saved) {
           setMapping(saved);
         } else {
@@ -115,7 +117,7 @@ export default function ReportsPage() {
 
     try {
       const storage = getStorageProvider();
-      const key = `saludent_mapping_${cleanRut(rutEmpresa)}`;
+      const key = `export_mapping_${cleanRut(rutEmpresa)}`;
       const upperMapping = {};
       Object.keys(mapping).forEach(k => {
         upperMapping[k] = (mapping[k] || '').toUpperCase();
@@ -208,70 +210,6 @@ export default function ReportsPage() {
     });
   }, [invoices, filterText, dateFrom, dateTo, expenseType, documentType]);
 
-  // Calcular Resumen IVA para F29
-  const f29Summary = useMemo(() => {
-    const summaryMap = {}; // Clave: YYYY-MM
-    filtered.forEach((inv) => {
-      const d = new Date(inv.date);
-      if (isNaN(d.getTime())) return;
-      const year = d.getFullYear();
-      const month = d.getMonth() + 1;
-      const key = `${year}-${String(month).padStart(2, '0')}`;
-
-      if (!summaryMap[key]) {
-        summaryMap[key] = {
-          year,
-          month,
-          netCompras: 0,
-          ivaCredito: 0,
-          ivaDebito: 0,
-          total: 0,
-          count: 0
-        };
-      }
-
-      const docType = inv.documentType || '';
-      const isFactura = ['Factura', 'Factura Electrónica'].includes(docType);
-      const isNC = docType === 'Nota de Crédito';
-
-      if (isFactura) {
-        summaryMap[key].netCompras += Number(inv.netAmount || 0);
-        summaryMap[key].ivaCredito += Number(inv.ivaAmount || 0);
-        summaryMap[key].count++;
-      } else if (isNC) {
-        summaryMap[key].ivaDebito += Number(inv.ivaAmount || 0);
-        summaryMap[key].count++;
-      }
-    });
-
-    return Object.values(summaryMap).map(item => {
-      item.total = item.netCompras + item.ivaCredito - item.ivaDebito;
-      return item;
-    }).sort((a, b) => {
-      const keyA = `${a.year}-${String(a.month).padStart(2, '0')}`;
-      const keyB = `${b.year}-${String(b.month).padStart(2, '0')}`;
-      return keyB.localeCompare(keyA); 
-    });
-  }, [filtered]);
-
-  // Copiar F29 completo al portapapeles
-  const handleCopyF29 = () => {
-    if (f29Summary.length === 0) return;
-    const headers = ['Mes/Año', 'Neto Compras', 'IVA Crédito (Facturas)', 'IVA Débito (NC)', 'Monto Neto F29'];
-    const rows = f29Summary.map(item => [
-      `${getMonthName(item.month)} ${item.year}`,
-      item.netCompras,
-      item.ivaCredito,
-      item.ivaDebito,
-      item.total
-    ].join('\t'));
-
-    const text = [headers.join('\t'), ...rows].join('\n');
-    navigator.clipboard.writeText(text)
-      .then(() => alert('Resumen F29 copiado al portapapeles en formato Excel.'))
-      .catch(err => alert('Error al copiar: ' + err.message));
-  };
-
   // Validación Pre-export
   const preExportIssues = useMemo(() => {
     const issues = [];
@@ -359,9 +297,13 @@ export default function ReportsPage() {
     }
   };
 
-  const handleExportExcel = () => {
-    const data = exportToExcel(filtered, { includeMonthlySheet: true, includeCategorySheet: true });
-    downloadFile(data, `Comprobantes-${new Date().toISOString().split('T')[0]}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const handleExportExcel = async () => {
+    try {
+      const data = await exportToExcel(filtered, { includeMonthlySheet: true, includeCategorySheet: true });
+      downloadFile(data, `Comprobantes-${new Date().toISOString().split('T')[0]}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    } catch (err) {
+      alert('Error al exportar: ' + err.message);
+    }
   };
 
   const handleExportCSV = () => {
@@ -556,50 +498,6 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* F29 IVA Summary Card */}
-      <div className="card">
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h3 className="card-title flex items-center gap-2">
-            📊 Resumen de IVA para F29
-          </h3>
-          {f29Summary.length > 0 && (
-            <button className="btn btn-secondary btn-sm" style={{ minHeight: '44px' }} onClick={handleCopyF29}>
-              📋 Copiar para F29
-            </button>
-          )}
-        </div>
-        {f29Summary.length > 0 ? (
-          <div className="table-container">
-            <table className="table" style={{ fontSize: '0.85rem' }}>
-              <thead>
-                <tr>
-                  <th>Mes / Año</th>
-                  <th className="text-right">Comprobantes</th>
-                  <th className="text-right">Neto Compras</th>
-                  <th className="text-right">IVA Crédito (Facturas)</th>
-                  <th className="text-right">IVA Débito (NC)</th>
-                  <th className="text-right">Total F29</th>
-                </tr>
-              </thead>
-              <tbody>
-                {f29Summary.map((item) => (
-                  <tr key={`${item.year}-${item.month}`}>
-                    <td className="font-semibold" data-label="Mes / Año">{getMonthName(item.month)} {item.year}</td>
-                    <td className="text-right" data-label="Comprobantes">{item.count}</td>
-                    <td className="text-right text-mono" data-label="Neto Compras">{formatCurrency(item.netCompras)}</td>
-                    <td className="text-right text-mono" data-label="IVA Crédito" style={{ color: 'var(--color-cyan)' }}>+{formatCurrency(item.ivaCredito)}</td>
-                    <td className="text-right text-mono" data-label="IVA Débito" style={{ color: 'var(--color-danger)' }}>-{formatCurrency(item.ivaDebito)}</td>
-                    <td className="text-right text-mono font-bold" data-label="Total F29" style={{ color: 'var(--color-success)' }}>{formatCurrency(item.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-muted text-center py-6 text-sm">Sin comprobantes en el rango seleccionado</p>
-        )}
-      </div>
-
       {/* Pre-export Validation Panel */}
       {preExportIssues.length > 0 && (
         <div className="card" style={{ borderLeft: '4px solid var(--color-danger)' }}>
@@ -748,7 +646,7 @@ export default function ReportsPage() {
         <div className="alert alert-info mb-4">
           <span>📄</span>
           <div style={{ flex: 1 }}>
-            <strong>Exportar a Rendición Saludent:</strong> Arrastra la plantilla Excel (.xlsm) al recuadro de abajo para cargarla. Se rellenará con los datos filtrados según el mapping.
+            <strong>Exportar a Rendición:</strong> Arrastra la plantilla Excel (.xlsm) al recuadro de abajo para cargarla. Se rellenará con los datos filtrados según el mapping.
           </div>
         </div>
 

@@ -21,6 +21,40 @@ declare module '*utils/calculations' {
   export function generateMonthlySummary(invoices: any[]): any[];
 }
 
+declare module '*services/vlmService' {
+  export interface ExtractedInvoiceData {
+    providerName: string;
+    providerRut: string;
+    documentType: string;
+    documentNumber: string;
+    date: string;
+    detail: string;
+    expenseType: string;
+    netAmount: number;
+    totalBoletaServicios: number;
+    totalBoletaHonorarios: number;
+    specificTax: number;
+    ivaAmount: number;
+    totalAmount: number;
+  }
+  export function extractInvoiceData(imageFile: File): Promise<ExtractedInvoiceData>;
+  export function validateExtractedData(
+    data: Partial<ExtractedInvoiceData>
+  ): { isValid: boolean; errors: string[] };
+}
+
+declare module '*services/exportService' {
+  export function exportToRendicion(
+    invoices: any[],
+    templateBuffer: ArrayBuffer,
+    headerData?: Record<string, any>,
+    customMapping?: Record<string, string> | null
+  ): Promise<ArrayBuffer>;
+  export function exportToExcel(invoices: any[], options?: Record<string, any>): Promise<Uint8Array>;
+  export function exportToCSV(invoices: any[]): string;
+  export function downloadFile(content: any, filename: string, mimeType: string): void;
+}
+
 declare module '*store/invoiceStore' {
   import { StoreApi, UseBoundStore } from 'zustand';
   interface Invoice {

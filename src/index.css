@@ -99,6 +99,66 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — override de tokens vía data-theme en <html>
+   (el resto del CSS consume solo tokens, no colores directos)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme='light'] {
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #f1f5f9;
+  --color-bg-elevated: rgba(255, 255, 255, 0.92);
+  --color-bg-hover: rgba(148, 163, 184, 0.14);
+
+  --color-surface: rgba(255, 255, 255, 0.88);
+  --color-surface-light: rgba(241, 245, 249, 0.85);
+
+  --color-border: rgba(15, 23, 42, 0.12);
+  --color-border-light: rgba(15, 23, 42, 0.06);
+  --color-border-focus: rgba(37, 99, 235, 0.45);
+
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-text-muted: #94a3b8;
+
+  --color-accent: #2563eb;
+  --color-accent-light: #1d4ed8; /* usado como texto: necesita contraste sobre claro */
+  --color-accent-dark: #1e40af;
+  --color-accent-glow: rgba(37, 99, 235, 0.12);
+
+  --color-cyan: #0891b2;
+  --color-cyan-glow: rgba(8, 145, 178, 0.12);
+
+  --color-success: #059669;
+  --color-success-bg: rgba(5, 150, 105, 0.1);
+  --color-warning: #d97706;
+  --color-warning-bg: rgba(217, 119, 6, 0.1);
+  --color-danger: #dc2626;
+  --color-danger-bg: rgba(220, 38, 38, 0.08);
+  --color-info: #2563eb;
+  --color-info-bg: rgba(37, 99, 235, 0.08);
+
+  --gradient-primary: linear-gradient(135deg, #2563eb, #1e40af);
+  --gradient-accent: linear-gradient(135deg, #0891b2, #2563eb);
+  --gradient-surface: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.95));
+  --gradient-glow: radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.06), transparent 60%);
+
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 10px 25px rgba(15, 23, 42, 0.1), 0 4px 10px rgba(15, 23, 42, 0.06);
+  --shadow-xl: 0 20px 40px rgba(15, 23, 42, 0.12);
+  --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.12);
+  --shadow-glow-lg: 0 0 40px rgba(37, 99, 235, 0.15);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    BASE RESET & GLOBALS
    ═══════════════════════════════════════════════════════════════════════════ */
 
