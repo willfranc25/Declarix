@@ -11,6 +11,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 export default function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const { invoices, loadInvoices, setBatchInvoices, clearBatchInvoices } = useInvoiceStore();
 
   // La cola vive en un store global: la extracción continúa aunque el
@@ -189,21 +190,43 @@ export default function UploadPage() {
           style={{ padding: '40px 20px', cursor: 'pointer' }}
         >
           <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)', marginBottom: '1rem' }}>
-            <Icon name="camera" size={24} />
+            <Icon name="photo" size={24} />
           </div>
           <p className="drop-zone-text">
-            <strong>Haz clic para seleccionar</strong> o arrastra múltiples imágenes aquí
+            <strong>Haz clic para elegir de tu galería</strong> o arrastra múltiples imágenes aquí
           </p>
           <p className="drop-zone-hint" style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
-            Soporta JPEG, PNG y WEBP (máx. 10 MB por archivo)
+            Puedes seleccionar varias a la vez · JPEG, PNG o WEBP (máx. 10 MB por archivo)
           </p>
         </div>
+
+        {/* Botón separado para foto directa con la cámara (solo toma 1 a la vez) */}
+        <button
+          type="button"
+          className="btn btn-secondary w-full mt-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            cameraInputRef.current?.click();
+          }}
+        >
+          <Icon name="camera" /> Tomar foto con la cámara
+        </button>
+
+        {/* Selector de galería: sin `capture` para no forzar la cámara y permitir multiselección */}
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           multiple
+          onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
+          style={{ display: 'none' }}
+        />
+        {/* Selector de cámara: una foto a la vez (limitación del hardware, no de la app) */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
           onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
           style={{ display: 'none' }}
         />
