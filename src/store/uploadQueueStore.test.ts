@@ -36,8 +36,8 @@ function makeFile(name: string) {
 }
 
 async function waitForIdle() {
-  // Espera a que el loop de procesamiento termine
-  for (let i = 0; i < 50; i++) {
+  // Espera a que el loop de procesamiento termine (incluye esperas de cuota)
+  for (let i = 0; i < 400; i++) {
     await new Promise((r) => setTimeout(r, 10));
     const s = useUploadQueueStore.getState();
     if (!s.isProcessing && !s.queue.some((q) => q.status === 'pending' || q.status === 'processing')) {
@@ -107,6 +107,22 @@ describe('uploadQueueStore', () => {
     expect(queue.every((q) => /límite mensual/.test(q.error ?? ''))).toBe(true);
     // Solo se llamó a la API una vez: no quemó reintentos con los demás
     expect(mockExtract).toHaveBeenCalledTimes(1);
+  });
+
+  it('ante el 429 crudo de Google (quota) espera y reintenta en vez de fallar', async () => {
+    // Primer intento: error de cuota del proveedor con hint de reintento corto
+    mockExtract
+      .mockRejectedValueOnce(
+        new Error('You exceeded your current quota. * Quota exceeded ... Please retry in 0.01s')
+      )
+      .mockResolvedValueOnce(validData);
+
+    await useUploadQueueStore.getState().addFiles([makeFile('a.jpg')]);
+    await waitForIdle();
+
+    const item = useUploadQueueStore.getState().queue[0];
+    expect(item.status).toBe('done');
+    expect(mockExtract).toHaveBeenCalledTimes(2);
   });
 
   it('removeItems saca de la cola los items ya guardados', async () => {

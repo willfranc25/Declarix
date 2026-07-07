@@ -24,8 +24,27 @@ import useInvoiceStore from './invoiceStore';
 const BURST_WAIT_MS = 45_000;
 const MAX_BURST_WAITS = 5;
 
-const isBurstLimitError = (err) => /demasiadas extracciones/i.test(err?.message || '');
+// Límite de ráfaga por minuto. Cubre tanto el mensaje de nuestro backend
+// como el error crudo del proveedor (Gemini/OpenAI) cuando el usuario usa
+// su propia API key: "exceeded your current quota", "rate limit",
+// "resource exhausted", HTTP 429.
+const isBurstLimitError = (err) =>
+  /demasiadas extracciones|exceeded your current quota|rate.?limit|resource has been exhausted|too many requests|\b429\b/i.test(
+    err?.message || ''
+  );
+
 const isMonthlyLimitError = (err) => /límite mensual/i.test(err?.message || '');
+
+// Si el proveedor sugiere cuándo reintentar ("Please retry in 25.79s"),
+// respetamos ese tiempo (con un pequeño margen) en vez de esperar fijo.
+function retryDelayFromError(err) {
+  const match = /retry in ([\d.]+)\s*s/i.exec(err?.message || '');
+  if (match) {
+    const secs = Number(match[1]);
+    if (Number.isFinite(secs)) return Math.min(60_000, Math.ceil(secs * 1000) + 2_000);
+  }
+  return BURST_WAIT_MS;
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -171,7 +190,7 @@ const useUploadQueueStore = create((set, get) => ({
             burstWaits: item.burstWaits + 1,
             error: null,
           });
-          await sleep(BURST_WAIT_MS);
+          await sleep(retryDelayFromError(err));
           // Puede haber sido removido durante la espera
           if (get().queue.some((q) => q.id === item.id)) {
             get()._updateItem(item.id, { status: 'pending' });
