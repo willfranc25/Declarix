@@ -113,6 +113,32 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Mobile Top Bar (logo + tema + salir; solo visible en móvil) */}
+      <header className="mobile-topbar" role="banner">
+        <div className="mobile-topbar-brand">
+          <div className="mobile-topbar-logo" aria-hidden="true">
+            <Icon name="document" size={18} />
+          </div>
+          <span>Declarix</span>
+        </div>
+        <div className="mobile-topbar-actions">
+          <button
+            className="mobile-topbar-btn"
+            onClick={handleToggleTheme}
+            aria-label={theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+          >
+            {themeIcon}
+          </button>
+          <button
+            className="mobile-topbar-btn"
+            onClick={handleLogout}
+            aria-label="Cerrar sesión"
+          >
+            {logoutIcon}
+          </button>
+        </div>
+      </header>
+
       {/* Desktop Sidebar */}
       <aside className="app-sidebar" role="navigation" aria-label="Navegación principal">
         <div className="sidebar-header">
@@ -186,14 +212,6 @@ export default function Sidebar() {
               {queueBadge(item.path)}
             </NavLink>
           ))}
-          <button
-            className="mobile-nav-link text-red-400"
-            onClick={handleLogout}
-            aria-label="Cerrar sesión"
-          >
-            {logoutIcon}
-            <span>Salir</span>
-          </button>
         </div>
       </nav>
     </>
