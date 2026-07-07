@@ -1,18 +1,13 @@
 import { EXPENSE_TYPES } from '../data/expenseTypes';
-import { getStorageProvider } from './storage/StorageProvider';
 import { validateRut } from '../utils/rutValidator';
-import { buildExtractionPrompt } from './extractionPrompt';
 import { supabase } from './supabaseClient';
 
 /**
  * Servicio de extracción con IA (modelos de visión).
  *
- * Camino normal: POST /api/extract — la API key del proveedor vive solo en
- * el servidor y el consumo queda registrado por usuario.
- *
- * Camino avanzado (opcional): si el usuario configuró su propia API key en
- * Configuración → Opciones avanzadas, se llama directo al proveedor desde
- * el navegador con esa key.
+ * La extracción pasa siempre por el backend propio (POST /api/extract): la
+ * API key del proveedor (Gemini/OpenAI) vive solo en el servidor, el consumo
+ * queda registrado por usuario y los límites del plan se aplican ahí.
  */
 
 /**
@@ -174,99 +169,11 @@ async function extractWithBackend(base64Image, mimeType, feedback = '') {
 }
 
 /**
- * Camino avanzado: llamada directa a OpenAI con la API key propia del usuario.
- */
-async function extractWithOpenAI(apiKey, base64Image, mimeType, feedback = '') {
-  const prompt = buildExtractionPrompt(feedback);
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` },
-            },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `OpenAI API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-/**
- * Camino avanzado: llamada directa a Google Gemini con la API key propia del usuario.
- */
-async function extractWithGemini(apiKey, base64Image, mimeType, feedback = '') {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const prompt = buildExtractionPrompt(feedback);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Image,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-/**
  * Servicio principal de extracción VLM.
- * Usa el backend propio por defecto; si el usuario configuró su propia API key
- * (opción avanzada), llama directo al proveedor. Reintenta automáticamente si
- * falla la validación cruzada.
+ * Llama al backend propio y reintenta automáticamente si falla la validación
+ * cruzada de los datos extraídos.
  */
 export async function extractInvoiceData(imageFile) {
-  const storage = getStorageProvider();
-
-  // Opción avanzada: API key propia del usuario (si existe)
-  const ownProvider = (await storage.getSetting('vlm_provider')) || 'gemini';
-  const ownApiKey = await storage.getSetting('vlm_api_key');
-
   const base64Image = await fileToBase64(imageFile);
   const mimeType = imageFile.type || 'image/jpeg';
 
@@ -280,14 +187,7 @@ export async function extractInvoiceData(imageFile) {
     console.log(`[VLM Service] Intento ${attempt}/${maxAttempts} de extracción para: ${imageFile.name}`);
 
     try {
-      let rawResponse;
-      if (ownApiKey) {
-        rawResponse = ownProvider === 'openai'
-          ? await extractWithOpenAI(ownApiKey, base64Image, mimeType, feedback)
-          : await extractWithGemini(ownApiKey, base64Image, mimeType, feedback);
-      } else {
-        rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
-      }
+      const rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
 
       parsed = tryParseJson(rawResponse);
       if (!parsed) {

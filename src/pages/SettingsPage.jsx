@@ -7,13 +7,6 @@ import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 
 export default function SettingsPage() {
-  const [vlmProvider, setVlmProvider] = useState('gemini');
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
   // Backup/Restore states
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -28,7 +21,6 @@ export default function SettingsPage() {
   const [openAccordions, setOpenAccordions] = useState({
     backup: true,
     data: false,
-    advanced: false,
     about: false,
   });
 
@@ -39,33 +31,21 @@ export default function SettingsPage() {
     }));
   };
 
+  // Limpieza única: la extracción con IA ahora vive solo en el backend.
+  // Si quedó una API key personal guardada de versiones anteriores, se borra.
   useEffect(() => {
-    async function load() {
-      const storage = getStorageProvider();
-      const provider = await storage.getSetting('vlm_provider');
-      const key = await storage.getSetting('vlm_api_key');
-      if (provider) setVlmProvider(provider);
-      if (key) setApiKey(key);
-      setIsLoading(false);
-    }
-    load();
+    (async () => {
+      try {
+        const storage = getStorageProvider();
+        if (await storage.getSetting('vlm_api_key')) {
+          await storage.saveSetting('vlm_api_key', '');
+          await storage.saveSetting('vlm_provider', '');
+        }
+      } catch {
+        // best-effort: no bloquea la página
+      }
+    })();
   }, []);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setSaved(false);
-    try {
-      const storage = getStorageProvider();
-      await storage.saveSetting('vlm_provider', vlmProvider);
-      await storage.saveSetting('vlm_api_key', apiKey);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      addToast('Error al guardar: ' + err.message, 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleConfirmClear = async () => {
     try {
@@ -141,15 +121,6 @@ export default function SettingsPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner" />
-        <span>Cargando configuración...</span>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 animate-fade-in" style={{ maxWidth: 700, margin: '0 auto' }}>
       <style>{`
@@ -213,97 +184,6 @@ export default function SettingsPage() {
           La extracción automática de datos desde las fotos de tus boletas está incluida
           en tu cuenta. No necesitas configurar nada.
         </p>
-      </div>
-
-      {/* Opciones avanzadas (API key propia, opcional) */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div
-          onClick={() => toggleAccordion('advanced')}
-          className="accordion-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: '16px 20px',
-            minHeight: '44px',
-            userSelect: 'none'
-          }}
-        >
-          <h3 className="card-title" style={{ margin: 0 }}><Icon name="key" />Opciones avanzadas</h3>
-          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.advanced ? 'open' : ''}`} />
-        </div>
-
-        {openAccordions.advanced && (
-          <div style={{ padding: '20px', borderTop: '1px solid var(--color-border)' }} className="space-y-4">
-            <p className="text-sm text-muted">
-              Solo para usuarios avanzados: si prefieres usar tu propia cuenta de OpenAI o
-              Google Gemini para la extracción, ingresa aquí tu API Key. Si dejas este campo
-              vacío, se usa el servicio incluido.
-            </p>
-
-            <div className="space-y-4">
-              <div className="form-group">
-                <label className="form-label">Proveedor de IA</label>
-                <select className="form-select" value={vlmProvider} onChange={(e) => setVlmProvider(e.target.value)} style={{ minHeight: '44px' }}>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openai">OpenAI (GPT-4o)</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">API Key</label>
-                <div className="flex gap-2">
-                  <input
-                    className="form-input"
-                    type={showKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={vlmProvider === 'gemini' ? 'AIza...' : 'sk-...'}
-                    style={{ flex: 1, minHeight: '44px' }}
-                  />
-                  <button 
-                    className="btn btn-ghost btn-icon" 
-                    onClick={() => setShowKey(!showKey)} 
-                    title={showKey ? 'Ocultar' : 'Mostrar'}
-                    style={{ minHeight: '44px', width: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Icon name={showKey ? 'eye-off' : 'eye'} size={18} />
-                  </button>
-                </div>
-              </div>
-
-              {vlmProvider === 'gemini' && (
-                <div className="alert alert-info">
-                  <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-                  <div>
-                    Obtén tu API Key gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Modelo usado: Gemini 2.5 Flash.
-                  </div>
-                </div>
-              )}
-
-              {vlmProvider === 'openai' && (
-                <div className="alert alert-info">
-                  <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-                  <div>
-                    Obtén tu API Key en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform</a>. Modelo usado: GPT-4o-mini.
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 items-center">
-                <button className="btn btn-primary" onClick={handleSave} disabled={isSaving} style={{ minHeight: '44px' }}>
-                  {isSaving ? <><div className="spinner" /> Guardando...</> : 'Guardar configuración'}
-                </button>
-                {saved && (
-                  <span className="text-sm flex items-center gap-2" style={{ color: 'var(--color-success)' }}>
-                    <Icon name="check" size={14} /> Guardado correctamente
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Backup / Restore Accordion */}

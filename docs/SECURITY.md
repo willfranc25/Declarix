@@ -86,7 +86,9 @@ curl "https://<PROYECTO>.supabase.co/rest/v1/invoices?id=eq.<ID_DE_A>" \
 
 Definidos en `vercel.json`: `X-Content-Type-Options`, `X-Frame-Options: DENY`,
 `Referrer-Policy`, HSTS, `Permissions-Policy` y una CSP que solo permite
-conexiones a Supabase y (para el modo avanzado de key propia) a OpenAI/Gemini.
+conexiones a Supabase. El navegador ya no llama directo a OpenAI/Gemini
+(la extracción pasa siempre por `/api/extract`), por lo que esos dominios
+fueron retirados de `connect-src`.
 Si se agrega un dominio externo nuevo (analytics, CDN), hay que sumarlo a la
 CSP o el navegador lo bloqueará.
 

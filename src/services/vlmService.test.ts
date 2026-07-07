@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock del storage provider (settings) y del cliente Supabase
-const mockGetSetting = vi.fn();
-vi.mock('./storage/StorageProvider', () => ({
-  getStorageProvider: () => ({ getSetting: mockGetSetting }),
-}));
-
+// Mock del cliente Supabase (la sesión autentica la llamada al backend)
 const mockGetSession = vi.fn();
 vi.mock('./supabaseClient', () => ({
   supabase: { auth: { getSession: (...args: unknown[]) => mockGetSession(...args) } },
@@ -31,15 +26,6 @@ const validFactura = {
   ivaAmount: 190,
   totalAmount: 1190,
 };
-
-function geminiResponse(payload: unknown) {
-  return {
-    ok: true,
-    json: async () => ({
-      candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }],
-    }),
-  };
-}
 
 function backendResponse(payload: unknown) {
   return {
@@ -94,70 +80,20 @@ describe('validateExtractedData', () => {
   });
 });
 
-describe('extractInvoiceData — camino avanzado (API key propia)', () => {
+describe('extractInvoiceData — backend propio (único camino)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockGetSetting.mockReset();
     mockGetSession.mockReset();
-  });
-
-  it('llama directo a Gemini con la key del usuario y devuelve datos validados', async () => {
-    mockGetSetting.mockImplementation(async (key: string) => {
-      if (key === 'vlm_provider') return 'gemini';
-      if (key === 'vlm_api_key') return 'user-own-key';
-      return null;
-    });
-    const fetchMock = vi.fn().mockResolvedValue(geminiResponse(validFactura));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await extractInvoiceData(makeImageFile());
-
-    expect(result.providerRut).toBe(VALID_RUT);
-    expect(result.totalAmount).toBe(1190);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain('generativelanguage.googleapis.com');
-    expect(url).toContain('user-own-key');
-  });
-
-  it('reintenta con feedback cuando la validación falla y termina con datos válidos', async () => {
-    mockGetSetting.mockImplementation(async (key: string) => {
-      if (key === 'vlm_provider') return 'gemini';
-      if (key === 'vlm_api_key') return 'user-own-key';
-      return null;
-    });
-    const invalid = { ...validFactura, providerRut: '11.111.111-0' };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(geminiResponse(invalid))
-      .mockResolvedValueOnce(geminiResponse(validFactura));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await extractInvoiceData(makeImageFile());
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.providerRut).toBe(VALID_RUT);
-    // El segundo intento incluye el feedback del error anterior en el prompt
-    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
-    expect(JSON.stringify(secondBody)).toContain('intento anterior');
-  });
-});
-
-describe('extractInvoiceData — camino normal (backend propio)', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    mockGetSetting.mockReset();
-    mockGetSession.mockReset();
-    // Sin API key propia → usa el backend
-    mockGetSetting.mockResolvedValue(null);
     mockGetSession.mockResolvedValue({ data: { session: { access_token: 'jwt-token' } } });
   });
 
-  it('llama a /api/extract con el token de sesión', async () => {
+  it('llama a /api/extract con el token de sesión y devuelve datos validados', async () => {
     const fetchMock = vi.fn().mockResolvedValue(backendResponse(validFactura));
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await extractInvoiceData(makeImageFile());
 
+    expect(result.providerRut).toBe(VALID_RUT);
     expect(result.totalAmount).toBe(1190);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -166,6 +102,25 @@ describe('extractInvoiceData — camino normal (backend propio)', () => {
     const body = JSON.parse(init.body as string);
     expect(body.mimeType).toBe('image/jpeg');
     expect(typeof body.imageBase64).toBe('string');
+    // Nunca llama directo a un proveedor externo desde el navegador
+    expect(url).not.toContain('googleapis.com');
+    expect(url).not.toContain('openai.com');
+  });
+
+  it('reintenta con feedback cuando la validación falla y termina con datos válidos', async () => {
+    const invalid = { ...validFactura, providerRut: '11.111.111-0' };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(backendResponse(invalid))
+      .mockResolvedValueOnce(backendResponse(validFactura));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await extractInvoiceData(makeImageFile());
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.providerRut).toBe(VALID_RUT);
+    // El segundo intento envía el feedback del error anterior al backend
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(secondBody.feedback).toContain('RUT');
   });
 
   it('propaga el mensaje de error entendible del backend tras agotar reintentos', async () => {
