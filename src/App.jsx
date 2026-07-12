@@ -17,6 +17,9 @@ const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
+const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,6 +60,34 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// Raíz del sitio: landing para visitantes, aplicación para usuarios con sesión
+function HomeRoute() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="loading-screen" style={{ minHeight: '300px' }}>
+        <div className="spinner" style={{ margin: '0 auto 1rem' }} />
+        <p className="text-muted">Cargando...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <LandingPage />
+      </Suspense>
+    );
+  }
+
+  return (
+    <AppLayout>
+      <DashboardPage />
+    </AppLayout>
+  );
+}
+
 // Public route wrapper (redirects if already logged in)
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
@@ -80,6 +111,9 @@ function PublicRoute({ children }) {
 function AppRoutes() {
   return (
     <Routes>
+      {/* Raíz: landing pública sin sesión, dashboard con sesión */}
+      <Route path="/" element={<HomeRoute />} />
+
       {/* Public routes */}
       <Route
         path="/login"
@@ -89,6 +123,8 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
+      <Route path="/terminos" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
+      <Route path="/privacidad" element={<Suspense fallback={<PageLoader />}><PrivacyPage /></Suspense>} />
 
       {/* Protected routes */}
       <Route

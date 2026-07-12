@@ -6,9 +6,23 @@ import { test, expect } from '@playwright/test';
  * protegidas redirigen a /login: eso es exactamente lo que se valida.
  */
 
-test('la raíz redirige a login cuando no hay sesión', async ({ page }) => {
+test('la raíz muestra la landing pública sin sesión', async ({ page }) => {
   await page.goto('/');
+  // No redirige: es la página de venta
+  await expect(page).not.toHaveURL(/\/login/);
+  await expect(page.locator('.landing-h1')).toContainText('rendición');
+  // Precios visibles con los 4 planes
+  await expect(page.locator('#precios .plan')).toHaveCount(4);
+  // CTA lleva al login
+  await page.getByRole('link', { name: 'Crear cuenta gratis' }).first().click();
   await expect(page).toHaveURL(/\/login/);
+});
+
+test('las páginas legales son públicas', async ({ page }) => {
+  await page.goto('/terminos');
+  await expect(page.locator('h1')).toContainText('Términos');
+  await page.goto('/privacidad');
+  await expect(page.locator('h1')).toContainText('privacidad');
 });
 
 test('la página de login muestra la marca y el formulario', async ({ page }) => {

@@ -2,9 +2,17 @@ import { useState, useEffect } from 'react';
 import { getStorageProvider } from '../services/storage/StorageProvider';
 import { exportBackup, importBackup, validateBackupFile } from '../services/backupService';
 import { getCurrentTheme, toggleTheme } from '../utils/theme';
+import { getActiveOrganization } from '../services/organizationService';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
+
+const PLAN_LABELS = {
+  free: 'Gratis',
+  independiente: 'Independiente',
+  pyme: 'Pyme',
+  contador: 'Contador',
+};
 
 export default function SettingsPage() {
   // Backup/Restore states
@@ -15,7 +23,12 @@ export default function SettingsPage() {
   const [theme, setTheme] = useState(getCurrentTheme());
   const [confirmClear, setConfirmClear] = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
+  const [org, setOrg] = useState(null);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    getActiveOrganization().then(setOrg);
+  }, []);
 
   // Accordion states
   const [openAccordions, setOpenAccordions] = useState({
@@ -177,6 +190,27 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Plan actual y soporte */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="receipt" />Tu plan</h3>
+            <p className="text-sm text-muted" style={{ margin: 0 }}>
+              {org
+                ? <>Plan <strong>{PLAN_LABELS[org.planId] || org.planId || 'Gratis'}</strong>{org.name ? <> · Organización: {org.name}</> : null}</>
+                : 'Plan Gratis'}
+            </p>
+          </div>
+          <a
+            className="btn btn-secondary"
+            style={{ minHeight: '44px' }}
+            href="mailto:soporte@declarix.cl?subject=Cambio%20de%20plan"
+          >
+            Cambiar de plan
+          </a>
+        </div>
+      </div>
+
       {/* Extracción con IA: incluida, sin configuración */}
       <div className="card">
         <h3 className="card-title" style={{ marginBottom: 8 }}><Icon name="sparkles" />Extracción con IA</h3>
@@ -184,6 +218,21 @@ export default function SettingsPage() {
           La extracción automática de datos desde las fotos de tus boletas está incluida
           en tu cuenta. No necesitas configurar nada.
         </p>
+      </div>
+
+      {/* Soporte */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="info" />¿Necesitas ayuda?</h3>
+            <p className="text-sm text-muted" style={{ margin: 0 }}>
+              Escríbenos y te respondemos a la brevedad.
+            </p>
+          </div>
+          <a className="btn btn-secondary" style={{ minHeight: '44px' }} href="mailto:soporte@declarix.cl">
+            soporte@declarix.cl
+          </a>
+        </div>
       </div>
 
       {/* Backup / Restore Accordion */}

@@ -1,0 +1,53 @@
+name: Backup diario de la base de datos
+
+# El tier gratuito de Supabase no incluye respaldos: este workflow hace un
+# pg_dump diario y lo guarda como artifact privado del repositorio (30 días).
+#
+# Requiere el secret SUPABASE_DB_URL con la cadena de conexión
+# "Session pooler" (IPv4) del proyecto:
+#   Dashboard → Project Settings → Database → Connection string → Session pooler
+#   postgresql://postgres.<ref>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#
+# Restaurar: descargar el artifact y ejecutar
+#   gunzip -c declarix-backup-<fecha>.sql.gz | psql "<SUPABASE_DB_URL>"
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 07:00 UTC ≈ 03:00 Chile
+  workflow_dispatch:        # permite ejecutarlo a mano desde Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar configuración
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::warning::Falta el secret SUPABASE_DB_URL — backup omitido."
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Dump de la base (pg_dump 17 vía Docker)
+        if: env.skip != 'true'
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          FECHA=$(date -u +%Y%m%d)
+          docker run --rm postgres:17-alpine \
+            pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists \
+            | gzip > "declarix-backup-${FECHA}.sql.gz"
+          ls -lh declarix-backup-*.sql.gz
+          # Sanidad mínima: el dump debe contener nuestras tablas
+          gunzip -c "declarix-backup-${FECHA}.sql.gz" | grep -q "CREATE TABLE public.invoices" \
+            || { echo "::error::El dump no contiene public.invoices"; exit 1; }
+
+      - name: Subir artifact (retención 30 días)
+        if: env.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: declarix-backup-*.sql.gz
+          retention-days: 30
+          if-no-files-found: error
