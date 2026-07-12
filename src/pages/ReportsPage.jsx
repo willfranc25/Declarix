@@ -516,7 +516,7 @@ export default function ReportsPage() {
 
       {/* Pre-export Validation Panel */}
       {preExportIssues.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid var(--color-danger)' }}>
+        <div className="card" style={{ borderColor: 'var(--color-danger-border)' }}>
           <h3 className="card-title text-red-400 mb-2">
             <Icon name="alert" style={{ color: 'var(--color-danger)' }} /> Advertencias pre-exportación ({preExportIssues.length})
           </h3>

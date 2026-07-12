@@ -170,6 +170,17 @@ export default function Sidebar() {
         </nav>
 
         <div className="sidebar-footer">
+          {user?.email && (
+            <div className="sidebar-account">
+              <div className="sidebar-account-avatar" aria-hidden="true">
+                {user.email.charAt(0).toUpperCase()}
+              </div>
+              <div className="sidebar-account-info">
+                <p className="sidebar-account-email" title={user.email}>{user.email}</p>
+                <p className="sidebar-account-plan">Plan todo incluido</p>
+              </div>
+            </div>
+          )}
           <button
             className="nav-link"
             onClick={handleToggleTheme}
@@ -186,7 +197,6 @@ export default function Sidebar() {
             {logoutIcon}
             <span>Cerrar sesión</span>
           </button>
-          <p className="mt-4 text-center text-xs text-slate-500">© 2026 Declarix</p>
         </div>
       </aside>
 

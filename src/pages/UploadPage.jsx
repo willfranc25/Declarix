@@ -237,7 +237,7 @@ export default function UploadPage() {
 
       {/* Barra Global de Progreso */}
       {totalFiles > 0 && (
-        <div className="card p-6 space-y-4" style={{ borderLeft: '4px solid var(--color-accent)' }}>
+        <div className="card p-6 space-y-4">
           <div className="flex justify-between items-center flex-wrap gap-2">
             <h3 className="font-semibold text-lg flex items-center gap-2">
               Progreso de procesamiento

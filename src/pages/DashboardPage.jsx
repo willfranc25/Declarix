@@ -382,10 +382,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Metric Cards */}
+      {/* Metric Cards — una sola tarjeta dividida por separadores internos */}
       <div className="grid-metrics">
         <div className="metric-card">
-          <div className="metric-icon blue"><Icon name="cash" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total Gastado</div>
             <div className="metric-value">{formatCurrency(metrics.total)}</div>
@@ -393,7 +392,6 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon cyan"><Icon name="chart" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total Neto</div>
             <div className="metric-value">{formatCurrency(metrics.neto)}</div>
@@ -401,7 +399,6 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon yellow"><Icon name="receipt" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Total IVA</div>
             <div className="metric-value">{formatCurrency(metrics.iva)}</div>
@@ -409,7 +406,6 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon green"><Icon name="document" size={20} /></div>
           <div className="metric-content">
             <div className="metric-label">Comprobantes</div>
             <div className="metric-value">{metrics.count}</div>
@@ -445,10 +441,10 @@ export default function DashboardPage() {
                 <Tooltip
                   formatter={(value) => formatCurrency(value)}
                   contentStyle={{
-                    background: '#1e293b',
-                    border: '1px solid rgba(148,163,184,0.12)',
-                    borderRadius: '8px',
-                    color: '#f1f5f9',
+                    background: 'var(--color-bg-secondary)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    color: 'var(--color-text-primary)',
                   }}
                 />
               </PieChart>
@@ -492,28 +488,22 @@ export default function DashboardPage() {
                 formatter={(value) => formatCurrency(value)}
                 labelFormatter={(m) => getMonthName(m)}
                 contentStyle={{
-                  background: '#1e293b',
-                  border: '1px solid rgba(148,163,184,0.12)',
-                  borderRadius: '8px',
-                  color: '#f1f5f9',
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '6px',
+                  color: 'var(--color-text-primary)',
                 }}
               />
               <Bar
                 dataKey="totalAmount"
                 name="Total"
-                fill="url(#barGradient)"
-                radius={[4, 4, 0, 0]}
+                fill="#3b82f6"
+                radius={[2, 2, 0, 0]}
                 cursor="pointer"
                 onClick={(data) => {
                   setSelectedMonth(data.month);
                 }}
               />
-              <defs>
-                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" />
-                  <stop offset="100%" stopColor="#1d4ed8" />
-                </linearGradient>
-              </defs>
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-muted text-center mt-2">Haz clic en una barra para ver ese mes</p>

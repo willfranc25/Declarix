@@ -523,25 +523,29 @@ export default function BatchReviewPage() {
           box-shadow: var(--shadow-sm);
         }
 
-        /* ── Modo enfocado ── */
+        /* ── Modo enfocado: formulario a la izquierda, imagen fija a la derecha ── */
         .focus-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.25fr) minmax(360px, 420px);
+          grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
           gap: var(--space-5);
           align-items: stretch;
           height: calc(100vh - 240px);
           min-height: 520px;
         }
         .focus-image-card {
+          order: 2;
           display: flex; flex-direction: column;
           padding: var(--space-3);
           min-height: 0;
+          position: sticky;
+          top: var(--space-4);
         }
         .focus-image-head {
           display: flex; align-items: center; justify-content: space-between;
           gap: var(--space-3); padding: 0 var(--space-2) var(--space-2);
         }
         .focus-form-card {
+          order: 1;
           display: flex; flex-direction: column;
           padding: 0; min-height: 0; overflow: hidden;
         }
@@ -567,7 +571,8 @@ export default function BatchReviewPage() {
             grid-template-columns: 1fr;
             height: auto;
           }
-          .focus-image-card { height: 46vh; min-height: 320px; }
+          .focus-image-card { order: 1; height: 46vh; min-height: 320px; position: static; }
+          .focus-form-card { order: 2; }
           .focus-form-scroll { max-height: none; }
           .focus-actions { position: sticky; bottom: 0; }
         }

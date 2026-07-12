@@ -32,19 +32,7 @@ export default function SettingsPage() {
     getActiveOrganization().then(setOrg);
   }, []);
 
-  // Accordion states
-  const [openAccordions, setOpenAccordions] = useState({
-    backup: true,
-    data: false,
-    about: false,
-  });
-
-  const toggleAccordion = (key) => {
-    setOpenAccordions(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
+  const [showBackupFormat, setShowBackupFormat] = useState(false);
 
   // Limpieza única: la extracción con IA ahora vive solo en el backend.
   // Si quedó una API key personal guardada de versiones anteriores, se borra.
@@ -172,206 +160,128 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Apariencia */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+      {/* CUENTA: plan + extracción con IA como filas internas de una sola card */}
+      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+        <p className="settings-section-title">Cuenta</p>
+
+        <div className="settings-row">
           <div>
-            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="swatch" />Apariencia</h3>
-            <p className="text-sm text-muted" style={{ margin: 0 }}>
-              Tema actual: {theme === 'light' ? 'Claro' : 'Oscuro'}
+            <p className="settings-row-title">Plan</p>
+            <p className="settings-row-desc">
+              {org
+                ? <>{PLAN_LABELS[org.planId] || org.planId || 'Suscripción Declarix'} · Todo incluido, sin límites{org.name ? <> · {org.name}</> : null}</>
+                : 'Suscripción Declarix · Todo incluido'}
             </p>
           </div>
-          <button
-            className="btn btn-secondary"
-            style={{ minHeight: '44px' }}
-            onClick={() => setTheme(toggleTheme())}
-          >
-            <Icon name={theme === 'light' ? 'moon' : 'sun'} />
+          <a className="btn btn-secondary btn-sm" href="mailto:soporte@declarix.cl?subject=Cambio%20de%20plan">
+            Cambiar de plan
+          </a>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <p className="settings-row-title">Extracción con IA</p>
+            <p className="settings-row-desc">Incluida en tu cuenta. No requiere configuración.</p>
+          </div>
+          <span className="badge badge-success">Activa</span>
+        </div>
+      </div>
+
+      {/* APARIENCIA */}
+      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+        <p className="settings-section-title">Apariencia</p>
+        <div className="settings-row">
+          <div>
+            <p className="settings-row-title">Tema</p>
+            <p className="settings-row-desc">Actual: {theme === 'light' ? 'Claro' : 'Oscuro'}</p>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={() => setTheme(toggleTheme())}>
+            <Icon name={theme === 'light' ? 'moon' : 'sun'} size={15} />
             {theme === 'light' ? 'Cambiar a oscuro' : 'Cambiar a claro'}
           </button>
         </div>
       </div>
 
-      {/* Plan actual y soporte */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+      {/* DATOS: backup/restauración y eliminación como filas, sin acordeones */}
+      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+        <p className="settings-section-title">Datos</p>
+
+        <div className="settings-row settings-row-stack">
           <div>
-            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="receipt" />Tu plan</h3>
-            <p className="text-sm text-muted" style={{ margin: 0 }}>
-              {org
-                ? <><strong>{PLAN_LABELS[org.planId] || org.planId || 'Suscripción Declarix'}</strong> · Todo incluido, sin límites{org.name ? <> · {org.name}</> : null}</>
-                : 'Suscripción Declarix · Todo incluido'}
-            </p>
+            <p className="settings-row-title">Respaldo y restauración</p>
+            <p className="settings-row-desc">Exporta todo (comprobantes, imágenes, ajustes) a un ZIP o restaura desde uno.</p>
           </div>
-          <a
-            className="btn btn-secondary"
-            style={{ minHeight: '44px' }}
-            href="mailto:soporte@declarix.cl?subject=Cambio%20de%20plan"
+          <div className="settings-actions flex flex-wrap gap-3">
+            <button className="btn btn-primary btn-sm" onClick={handleExport} disabled={exporting}>
+              {exporting ? <><div className="spinner" /> Generando ZIP...</> : <><Icon name="download" size={15} /> Exportar backup</>}
+            </button>
+            <label className="btn btn-secondary btn-sm cursor-pointer" style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <input
+                type="file"
+                accept=".zip"
+                key={fileInputKey}
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+              />
+              {importing ? <><div className="spinner" /> Importando...</> : <><Icon name="upload" size={15} /> Restaurar desde ZIP</>}
+            </label>
+          </div>
+
+          {importResult && (
+            <div className="alert alert-info" style={{ fontSize: '0.85rem' }}>
+              <strong>Última importación:</strong><br/>
+              {importResult.invoices} comprobantes · {importResult.images} imágenes · {importResult.settings} settings
+              {importResult.errors.length > 0 && <> <br/> {importResult.errors.length} errores (ver consola del navegador) </>}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ alignSelf: 'flex-start', padding: 0 }}
+            onClick={() => setShowBackupFormat((v) => !v)}
           >
-            Cambiar de plan
-          </a>
+            Formato del backup <Icon name="chevron-down" size={14} className={showBackupFormat ? 'accordion-chevron open' : 'accordion-chevron'} />
+          </button>
+          {showBackupFormat && (
+            <ul className="text-sm text-muted list-disc list-inside space-y-1">
+              <li><code>invoices.json</code> — Array completo de comprobantes</li>
+              <li><code>settings.json</code> — Preferencias y mappings de exportación por RUT empresa</li>
+              <li><code>images/</code> — Carpeta con imágenes (nombre = invoiceId.ext)</li>
+              <li><code>metadata.json</code> — Versión, fecha, contadores</li>
+            </ul>
+          )}
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <p className="settings-row-title">Eliminar todos los comprobantes</p>
+            <p className="settings-row-desc">Borra comprobantes e imágenes de esta cuenta. No se puede deshacer.</p>
+          </div>
+          <button className="btn btn-danger btn-sm" onClick={() => setConfirmClear(true)}>
+            <Icon name="trash" size={15} /> Eliminar todo
+          </button>
         </div>
       </div>
 
-      {/* Extracción con IA: incluida, sin configuración */}
-      <div className="card">
-        <h3 className="card-title" style={{ marginBottom: 8 }}><Icon name="sparkles" />Extracción con IA</h3>
-        <p className="text-sm text-muted" style={{ margin: 0 }}>
-          La extracción automática de datos desde las fotos de tus boletas está incluida
-          en tu cuenta. No necesitas configurar nada.
-        </p>
-      </div>
-
-      {/* Soporte */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+      {/* SOPORTE */}
+      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+        <p className="settings-section-title">Soporte</p>
+        <div className="settings-row">
           <div>
-            <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="info" />¿Necesitas ayuda?</h3>
-            <p className="text-sm text-muted" style={{ margin: 0 }}>
-              Escríbenos y te respondemos a la brevedad.
-            </p>
+            <p className="settings-row-title">¿Necesitas ayuda?</p>
+            <p className="settings-row-desc">Escríbenos y te respondemos a la brevedad.</p>
           </div>
-          <a className="btn btn-secondary" style={{ minHeight: '44px' }} href="mailto:soporte@declarix.cl">
+          <a className="btn btn-secondary btn-sm" href="mailto:soporte@declarix.cl">
             soporte@declarix.cl
           </a>
         </div>
-      </div>
-
-      {/* Backup / Restore Accordion */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div 
-          onClick={() => toggleAccordion('backup')}
-          className="accordion-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: '16px 20px',
-            minHeight: '44px',
-            userSelect: 'none'
-          }}
-        >
-          <h3 className="card-title" style={{ margin: 0 }}><Icon name="archive" />Respaldo y restauración</h3>
-          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.backup ? 'open' : ''}`} />
-        </div>
-
-        {openAccordions.backup && (
-          <div style={{ padding: '20px', borderTop: '1px solid var(--color-border)' }} className="space-y-4">
-            <p className="text-sm text-muted">
-              Exporta todo (comprobantes, imágenes, settings) a un ZIP o restaura desde uno.
-            </p>
-
-            <div className="settings-actions flex flex-wrap gap-3 mb-4">
-              <button className="btn btn-primary" onClick={handleExport} disabled={exporting} style={{ minHeight: '44px' }}>
-                {exporting ? <><div className="spinner" /> Generando ZIP...</> : <><Icon name="download" /> Exportar backup</>}
-              </button>
-
-              <label className="btn btn-secondary cursor-pointer" style={{ display: 'flex', alignItems: 'center', minHeight: '44px' }}>
-                <input
-                  type="file"
-                  accept=".zip"
-                  key={fileInputKey}
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
-                {importing ? <><div className="spinner" /> Importando...</> : <><Icon name="upload" /> Restaurar desde ZIP</>}
-              </label>
-            </div>
-
-            {importResult && (
-              <div className="alert alert-info" style={{ fontSize: '0.9rem' }}>
-                <strong>Última importación:</strong><br/>
-                {importResult.invoices} comprobantes · {importResult.images} imágenes · {importResult.settings} settings
-                {importResult.errors.length > 0 && <> <br/> {importResult.errors.length} errores (ver consola del navegador) </>}
-              </div>
-            )}
-
-            <details className="text-sm text-muted">
-              <summary style={{ minHeight: '44px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Formato del backup</summary>
-              <ul className="mt-2 list-disc list-inside space-y-1">
-                <li><code>invoices.json</code> — Array completo de comprobantes</li>
-                <li><code>settings.json</code> — Preferencias y mappings de exportación por RUT empresa</li>
-                <li><code>images/</code> — Carpeta con imágenes (nombre = invoiceId.ext)</li>
-                <li><code>metadata.json</code> — Versión, fecha, contadores</li>
-              </ul>
-            </details>
+        <div className="settings-row">
+          <div>
+            <p className="settings-row-title">Declarix</p>
+            <p className="settings-row-desc">Versión 1.0.0 · React + Vite + PWA</p>
           </div>
-        )}
-      </div>
-
-      {/* Data Management Accordion */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div 
-          onClick={() => toggleAccordion('data')}
-          className="accordion-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: '16px 20px',
-            minHeight: '44px',
-            userSelect: 'none'
-          }}
-        >
-          <h3 className="card-title" style={{ margin: 0 }}><Icon name="database" />Datos</h3>
-          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.data ? 'open' : ''}`} />
         </div>
-
-        {openAccordions.data && (
-          <div style={{ padding: '20px', borderTop: '1px solid var(--color-border)' }} className="space-y-4">
-            <p className="text-sm text-muted">
-              Los datos se guardan en tu navegador (IndexedDB) y sincronizan con Supabase si está configurado.
-            </p>
-            <button className="btn btn-danger w-full text-center" onClick={() => setConfirmClear(true)} style={{ minHeight: '44px' }}>
-              <Icon name="trash" /> Eliminar todos los comprobantes
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* About Accordion */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div 
-          onClick={() => toggleAccordion('about')}
-          className="accordion-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: '16px 20px',
-            minHeight: '44px',
-            userSelect: 'none'
-          }}
-        >
-          <h3 className="card-title" style={{ margin: 0 }}><Icon name="info" />Acerca de</h3>
-          <Icon name="chevron-down" size={18} className={`accordion-chevron ${openAccordions.about ? 'open' : ''}`} />
-        </div>
-
-        {openAccordions.about && (
-          <div style={{ padding: '20px', borderTop: '1px solid var(--color-border)' }} className="space-y-4">
-            <div className="detail-info-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <div className="detail-field">
-                <span className="detail-field-label">Aplicación</span>
-                <span className="detail-field-value">Declarix</span>
-              </div>
-              <div className="detail-field">
-                <span className="detail-field-label">Versión</span>
-                <span className="detail-field-value">1.0.0</span>
-              </div>
-              <div className="detail-field">
-                <span className="detail-field-label">Almacenamiento</span>
-                <span className="detail-field-value">IndexedDB + Supabase (opcional)</span>
-              </div>
-              <div className="detail-field">
-                <span className="detail-field-label">Framework</span>
-                <span className="detail-field-value">React + Vite + PWA</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {confirmClear && (

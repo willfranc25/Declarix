@@ -9,13 +9,15 @@ import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 
 // Subcomponent for each invoice row, supporting swipe actions on mobile
-function InvoiceRow({ 
-  inv, 
-  isMobile, 
-  navigate, 
-  setDeleteId, 
-  handleStatusChange, 
-  handleTaxStatusChange 
+function InvoiceRow({
+  inv,
+  isMobile,
+  navigate,
+  setDeleteId,
+  handleStatusChange,
+  handleTaxStatusChange,
+  menuOpen,
+  onToggleMenu,
 }) {
   const [startX, setStartX] = useState(0);
   const [startY, setStartY] = useState(0);
@@ -190,12 +192,27 @@ function InvoiceRow({
         </select>
       </td>
 
-      {/* Acciones */}
-      <td data-label="Acciones" className="table-mobile-hidden text-center">
-        <div className="flex items-center justify-center gap-1">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)} title="Ver"><Icon name="eye" /></button>
-          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => setDeleteId(inv.id)} title="Eliminar"><Icon name="trash" /></button>
-        </div>
+      {/* Acciones: menú "⋯" en vez de íconos siempre visibles (evita borrado accidental) */}
+      <td data-label="Acciones" className="table-mobile-hidden text-center" style={{ position: 'relative' }}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={(e) => { e.stopPropagation(); onToggleMenu(inv.id); }}
+          title="Más acciones"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          ⋯
+        </button>
+        {menuOpen && (
+          <div className="row-actions-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+            <button role="menuitem" onClick={() => { onToggleMenu(null); navigate(`/invoices/${inv.id}`); }}>
+              <Icon name="eye" size={15} /> Ver detalle
+            </button>
+            <button role="menuitem" className="danger" onClick={() => { onToggleMenu(null); setDeleteId(inv.id); }}>
+              <Icon name="trash" size={15} /> Eliminar
+            </button>
+          </div>
+        )}
       </td>
     </>
   );
@@ -290,7 +307,16 @@ export default function InvoicesPage() {
 
   const [deleteId, setDeleteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const closeMenu = () => setOpenMenuId(null);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
+  }, [openMenuId]);
 
   // Mobile and Pull-to-Refresh states
   const [isMobile, setIsMobile] = useState(false);
@@ -553,9 +579,18 @@ export default function InvoicesPage() {
         >
           Año tributario ({new Date().getFullYear()})
         </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ marginLeft: 'auto' }}
+          onClick={() => setShowMoreFilters((v) => !v)}
+          aria-expanded={showMoreFilters}
+        >
+          Más filtros <Icon name="chevron-down" size={14} className={showMoreFilters ? 'accordion-chevron open' : 'accordion-chevron'} />
+        </button>
       </div>
 
-      {/* Filters Form Card */}
+      {/* Filters Form Card (colapsable) */}
+      {showMoreFilters && (
       <div className="card">
         <div className="filters-bar">
           <div className="form-group">
@@ -616,6 +651,7 @@ export default function InvoicesPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Invoices List */}
       {showSkeleton ? (
@@ -669,6 +705,8 @@ export default function InvoicesPage() {
                     setDeleteId={setDeleteId}
                     handleStatusChange={handleStatusChange}
                     handleTaxStatusChange={handleTaxStatusChange}
+                    menuOpen={openMenuId === inv.id}
+                    onToggleMenu={(id) => setOpenMenuId((prev) => (id === null ? null : prev === id ? null : id))}
                   />
                 ))}
               </tbody>
