@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { supabase } from './supabaseClient';
 
 /**
@@ -40,7 +41,7 @@ export async function getActiveOrganization() {
         return cachedOrg;
       } catch (err) {
         // BD sin la migración de organizaciones todavía: operar sin org
-        console.warn('[organizationService] No se pudo cargar la organización:', err.message);
+        logger.warn('[organizationService] No se pudo cargar la organización:', err.message);
         cachedOrg = null;
         return cachedOrg;
       } finally {

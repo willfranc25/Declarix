@@ -50,7 +50,7 @@ declare module '*services/exportService' {
     headerData?: Record<string, any>,
     customMapping?: Record<string, string> | null
   ): Promise<ArrayBuffer>;
-  export function exportToExcel(invoices: any[], options?: Record<string, any>): Promise<Uint8Array>;
+  export function exportToExcel(invoices: any[], options?: Record<string, any>): Promise<ArrayBuffer>;
   export function exportToCSV(invoices: any[]): string;
   export function downloadFile(content: any, filename: string, mimeType: string): void;
 }

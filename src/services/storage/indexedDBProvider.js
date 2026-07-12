@@ -7,13 +7,11 @@ import db from './db';
  */
 const indexedDBProvider = {
   /**
-   * Inicializa la BD. Si está vacía, carga datos de ejemplo.
+   * Inicializa la BD local (abre la conexión; la migración legacy
+   * corre en db.on('ready')). Un usuario nuevo parte con la base vacía.
    */
-  async initialize(sampleData = null) {
-    const count = await db.invoices.count();
-    if (count === 0 && sampleData && sampleData.length > 0) {
-      await db.invoices.bulkAdd(sampleData);
-    }
+  async initialize() {
+    await db.invoices.count();
   },
 
   /**

@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate, getMonthName } from '../utils/formatters';
@@ -110,7 +111,7 @@ export default function ReportsPage() {
           setMapping(DEFAULT_MAPPING);
         }
       } catch (err) {
-        console.error('Error al cargar mapping:', err);
+        logger.error('Error al cargar mapping:', err);
       }
     }
     loadMapping();
@@ -157,7 +158,7 @@ export default function ReportsPage() {
           setTemplateSize(null);
         }
       } catch (error) {
-        console.error('Error cargando plantilla por defecto:', error);
+        logger.error('Error cargando plantilla por defecto:', error);
         setTemplateName('');
         setTemplateSize(null);
       } finally {

@@ -1,7 +1,7 @@
 import { formatDate } from '../utils/formatters';
 import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
 
-// exceljs y xlsx pesan ~1 MB minificados: se cargan bajo demanda al exportar
+// exceljs pesa ~1 MB minificado: se carga bajo demanda al exportar
 // para no inflar el chunk de la página de Reportes.
 
 /**
@@ -88,48 +88,60 @@ export async function exportToRendicion(invoices, templateBuffer, headerData = {
 
 /**
  * Exporta a un Excel nuevo simple (sin plantilla) con todas las columnas.
+ * Usa ExcelJS (la dependencia `xlsx` se eliminó por CVEs sin fix en npm).
  */
 export async function exportToExcel(invoices, options = {}) {
-  const XLSX = await import('xlsx');
-  const wb = XLSX.utils.book_new();
+  const { default: ExcelJS } = await import('exceljs');
+  const wb = new ExcelJS.Workbook();
 
-  // Hoja principal
-  const headers = [
-    'Nombre Proveedor', 'RUT Proveedor', 'Tipo Documento', 'N° Documento',
-    'Fecha', 'Detalle Compra', 'Tipo de Gasto',
-    'Neto', 'Total Boleta Servicios', 'Total Boleta Honorarios',
-    'Impuesto Específico', 'IVA', 'Total', 'Estado',
-  ];
+  const addSheet = (name, headers, rows) => {
+    const ws = wb.addWorksheet(name);
+    ws.addRow(headers);
+    ws.getRow(1).font = { bold: true };
+    rows.forEach((r) => ws.addRow(r));
+    // Ancho de columna razonable según encabezado
+    ws.columns.forEach((col, i) => {
+      col.width = Math.max(12, String(headers[i] || '').length + 2);
+    });
+    return ws;
+  };
 
-  const rows = [headers];
-  for (const inv of invoices) {
-    rows.push([
+  addSheet(
+    'Comprobantes',
+    [
+      'Nombre Proveedor', 'RUT Proveedor', 'Tipo Documento', 'N° Documento',
+      'Fecha', 'Detalle Compra', 'Tipo de Gasto',
+      'Neto', 'Total Boleta Servicios', 'Total Boleta Honorarios',
+      'Impuesto Específico', 'IVA', 'Total', 'Estado',
+    ],
+    invoices.map((inv) => [
       inv.providerName, inv.providerRut, inv.documentType, inv.documentNumber,
       formatDate(inv.date), inv.detail, inv.expenseType,
       inv.netAmount || 0, inv.totalBoletaServicios || 0, inv.totalBoletaHonorarios || 0,
       inv.specificTax || 0, inv.ivaAmount || 0, inv.totalAmount || 0, inv.status,
-    ]);
-  }
-
-  const mainSheet = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, mainSheet, 'Comprobantes');
+    ])
+  );
 
   if (options.includeMonthlySheet) {
     const summaries = generateMonthlySummary(invoices);
-    const mHeaders = ['Año', 'Mes', 'Comprobantes', 'Neto', 'IVA', 'Impuesto Esp.', 'Total'];
-    const mRows = [mHeaders, ...summaries.map((s) => [s.year, s.month, s.count, s.netAmount, s.ivaAmount, s.specificTax, s.totalAmount])];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mRows), 'Resumen Mensual');
+    addSheet(
+      'Resumen Mensual',
+      ['Año', 'Mes', 'Comprobantes', 'Neto', 'IVA', 'Impuesto Esp.', 'Total'],
+      summaries.map((s) => [s.year, s.month, s.count, s.netAmount, s.ivaAmount, s.specificTax, s.totalAmount])
+    );
   }
 
   if (options.includeCategorySheet) {
     const summaries = generateCategorySummary(invoices);
-    const cHeaders = ['Tipo de Gasto', 'Comprobantes', 'Neto', 'IVA', 'Total'];
-    const cRows = [cHeaders, ...summaries.map((s) => [s.category, s.count, s.netAmount, s.ivaAmount, s.totalAmount])];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cRows), 'Resumen por Gasto');
+    addSheet(
+      'Resumen por Gasto',
+      ['Tipo de Gasto', 'Comprobantes', 'Neto', 'IVA', 'Total'],
+      summaries.map((s) => [s.category, s.count, s.netAmount, s.ivaAmount, s.totalAmount])
+    );
   }
 
-  const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  return new Uint8Array(buffer);
+  const buffer = await wb.xlsx.writeBuffer();
+  return buffer;
 }
 
 /**

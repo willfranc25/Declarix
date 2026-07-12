@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx';
 import { exportToRendicion, exportToExcel, exportToCSV } from '../services/exportService';
 
 const invoices = [
@@ -104,13 +103,18 @@ describe('exportToExcel', () => {
       includeCategorySheet: true,
     });
 
-    const wb = XLSX.read(data, { type: 'array' });
-    expect(wb.SheetNames).toEqual(['Comprobantes', 'Resumen Mensual', 'Resumen por Gasto']);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(data);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Comprobantes', 'Resumen Mensual', 'Resumen por Gasto']);
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets['Comprobantes']);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]['Nombre Proveedor']).toBe('Sodimac');
-    expect(rows[0]['Total']).toBe(1190);
+    const ws = wb.worksheets[0];
+    // Encabezado + 2 comprobantes
+    expect(ws.rowCount).toBe(3);
+    expect(ws.getCell('A1').value).toBe('Nombre Proveedor');
+    expect(ws.getCell('A2').value).toBe('Sodimac');
+    // Columna M = 'Total'
+    expect(ws.getCell('M1').value).toBe('Total');
+    expect(ws.getCell('M2').value).toBe(1190);
   });
 });
 

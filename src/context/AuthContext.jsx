@@ -74,8 +74,14 @@ export function AuthProvider({ children }) {
   const resetPassword = async (email) => {
     if (!supabase) return noClientError;
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
+      redirectTo: `${window.location.origin}/reset-password`,
     });
+    return { data, error };
+  };
+
+  const updatePassword = async (newPassword) => {
+    if (!supabase) return noClientError;
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword });
     return { data, error };
   };
 
@@ -88,6 +94,7 @@ export function AuthProvider({ children }) {
     loginWithMagicLink,
     logout,
     resetPassword,
+    updatePassword,
   };
 
   return (

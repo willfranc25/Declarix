@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { EXPENSE_TYPES } from '../data/expenseTypes';
 import { validateRut } from '../utils/rutValidator';
 import { supabase } from './supabaseClient';
@@ -184,14 +185,14 @@ export async function extractInvoiceData(imageFile) {
 
   while (attempt < maxAttempts) {
     attempt++;
-    console.log(`[VLM Service] Intento ${attempt}/${maxAttempts} de extracción para: ${imageFile.name}`);
+    logger.debug(`[VLM Service] Intento ${attempt}/${maxAttempts} de extracción para: ${imageFile.name}`);
 
     try {
       const rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
 
       parsed = tryParseJson(rawResponse);
       if (!parsed) {
-        console.error(`[VLM Service] [Intento ${attempt}] Respuesta no JSON:`, rawResponse);
+        logger.error(`[VLM Service] [Intento ${attempt}] Respuesta no JSON:`, rawResponse);
         feedback = `La respuesta recibida no era un JSON válido. Asegúrate de responder estrictamente en formato JSON válido.`;
         if (attempt >= maxAttempts) {
           throw new Error('No se pudo interpretar la respuesta del modelo de IA tras 3 intentos. Asegúrate de que la imagen sea legible.');
@@ -219,11 +220,11 @@ export async function extractInvoiceData(imageFile) {
       // Validar datos extraídos
       const validation = validateExtractedData(parsed);
       if (validation.isValid) {
-        console.log(`[VLM Service] [Intento ${attempt}] Extracción exitosa y validada.`);
+        logger.debug(`[VLM Service] [Intento ${attempt}] Extracción exitosa y validada.`);
         return parsed;
       } else {
         const errorsStr = validation.errors.join('; ');
-        console.warn(`[VLM Service] [Intento ${attempt}] Falló la validación:`, validation.errors);
+        logger.warn(`[VLM Service] [Intento ${attempt}] Falló la validación:`, validation.errors);
         feedback = validation.errors.map((err, i) => `${i + 1}. ${err}`).join('\n');
 
         if (attempt >= maxAttempts) {
@@ -231,7 +232,7 @@ export async function extractInvoiceData(imageFile) {
         }
       }
     } catch (err) {
-      console.error(`[VLM Service] Error en intento ${attempt}:`, err);
+      logger.error(`[VLM Service] Error en intento ${attempt}:`, err);
       if (attempt >= maxAttempts) {
         throw err;
       }

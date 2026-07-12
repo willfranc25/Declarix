@@ -3,9 +3,26 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.jsx';
 import { initTheme } from './utils/theme';
+import logger, { setErrorReporter } from './utils/logger';
 
 // Aplicar el tema guardado antes del primer render (evita flash)
 initTheme();
+
+// Error tracking (opcional): se activa solo si VITE_SENTRY_DSN está definida.
+// Carga perezosa: sin DSN, Sentry no entra al bundle inicial.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
+if (sentryDsn) {
+  import('@sentry/react')
+    .then((Sentry) => {
+      Sentry.init({
+        dsn: sentryDsn,
+        environment: import.meta.env.MODE,
+        tracesSampleRate: 0.1,
+      });
+      setErrorReporter(Sentry);
+    })
+    .catch((err) => logger.warn('Sentry no disponible:', err));
+}
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
@@ -17,17 +34,17 @@ if ('serviceWorker' in navigator) {
         }
       },
       onOfflineReady() {
-        console.log('App lista para funcionar offline');
+        logger.debug('App lista para funcionar offline');
       },
       onRegistered(r) {
-        console.log('Service Worker registrado:', r.scope);
+        logger.debug('Service Worker registrado:', r.scope);
       },
       onRegisterError(error) {
-        console.error('Error registrando SW:', error);
+        logger.error('Error registrando SW:', error);
       }
     });
   }).catch(err => {
-    console.warn('PWA register no disponible:', err);
+    logger.warn('PWA register no disponible:', err);
   });
 }
 

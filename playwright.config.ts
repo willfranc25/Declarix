@@ -32,7 +32,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run preview -- --port 4173 --strictPort',
+    // Funciona con npm (CI) o bun (entornos sin Node)
+    command: 'sh -c "command -v npm >/dev/null 2>&1 && npm run preview -- --port 4173 --strictPort || bun x vite preview --port 4173 --strictPort"',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

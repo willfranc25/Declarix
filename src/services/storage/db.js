@@ -1,3 +1,4 @@
+import logger from '../../utils/logger';
 import Dexie from 'dexie';
 
 /**
@@ -52,7 +53,7 @@ db.on('ready', async () => {
     await db.settings.put({ key: MIGRATION_MARKER, value: new Date().toISOString() });
   } catch (err) {
     // No bloquear la app: la base legacy sigue intacta para reintentar
-    console.error('[db] Falló la migración de datos locales:', err);
+    logger.error('[db] Falló la migración de datos locales:', err);
   }
 });
 

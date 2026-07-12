@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { getStorageProvider } from './storage/StorageProvider';
@@ -12,7 +13,7 @@ export async function exportBackup() {
   try {
     // 1. Obtener todos los comprobantes
     const invoices = await storage.getAll();
-    console.log(`Exportando ${invoices.length} comprobantes...`);
+    logger.debug(`Exportando ${invoices.length} comprobantes...`);
 
     // 2. Agregar JSON de comprobantes
     zip.file('invoices.json', JSON.stringify(invoices, null, 2));
@@ -38,7 +39,7 @@ export async function exportBackup() {
         }
       }
     } catch (e) {
-      console.warn('No se pudieron exportar todos los settings:', e);
+      logger.warn('No se pudieron exportar todos los settings:', e);
     }
     zip.file('settings.json', JSON.stringify(settings, null, 2));
 
@@ -54,7 +55,7 @@ export async function exportBackup() {
           imgCount++;
         }
       } catch (e) {
-        console.warn(`Error exportando imagen de ${inv.id}:`, e);
+        logger.warn(`Error exportando imagen de ${inv.id}:`, e);
       }
     }
 
@@ -76,7 +77,7 @@ export async function exportBackup() {
 
     return { success: true, filename, invoices: invoices.length, images: imgCount };
   } catch (error) {
-    console.error('Error en exportBackup:', error);
+    logger.error('Error en exportBackup:', error);
     return { success: false, error: error.message };
   }
 }
@@ -99,9 +100,9 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
     if (content.files['metadata.json']) {
       try {
         metadata = JSON.parse(await content.files['metadata.json'].async('text'));
-        console.log('Backup metadata:', metadata);
+        logger.debug('Backup metadata:', metadata);
       } catch (e) {
-        console.warn('No se pudo leer metadata:', e);
+        logger.warn('No se pudo leer metadata:', e);
       }
     }
 
@@ -117,7 +118,7 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
           await storage.saveSetting(normalizedKey, value);
           results.settings++;
         }
-        console.log(`Importados ${results.settings} settings`);
+        logger.debug(`Importados ${results.settings} settings`);
       } catch (e) {
         results.errors.push(`Settings: ${e.message}`);
       }
@@ -127,7 +128,7 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
     if (content.files['invoices.json']) {
       try {
         const invoices = JSON.parse(await content.files['invoices.json'].async('text'));
-        console.log(`Importando ${invoices.length} comprobantes...`);
+        logger.debug(`Importando ${invoices.length} comprobantes...`);
 
         for (const inv of invoices) {
           try {
@@ -140,7 +141,7 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
             results.errors.push(`Factura ${inv.id}: ${e.message}`);
           }
         }
-        console.log(`Importados ${results.invoices} comprobantes`);
+        logger.debug(`Importados ${results.invoices} comprobantes`);
       } catch (e) {
         results.errors.push(`Invoices JSON: ${e.message}`);
       }
@@ -160,13 +161,13 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
             results.errors.push(`Imagen ${filename}: ${e.message}`);
           }
         }
-        console.log(`Importadas ${results.images} imágenes`);
+        logger.debug(`Importadas ${results.images} imágenes`);
       }
     }
 
     return { success: true, ...results };
   } catch (error) {
-    console.error('Error en importBackup:', error);
+    logger.error('Error en importBackup:', error);
     return { success: false, error: error.message, ...results };
   }
 }

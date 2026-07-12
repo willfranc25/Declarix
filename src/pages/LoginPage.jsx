@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import Icon from '../components/ui/Icon';
 
 export default function LoginPage() {
-  const { login, signup, loginWithMagicLink } = useAuth();
+  const { login, signup, loginWithMagicLink, resetPassword } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,6 +43,25 @@ export default function LoginPage() {
         setError(result.error.message);
       } else {
         setError('Revisa tu email para el enlace mágico');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError('');
+    if (!email) {
+      setError('Escribe tu correo arriba y vuelve a pulsar "¿Olvidaste tu contraseña?".');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await resetPassword(email);
+      if (result.error) {
+        setError(result.error.message);
+      } else {
+        setError(`Te enviamos un enlace a ${email} para restablecer tu contraseña.`);
       }
     } finally {
       setLoading(false);
@@ -263,29 +282,18 @@ export default function LoginPage() {
             )}
 
             {isLogin && !showMagicLink && (
-              <div className="login-options-row">
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  fontSize: 'var(--font-size-sm)',
-                  color: 'var(--color-text-secondary)',
-                  fontWeight: '500'
-                }}>
-                  <input type="checkbox" style={{
-                    width: '16px', height: '16px',
-                    accentColor: 'var(--color-accent)',
-                    flexShrink: 0
-                  }} />
-                  Recordarme 30 días
-                </label>
-                <button type="button" style={{
-                  background: 'none', border: 'none',
-                  color: 'var(--color-accent-light)',
-                  fontSize: 'var(--font-size-sm)',
-                  fontWeight: '500', cursor: 'pointer', padding: 0
-                }}>
+              <div className="login-options-row" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={loading}
+                  style={{
+                    background: 'none', border: 'none',
+                    color: 'var(--color-accent-light)',
+                    fontSize: 'var(--font-size-sm)',
+                    fontWeight: '500', cursor: 'pointer', padding: 0
+                  }}
+                >
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>

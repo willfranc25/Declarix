@@ -35,6 +35,7 @@
     "workbox-window": "^7.4.1"
   },
   "dependencies": {
+    "@sentry/react": "^10.65.0",
     "@supabase/supabase-js": "^2.107.0",
     "@tanstack/react-query": "^5.101.0",
     "dexie": "^4.4.3",
@@ -45,7 +46,6 @@
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
     "uuid": "^14.0.0",
-    "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   }
 }

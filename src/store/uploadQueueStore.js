@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { create } from 'zustand';
 import { extractInvoiceData } from '../services/vlmService';
 import { compressImage } from '../utils/imageCompression';
@@ -180,7 +181,7 @@ const useUploadQueueStore = create((set, get) => ({
           },
         });
       } catch (err) {
-        console.error(`[uploadQueue] Error procesando ${item.name}:`, err);
+        logger.error(`[uploadQueue] Error procesando ${item.name}:`, err);
 
         if (isBurstLimitError(err) && item.burstWaits < MAX_BURST_WAITS) {
           // Límite de ráfaga: esperar y reintentar el mismo archivo

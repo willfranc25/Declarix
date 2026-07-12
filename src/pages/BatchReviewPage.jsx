@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
@@ -272,7 +273,7 @@ export default function BatchReviewPage() {
           successCount++;
           savedIds.push(row.id);
         } catch (err) {
-          console.error('Error al guardar fila:', row, err);
+          logger.error('Error al guardar fila:', row, err);
           remaining.push(row);
         }
       } else {
@@ -330,7 +331,7 @@ export default function BatchReviewPage() {
         successCount++;
         savedIds.push(row.id);
       } catch (err) {
-        console.error('Error al guardar fila:', row, err);
+        logger.error('Error al guardar fila:', row, err);
         remaining.push(row);
       }
     }

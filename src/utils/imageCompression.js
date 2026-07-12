@@ -7,6 +7,8 @@
  * del endpoint de IA (~4 MB).
  */
 
+import logger from './logger';
+
 const DEFAULT_MAX_DIMENSION = 1600;
 const DEFAULT_QUALITY = 0.8;
 // Bajo este tamaño no vale la pena recomprimir
@@ -43,7 +45,7 @@ export async function compressImage(file, options = {}) {
     });
   } catch (err) {
     // Formato no soportado por el navegador (p. ej. HEIC): usar el original
-    console.warn('[imageCompression] No se pudo comprimir, se usa el original:', err.message);
+    logger.warn('[imageCompression] No se pudo comprimir, se usa el original:', err.message);
     return file;
   }
 }

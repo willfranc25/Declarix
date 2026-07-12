@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { getStorageProvider } from '../services/storage/StorageProvider';
-import { SAMPLE_INVOICES } from '../data/sampleData';
 
 const useInvoiceStore = create((set, get) => ({
   invoices: [],
@@ -19,7 +18,7 @@ const useInvoiceStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const storage = getStorageProvider();
-      await storage.initialize(SAMPLE_INVOICES);
+      await storage.initialize();
       const invoices = await storage.getAll();
       set({ invoices, isLoading: false });
     } catch (err) {

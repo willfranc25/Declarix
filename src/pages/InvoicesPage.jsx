@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
@@ -351,7 +352,7 @@ export default function InvoicesPage() {
       try {
         await loadInvoices();
       } catch (err) {
-        console.error(err);
+        logger.error(err);
       } finally {
         setIsRefreshing(false);
         setIsPullRefreshing(false);
@@ -370,7 +371,7 @@ export default function InvoicesPage() {
       setDeleteId(null);
       addToast('Comprobante eliminado.', 'success');
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       addToast('Error al eliminar: ' + err.message, 'error');
     } finally {
       setIsDeleting(false);
@@ -381,7 +382,7 @@ export default function InvoicesPage() {
     try { 
       await updateInvoice(id, { status }); 
     } catch (err) {
-      console.error(err);
+      logger.error(err);
     }
   };
 
@@ -389,7 +390,7 @@ export default function InvoicesPage() {
     try { 
       await updateTaxStatus(id, taxStatus); 
     } catch (err) {
-      console.error(err);
+      logger.error(err);
     }
   };
 
