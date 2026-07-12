@@ -1,43 +1,46 @@
-# Planes y monetización
+# Modelo de suscripción: plan único
 
-## Modelo
+Decisión de producto (2026-07-12): Declarix se vende con **una sola
+suscripción que da acceso a todo, sin límites de uso**. Se abandonó el modelo
+de tiers (Gratis/Independiente/Pyme/Contador) para eliminar fricción de venta
+y de soporte.
 
-Los límites viven en la tabla `plans` (BD), **no en el código**. Cambiar un
-límite o precio es un `UPDATE` con service role — sin deploy. `NULL` en
-cualquier columna de límite significa ilimitado.
+## Cómo está implementado
 
-| Columna | Recurso |
-|---|---|
-| `max_users` | Usuarios por organización (trigger `enforce_member_limit`) |
-| `max_ai_calls_month` | Extracciones IA/mes (lo aplica `/api/extract`) |
-| `max_documents_month` | Documentos/mes |
-| `max_storage_mb` | Almacenamiento |
-| `max_exports_month` | Exportaciones/mes |
-| `history_months` | Historial retenido |
+- La tabla `plans` se conserva como infraestructura, pero operacionalmente
+  existe un solo plan activo: **`pro` ("Suscripción Declarix")** con todos los
+  límites en `NULL` (= ilimitado). Precio referencial: **$14.990 CLP/mes**.
+- Las cuentas nuevas nacen directamente en `pro` (trigger `handle_new_user`,
+  migración `20260712000001_single_plan.sql`).
+- Las organizaciones existentes fueron migradas a `pro`.
+- Los planes antiguos quedan como filas históricas sin uso.
 
-## Planes sembrados (punto de partida, ajustables por UPDATE)
+## Cambiar el precio
 
-| Plan | Precio CLP/mes | Usuarios | Docs/mes | IA/mes | Storage | Export/mes | Historial |
-|---|---|---|---|---|---|---|---|
-| Gratis | 0 | 1 | 30 | 30 | 250 MB | 5 | 6 meses |
-| Independiente | 9.900 | 1 | 200 | 200 | 2 GB | 50 | 24 meses |
-| Pyme | 19.900 | 5 | 600 | 600 | 5 GB | ∞ | ∞ |
-| Contador | 39.900 | ∞ | ∞ | ∞ | 20 GB | ∞ | ∞ |
+Dos lugares (mantener sincronizados):
 
-## Estado de enforcement
+1. BD: `UPDATE public.plans SET price_clp = <nuevo> WHERE id = 'pro';`
+2. Landing: constante `PLAN` en `src/pages/LandingPage.jsx`.
 
-- **Aplicado hoy**: `max_users` (trigger en BD al agregar miembros) y
-  `max_ai_calls_month` (en `/api/extract`, contando `usage_events` por
-  organización). El resto de límites tiene la medición lista (`usage_events`)
-  pero el enforcement queda para cuando exista checkout/facturación.
-- **Cobro**: no hay integración de pagos todavía. El plan de una organización
-  se cambia manualmente (`UPDATE organizations SET plan_id = 'pyme' WHERE ...`
-  con service role). Integrar Flow/Transbank/MercadoPago es el paso natural
-  cuando haya primer cliente dispuesto a pagar.
+## Protecciones que SÍ siguen activas (no son límites de plan)
 
-## Roles por organización (RBAC)
+- **Límite de ráfaga de IA** (`AI_BURST_LIMIT`, 10/min por usuario) en
+  `/api/extract`: protege la cuenta de Gemini de un loop descontrolado, no es
+  un límite comercial.
+- **Respaldo por usuario sin organización** (`AI_MONTHLY_LIMIT`, default 300):
+  solo aplica a cuentas legacy sin organización; con el plan `pro` el límite
+  mensual es NULL y no se aplica.
 
-| Rol | Ver datos | Cargar | Editar | Borrar | Exportar | Miembros | Plan/Facturación |
+## Cobro
+
+Manual mientras no exista pago en línea: el cliente crea su cuenta gratis,
+prueba con boletas reales y activa la suscripción por contacto
+(soporte@declarix.cl). Cuando haya volumen, integrar Flow/Transbank/Mercado
+Pago (recordar presupuesto total del proyecto: US$20/mes).
+
+## Roles por organización (RBAC) — sin cambios
+
+| Rol | Ver datos | Cargar | Editar | Borrar | Exportar | Miembros | Suscripción |
 |---|---|---|---|---|---|---|---|
 | `owner` | todos | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `admin` | todos | ✓ | ✓ | ✓ | ✓ | ✓ (no owners) | ✗ |
@@ -45,10 +48,4 @@ cualquier columna de límite significa ilimitado.
 | `colaborador` | solo los propios | ✓ | solo los propios | solo los propios | ✗ | ✗ | ✗ |
 | `lector` | todos | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-El enforcement de esta matriz está en las políticas RLS de la migración
-`20260705000002` — el frontend puede ocultar botones, pero la BD es quien
-manda.
-
-Cada usuario nuevo obtiene automáticamente una organización personal en plan
-`free` (trigger `on_auth_user_created`). El plan Contador está pensado para
-que un contador cree/administre varias organizaciones cliente.
+El enforcement vive en las políticas RLS (migración `20260705000002`).

@@ -7,6 +7,7 @@ import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
+import { ZoomableImage, ImageLightbox } from '../components/ui/ImageViewer';
 import useUploadQueueStore from '../store/uploadQueueStore';
 
 const COLUMNS = [
@@ -37,9 +38,12 @@ export default function BatchReviewPage() {
   const [activeRowId, setActiveRowId] = useState(null);
   const [previewImageUrl, setPreviewImageUrl] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  // Confirmación pendiente: 'save-selected' | 'save-all' | 'discard' | null
+  // Confirmación pendiente: 'save-selected' | 'save-all' | 'save-one' | 'discard' | null
   const [confirmAction, setConfirmAction] = useState(null);
   const [showOnlyProblems, setShowOnlyProblems] = useState(false);
+  // 'focus' = una boleta a la vez con imagen grande; 'table' = planilla
+  const [viewMode, setViewMode] = useState('focus');
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
@@ -133,6 +137,30 @@ export default function BatchReviewPage() {
   const visibleRows = showOnlyProblems
     ? rows.filter((r) => errorRowIds.has(r.id) || r.isDuplicate)
     : rows;
+
+  // ── Navegación del modo enfocado ──
+  const activeIndex = Math.max(0, visibleRows.findIndex(r => r.id === activeRowId));
+  const activeRow = visibleRows[activeIndex] || visibleRows[0] || null;
+
+  const goTo = (index) => {
+    const target = visibleRows[index];
+    if (target) setActiveRowId(target.id);
+  };
+  const goPrev = () => goTo(activeIndex - 1);
+  const goNext = () => goTo(activeIndex + 1);
+
+  // Flechas ←/→ navegan entre boletas (solo en modo enfocado y fuera de inputs)
+  useEffect(() => {
+    if (viewMode !== 'focus') return undefined;
+    const onKey = (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target?.tagName)) return;
+      if (e.key === 'ArrowLeft') goPrev();
+      if (e.key === 'ArrowRight') goNext();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, activeIndex, visibleRows.length]);
 
   // Manejar el cambio de valor en una celda
   const handleCellChange = (rowId, key, value) => {
@@ -368,6 +396,70 @@ export default function BatchReviewPage() {
     addToast('Filas descartadas.', 'info');
   };
 
+  // ── Modo revisión enfocada: guardar/descartar la boleta activa ──
+
+  const advanceAfter = (removedId, remaining) => {
+    // Mantener el foco en la siguiente boleta pendiente
+    const oldIndex = rows.findIndex(r => r.id === removedId);
+    const next = remaining[Math.min(oldIndex, remaining.length - 1)];
+    setActiveRowId(next ? next.id : null);
+  };
+
+  const performSaveOne = async (id) => {
+    const row = rows.find(r => r.id === id);
+    if (!row || isSaving) return;
+    setIsSaving(true);
+    try {
+      // isDuplicate es metadata de revisión, no un campo del comprobante
+      const { id: _rowId, file, isDuplicate, ...invoiceData } = row;
+      const cleanData = {
+        ...invoiceData,
+        netAmount: Number(invoiceData.netAmount) || 0,
+        ivaAmount: Number(invoiceData.ivaAmount) || 0,
+        totalAmount: Number(invoiceData.totalAmount) || 0,
+        totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
+        totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
+        specificTax: Number(invoiceData.specificTax) || 0,
+      };
+      await addInvoice(cleanData, file);
+
+      const remaining = rows.filter(r => r.id !== id);
+      setRows(remaining);
+      setBatchInvoices(remaining);
+      setSelectedIds(prev => prev.filter(s => s !== id));
+      useUploadQueueStore.getState().removeItems([id]);
+      advanceAfter(id, remaining);
+      addToast('Comprobante guardado.', 'success');
+
+      if (remaining.length === 0) navigate('/invoices');
+    } catch (err) {
+      logger.error('Error al guardar comprobante:', err);
+      addToast('Error al guardar: ' + err.message, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveOne = (id) => {
+    const row = rows.find(r => r.id === id);
+    if (!row) return;
+    if (Object.keys(getRowErrors(row)).length > 0) {
+      setConfirmAction('save-one');
+      return;
+    }
+    performSaveOne(id);
+  };
+
+  const discardOne = (id) => {
+    const remaining = rows.filter(r => r.id !== id);
+    setRows(remaining);
+    setBatchInvoices(remaining);
+    setSelectedIds(prev => prev.filter(s => s !== id));
+    useUploadQueueStore.getState().removeItems([id]);
+    advanceAfter(id, remaining);
+    addToast('Boleta descartada.', 'info');
+  };
+
   // Volver a UploadPage si no hay datos (Empty State)
   if (rows.length === 0) {
     return (
@@ -406,6 +498,78 @@ export default function BatchReviewPage() {
             background: var(--color-bg-secondary);
             border-bottom: 2px solid var(--color-border) !important;
           }
+        }
+
+        /* ── Selector de vista (segmented control) ── */
+        .view-toggle {
+          display: inline-flex;
+          background: var(--color-bg-secondary);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          padding: 3px;
+          gap: 2px;
+        }
+        .view-toggle button {
+          display: inline-flex; align-items: center; gap: 6px;
+          border: none; background: transparent;
+          color: var(--color-text-secondary);
+          font-size: var(--font-size-sm); font-weight: 600;
+          padding: 8px 14px; border-radius: calc(var(--radius-lg) - 3px);
+          cursor: pointer; min-height: 38px;
+        }
+        .view-toggle button.active {
+          background: var(--color-bg-elevated);
+          color: var(--color-text-primary);
+          box-shadow: var(--shadow-sm);
+        }
+
+        /* ── Modo enfocado ── */
+        .focus-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.25fr) minmax(360px, 420px);
+          gap: var(--space-5);
+          align-items: stretch;
+          height: calc(100vh - 240px);
+          min-height: 520px;
+        }
+        .focus-image-card {
+          display: flex; flex-direction: column;
+          padding: var(--space-3);
+          min-height: 0;
+        }
+        .focus-image-head {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: var(--space-3); padding: 0 var(--space-2) var(--space-2);
+        }
+        .focus-form-card {
+          display: flex; flex-direction: column;
+          padding: 0; min-height: 0; overflow: hidden;
+        }
+        .focus-form-scroll {
+          flex: 1; overflow-y: auto; padding: var(--space-5);
+        }
+        .focus-actions {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: var(--space-3); flex-wrap: wrap;
+          padding: var(--space-3) var(--space-5);
+          border-top: 1px solid var(--color-border);
+          background: var(--color-bg-secondary);
+        }
+        .focus-nav { display: flex; align-items: center; gap: var(--space-2); }
+        .focus-counter {
+          font-size: var(--font-size-sm); font-weight: 600;
+          font-variant-numeric: tabular-nums; color: var(--color-text-secondary);
+          min-width: 56px; text-align: center;
+        }
+
+        @media (max-width: 900px) {
+          .focus-grid {
+            grid-template-columns: 1fr;
+            height: auto;
+          }
+          .focus-image-card { height: 46vh; min-height: 320px; }
+          .focus-form-scroll { max-height: none; }
+          .focus-actions { position: sticky; bottom: 0; }
         }
 
         /* Ajustes mobile */
@@ -454,8 +618,8 @@ export default function BatchReviewPage() {
 
       <div className="page-header flex justify-between items-center flex-wrap gap-4">
         <div>
-          <h1 className="page-title">Revisión en Lote</h1>
-          <p className="page-subtitle">Modifica directamente los datos extraídos por la IA en formato planilla Excel.</p>
+          <h1 className="page-title">Revisión de boletas</h1>
+          <p className="page-subtitle">Compara cada dato extraído contra la foto original antes de guardar.</p>
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="badge badge-success">{okCount} OK</span>
             {errorRowIds.size > 0 && (
@@ -477,17 +641,46 @@ export default function BatchReviewPage() {
           </div>
         </div>
         
-        {/* Acciones de Lote */}
-        <div className="flex gap-3 flex-wrap bulk-actions-container">
-          <button 
-            className="btn btn-secondary" 
+        {/* Selector de vista + acciones */}
+        <div className="flex gap-3 flex-wrap bulk-actions-container" style={{ alignItems: 'center' }}>
+          <div className="view-toggle" role="group" aria-label="Modo de revisión">
+            <button
+              type="button"
+              className={viewMode === 'focus' ? 'active' : ''}
+              onClick={() => setViewMode('focus')}
+            >
+              <Icon name="photo" size={14} /> Enfocada
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'table' ? 'active' : ''}
+              onClick={() => setViewMode('table')}
+            >
+              <Icon name="table" size={14} /> Tabla
+            </button>
+          </div>
+
+          {viewMode === 'focus' && (
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveAll}
+              disabled={isSaving}
+              style={{ minHeight: '44px' }}
+            >
+              Guardar todas ({rows.length})
+            </button>
+          )}
+
+          {viewMode === 'table' && (<>
+          <button
+            className="btn btn-secondary"
             onClick={handleSelectAll}
             style={{ minHeight: '44px' }}
           >
             {selectedIds.length === visibleRows.length && visibleRows.length > 0 ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </button>
-          
-          <select 
+
+          <select
             className="spreadsheet-select"
             value=""
             onChange={(e) => {
@@ -530,18 +723,226 @@ export default function BatchReviewPage() {
           >
             Guardar seleccionados ({selectedIds.length})
           </button>
-          <button 
-            className="btn btn-primary" 
-            onClick={handleSaveAll} 
+          <button
+            className="btn btn-primary"
+            onClick={handleSaveAll}
             disabled={isSaving}
             style={{ minHeight: '44px' }}
           >
             Guardar todos ({rows.length})
           </button>
+          </>)}
         </div>
       </div>
 
-      {/* Grid Contenedor: Tabla a la Izquierda, Visor de Documento a la Derecha */}
+      {/* ══ MODO ENFOCADO: imagen grande + formulario, una boleta a la vez ══ */}
+      {viewMode === 'focus' && activeRow && (() => {
+        const errors = getRowErrors(activeRow);
+        const fieldError = (k) => errors[k];
+        const set = (key, value) => handleCellChange(activeRow.id, key, value);
+        return (
+          <div className="focus-grid">
+            {/* Imagen del comprobante */}
+            <div className="card focus-image-card">
+              <div className="focus-image-head">
+                <span className="truncate text-sm font-semibold">
+                  {activeRow.file?.name || 'Comprobante'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setLightboxOpen(true)}
+                  disabled={!previewImageUrl}
+                  title="Ver a pantalla completa"
+                >
+                  <Icon name="search" size={16} /> Ampliar
+                </button>
+              </div>
+              {previewImageUrl ? (
+                <ZoomableImage src={previewImageUrl} alt={`Boleta ${activeIndex + 1}`} />
+              ) : (
+                <div className="empty-state" style={{ flex: 1 }}>
+                  <div className="empty-state-icon"><Icon name="photo" size={24} /></div>
+                  <p className="empty-state-text">Sin imagen disponible</p>
+                </div>
+              )}
+            </div>
+
+            {/* Formulario de la boleta activa */}
+            <div className="card focus-form-card">
+              <div className="focus-form-scroll space-y-4">
+                {Object.keys(errors).length > 0 && (
+                  <div className="alert alert-danger" style={{ padding: 'var(--space-3)' }}>
+                    <Icon name="alert" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div className="text-xs">{Object.values(errors).join(' · ')}</div>
+                  </div>
+                )}
+                {activeRow.isDuplicate && (
+                  <div className="alert alert-warning" style={{ padding: 'var(--space-3)' }}>
+                    <Icon name="copy" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div className="text-xs">
+                      Posible duplicado: ya existe un comprobante con el mismo RUT, N° de documento y fecha.
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">Proveedor</label>
+                  <input
+                    className="form-input"
+                    value={activeRow.providerName ?? ''}
+                    onChange={(e) => set('providerName', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-grid" style={{ gap: 'var(--space-3)' }}>
+                  <div className="form-group">
+                    <label className="form-label">RUT proveedor</label>
+                    <input
+                      className="form-input"
+                      value={activeRow.providerRut ?? ''}
+                      onChange={(e) => set('providerRut', e.target.value)}
+                      onBlur={(e) => e.target.value && set('providerRut', formatRut(e.target.value))}
+                      style={fieldError('providerRut') ? { borderColor: 'var(--color-danger)' } : undefined}
+                    />
+                    {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">N° documento</label>
+                    <input
+                      className="form-input"
+                      value={activeRow.documentNumber ?? ''}
+                      onChange={(e) => set('documentNumber', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ gap: 'var(--space-3)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Tipo de documento</label>
+                    <select
+                      className="form-select"
+                      value={activeRow.documentType ?? 'Boleta'}
+                      onChange={(e) => set('documentType', e.target.value)}
+                    >
+                      {DOCUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Fecha</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={activeRow.date ?? ''}
+                      onChange={(e) => set('date', e.target.value)}
+                      style={fieldError('date') ? { borderColor: 'var(--color-danger)' } : undefined}
+                    />
+                    {fieldError('date') && <span className="form-error">{errors.date}</span>}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Tipo de gasto</label>
+                  <select
+                    className="form-select"
+                    value={activeRow.expenseType ?? ''}
+                    onChange={(e) => set('expenseType', e.target.value)}
+                    style={fieldError('expenseType') ? { borderColor: 'var(--color-danger)' } : undefined}
+                  >
+                    <option value="" disabled>Seleccione...</option>
+                    {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  {fieldError('expenseType') && <span className="form-error">{errors.expenseType}</span>}
+                </div>
+
+                <div className="form-grid-3" style={{ gap: 'var(--space-3)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Neto</label>
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={activeRow.netAmount ?? 0}
+                      onChange={(e) => set('netAmount', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">IVA</label>
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={activeRow.ivaAmount ?? 0}
+                      onChange={(e) => set('ivaAmount', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Total</label>
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={activeRow.totalAmount ?? 0}
+                      onChange={(e) => set('totalAmount', Number(e.target.value))}
+                      style={{ fontWeight: 700, ...(fieldError('amounts') ? { borderColor: 'var(--color-danger)' } : {}) }}
+                    />
+                  </div>
+                </div>
+                {fieldError('amounts') && <span className="form-error">{errors.amounts}</span>}
+
+                <div className="form-group">
+                  <label className="form-label">Estado tributario</label>
+                  <select
+                    className="form-select"
+                    value={activeRow.taxStatus ?? 'pending'}
+                    onChange={(e) => set('taxStatus', e.target.value)}
+                  >
+                    {Object.entries(TAX_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Barra de acciones fija del formulario */}
+              <div className="focus-actions">
+                <div className="focus-nav">
+                  <button className="btn btn-secondary btn-icon" onClick={goPrev} disabled={activeIndex === 0} aria-label="Boleta anterior">
+                    <Icon name="chevron-left" size={16} />
+                  </button>
+                  <span className="focus-counter">{activeIndex + 1} / {visibleRows.length}</span>
+                  <button className="btn btn-secondary btn-icon" onClick={goNext} disabled={activeIndex >= visibleRows.length - 1} aria-label="Boleta siguiente">
+                    <Icon name="chevron-right" size={16} />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => discardOne(activeRow.id)}
+                    disabled={isSaving}
+                    style={{ color: 'var(--color-danger)' }}
+                  >
+                    <Icon name="trash" /> Descartar
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleSaveOne(activeRow.id)}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? <><div className="spinner" /> Guardando...</> : <>Guardar y seguir</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {lightboxOpen && previewImageUrl && (
+        <ImageLightbox
+          src={previewImageUrl}
+          title={activeRow?.file?.name || 'Comprobante'}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+
+      {/* ══ MODO TABLA: planilla para operaciones masivas ══ */}
+      {viewMode === 'table' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-cols, 1fr 340px)', gap: '20px', alignItems: 'start' }} className="batch-grid">
         
         {/* Tabla Spreadsheet */}
@@ -699,38 +1100,38 @@ export default function BatchReviewPage() {
 
           {previewImageUrl ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div 
-                style={{ 
-                  width: '100%', 
-                  height: '240px', 
-                  borderRadius: '6px', 
-                  overflow: 'hidden', 
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                title="Clic para ampliar"
+                style={{
+                  width: '100%',
+                  height: '380px',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden',
                   border: '1px solid var(--color-border)',
                   background: 'var(--color-bg-primary)',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  cursor: 'zoom-in',
+                  padding: 0
                 }}
               >
-                <img 
-                  src={previewImageUrl} 
-                  alt="Activo" 
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                <img
+                  src={previewImageUrl}
+                  alt="Comprobante activo"
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                 />
-              </div>
-              <div className="text-xs text-slate-400 space-y-1 bg-slate-900/60 p-2 rounded border border-slate-800">
-                <p className="truncate"><strong>Archivo:</strong> {rows.find(r => r.id === activeRowId)?.file?.name}</p>
-                <p><strong>Tamaño:</strong> {((rows.find(r => r.id === activeRowId)?.file?.size || 0) / 1024 / 1024).toFixed(2)} MB</p>
-              </div>
-              <a 
-                href={previewImageUrl} 
-                target="_blank" 
-                rel="noreferrer" 
+              </button>
+              <button
+                type="button"
                 className="btn btn-secondary w-full text-center text-xs"
-                style={{ padding: '6px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => setLightboxOpen(true)}
+                style={{ padding: '6px', minHeight: '44px' }}
               >
-                <Icon name="search" size={14} style={{ verticalAlign: -2, marginRight: 4 }} />Abrir imagen en pestaña nueva
-              </a>
+                <Icon name="search" size={14} /> Ampliar con zoom
+              </button>
             </div>
           ) : (
             <div className="text-center py-12 text-slate-500 text-xs">
@@ -739,11 +1140,14 @@ export default function BatchReviewPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Manual de Navegación */}
+      {viewMode === 'table' && (
       <div className="alert alert-info text-xs">
         <strong>Manual de Teclado:</strong> Usa <strong>Tab / Shift+Tab</strong> para moverte horizontalmente, y <strong>↑ / ↓</strong> o la tecla <strong>Enter</strong> para moverte verticalmente. Presiona <strong>Escape</strong> para cancelar tu edición y restaurar el valor anterior. Si hay errores (como un RUT incorrecto), se marcará con una advertencia.
       </div>
+      )}
 
       {confirmAction === 'save-selected' && (
         <ConfirmDialog
@@ -767,6 +1171,20 @@ export default function BatchReviewPage() {
           loading={isSaving}
           onConfirm={async () => {
             await performSaveAll();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {confirmAction === 'save-one' && activeRow && (
+        <ConfirmDialog
+          title="Guardar con errores"
+          message={`Esta boleta tiene problemas: ${Object.values(getRowErrors(activeRow)).join(' · ')}. ¿Guardarla de todas formas?`}
+          confirmLabel="Guardar igualmente"
+          loading={isSaving}
+          onConfirm={async () => {
+            await performSaveOne(activeRow.id);
             setConfirmAction(null);
           }}
           onCancel={() => setConfirmAction(null)}

@@ -11,8 +11,9 @@ test('la raíz muestra la landing pública sin sesión', async ({ page }) => {
   // No redirige: es la página de venta
   await expect(page).not.toHaveURL(/\/login/);
   await expect(page.locator('.landing-h1')).toContainText('rendición');
-  // Precios visibles con los 4 planes
-  await expect(page.locator('#precios .plan')).toHaveCount(4);
+  // Precio visible: un solo plan, todo incluido
+  await expect(page.locator('#precios .plan')).toHaveCount(1);
+  await expect(page.locator('#precios')).toContainText('Todo incluido');
   // CTA lleva al login
   await page.getByRole('link', { name: 'Crear cuenta gratis' }).first().click();
   await expect(page).toHaveURL(/\/login/);

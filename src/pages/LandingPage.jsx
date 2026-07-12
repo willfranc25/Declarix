@@ -7,40 +7,20 @@ import Icon from '../components/ui/Icon';
  * construida en CSS puro con el vocabulario real del rubro (RUT, IVA 19%).
  */
 
-const PLANS = [
-  {
-    name: 'Gratis',
-    price: '0',
-    period: 'para siempre',
-    features: ['1 usuario', '30 boletas al mes', '30 extracciones con IA', 'Exportación a Excel'],
-    cta: 'Crear cuenta',
-    highlight: false,
-  },
-  {
-    name: 'Independiente',
-    price: '9.900',
-    period: 'CLP / mes',
-    features: ['1 usuario', '200 boletas al mes', '200 extracciones con IA', 'Historial de 24 meses'],
-    cta: 'Contactar',
-    highlight: false,
-  },
-  {
-    name: 'Pyme',
-    price: '19.900',
-    period: 'CLP / mes',
-    features: ['5 usuarios (incluye a tu contador)', '600 boletas al mes', 'Exportaciones ilimitadas', 'Historial completo'],
-    cta: 'Contactar',
-    highlight: true,
-  },
-  {
-    name: 'Contador',
-    price: '39.900',
-    period: 'CLP / mes',
-    features: ['Usuarios ilimitados', 'Boletas ilimitadas', 'Múltiples empresas cliente', 'Soporte prioritario'],
-    cta: 'Contactar',
-    highlight: false,
-  },
-];
+// Un solo plan, todo incluido. El precio también vive en la tabla `plans`
+// de la BD (id 'pro'); si cambia, actualizar ambos lugares.
+const PLAN = {
+  name: 'Suscripción Declarix',
+  price: '14.990',
+  period: 'CLP / mes',
+  features: [
+    'Boletas y extracciones con IA ilimitadas',
+    'Usuarios ilimitados (invita a tu contador)',
+    'Exportaciones y respaldos sin restricción',
+    'Historial completo, para siempre',
+    'Soporte directo por correo',
+  ],
+};
 
 const STEPS = [
   {
@@ -74,8 +54,8 @@ const FAQS = [
     a: 'Solo tu organización. Cada cuenta está aislada a nivel de base de datos (Row Level Security) y las imágenes viven en carpetas privadas por usuario.',
   },
   {
-    q: '¿Cómo se pagan los planes?',
-    a: 'El plan Gratis no pide tarjeta. Los planes de pago se activan por contacto directo mientras habilitamos el pago en línea.',
+    q: '¿Cómo se paga?',
+    a: 'Un solo plan, todo incluido. Creas tu cuenta gratis, la pruebas con tus boletas reales, y activas la suscripción escribiéndonos — sin tarjeta por adelantado mientras habilitamos el pago en línea.',
   },
 ];
 
@@ -198,7 +178,9 @@ export default function LandingPage() {
         .step h3 { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: -0.02em; margin-bottom: var(--space-2); }
         .step p { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.7; }
 
-        .pricing-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); align-items: stretch; }
+        .pricing-grid { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: var(--space-8); align-items: start; }
+        .pricing-aside h3 { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: -0.02em; margin-bottom: var(--space-2); }
+        .pricing-aside p { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.8; max-width: 44ch; }
         .plan {
           border: 1px solid var(--color-border); border-radius: var(--radius-xl);
           padding: var(--space-6); background: var(--color-bg-elevated);
@@ -206,7 +188,7 @@ export default function LandingPage() {
         }
         .plan.highlight { border-color: var(--color-accent); box-shadow: var(--shadow-md); position: relative; }
         .plan.highlight::before {
-          content: 'Más elegido'; position: absolute; top: -11px; left: var(--space-5);
+          content: 'Todo incluido'; position: absolute; top: -11px; left: var(--space-5);
           background: var(--color-accent); color: white; font-size: 11px; font-weight: 700;
           padding: 2px 10px; border-radius: var(--radius-full);
         }
@@ -240,11 +222,10 @@ export default function LandingPage() {
         @media (max-width: 900px) {
           .landing-hero { grid-template-columns: 1fr; padding: var(--space-8) 0; }
           .steps-grid { grid-template-columns: 1fr; }
-          .pricing-grid { grid-template-columns: 1fr 1fr; }
+          .pricing-grid { grid-template-columns: 1fr; }
           .faq-list { grid-template-columns: 1fr; }
         }
         @media (max-width: 560px) {
-          .pricing-grid { grid-template-columns: 1fr; }
           .landing-nav-links a:not(.btn) { display: none; }
         }
       `}</style>
@@ -323,34 +304,34 @@ export default function LandingPage() {
         </section>
 
         <section className="landing-section" id="precios">
-          <p className="landing-eyebrow">Precios</p>
-          <h2 className="landing-h2">Parte gratis, crece cuando te sirva</h2>
+          <p className="landing-eyebrow">Precio</p>
+          <h2 className="landing-h2">Un plan. Todo incluido. Sin sorpresas.</h2>
           <div className="pricing-grid">
-            {PLANS.map((p) => (
-              <div className={`plan ${p.highlight ? 'highlight' : ''}`} key={p.name}>
-                <div>
-                  <div className="plan-name">{p.name}</div>
-                  <div className="plan-price">
-                    ${p.price} <small>{p.period}</small>
-                  </div>
+            <div className="plan highlight">
+              <div>
+                <div className="plan-name">{PLAN.name}</div>
+                <div className="plan-price">
+                  ${PLAN.price} <small>{PLAN.period}</small>
                 </div>
-                <ul>
-                  {p.features.map((f) => (
-                    <li key={f}><Icon name="check" size={14} />{f}</li>
-                  ))}
-                </ul>
-                {p.cta === 'Crear cuenta' ? (
-                  <Link to="/login" className="btn btn-primary w-full">Crear cuenta</Link>
-                ) : (
-                  <a href={`mailto:soporte@declarix.cl?subject=${encodeURIComponent(`Plan ${p.name}`)}`} className="btn btn-secondary w-full">Contactar</a>
-                )}
               </div>
-            ))}
+              <ul>
+                {PLAN.features.map((f) => (
+                  <li key={f}><Icon name="check" size={14} />{f}</li>
+                ))}
+              </ul>
+              <Link to="/login" className="btn btn-primary w-full">Crear cuenta gratis</Link>
+            </div>
+            <div className="pricing-aside">
+              <h3>¿Por qué un solo plan?</h3>
+              <p>
+                Porque contar boletas para decidir qué plan te conviene es exactamente
+                el tipo de trabajo que Declarix existe para eliminar. Pruébalo gratis
+                con tus boletas reales; cuando te acomode, activa la suscripción
+                escribiéndonos. Sin tarjeta por adelantado.
+              </p>
+            </div>
           </div>
-          <p className="pricing-note">
-            Precios en CLP, IVA incluido. Los planes de pago se activan por contacto directo
-            mientras habilitamos el pago en línea.
-          </p>
+          <p className="pricing-note">Precio en CLP, IVA incluido. Cancelas cuando quieras.</p>
         </section>
 
         <section className="landing-section">

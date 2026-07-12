@@ -8,6 +8,8 @@ import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 
 const PLAN_LABELS = {
+  pro: 'Suscripción Declarix',
+  // Etiquetas legacy (cuentas anteriores al modelo de plan único)
   free: 'Gratis',
   independiente: 'Independiente',
   pyme: 'Pyme',
@@ -197,8 +199,8 @@ export default function SettingsPage() {
             <h3 className="card-title" style={{ marginBottom: 4 }}><Icon name="receipt" />Tu plan</h3>
             <p className="text-sm text-muted" style={{ margin: 0 }}>
               {org
-                ? <>Plan <strong>{PLAN_LABELS[org.planId] || org.planId || 'Gratis'}</strong>{org.name ? <> · Organización: {org.name}</> : null}</>
-                : 'Plan Gratis'}
+                ? <><strong>{PLAN_LABELS[org.planId] || org.planId || 'Suscripción Declarix'}</strong> · Todo incluido, sin límites{org.name ? <> · {org.name}</> : null}</>
+                : 'Suscripción Declarix · Todo incluido'}
             </p>
           </div>
           <a

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
+import { ImageLightbox } from '../components/ui/ImageViewer';
 import { useToast } from '../components/ui/Toast';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -26,6 +27,8 @@ export default function UploadPage() {
 
   const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState(null);
+  // Miniatura ampliada: { src, title } | null
+  const [preview, setPreview] = useState(null);
 
   const { addToast } = useToast();
 
@@ -302,16 +305,25 @@ export default function UploadPage() {
           <div className="divide-y divide-slate-800 space-y-4">
             {queue.map((item) => (
               <div key={item.id} className="flex gap-4 py-4 items-start flex-wrap md:flex-nowrap queue-item">
-                {/* Miniatura o Icono */}
-                <div style={{ width: 60, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)' }}>
+                {/* Miniatura (clic para ampliar con zoom) */}
+                <button
+                  type="button"
+                  onClick={() => item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
+                  title="Ver boleta ampliada"
+                  style={{
+                    width: 60, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+                    background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
+                    padding: 0, cursor: item.tempPreviewUrl ? 'zoom-in' : 'default'
+                  }}
+                >
                   {item.tempPreviewUrl ? (
-                    <img src={item.tempPreviewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>
                       <Icon name="document" size={22} />
                     </div>
                   )}
-                </div>
+                </button>
 
                 {/* Detalles y Progreso */}
                 <div style={{ flex: 1, minWidth: 200 }} className="space-y-2">
@@ -449,6 +461,9 @@ export default function UploadPage() {
         </div>
       </div>
 
+      {preview && (
+        <ImageLightbox src={preview.src} title={preview.title} onClose={() => setPreview(null)} />
+      )}
     </div>
   );
 }
