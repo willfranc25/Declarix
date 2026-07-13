@@ -5,9 +5,25 @@ import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
 import { ImageLightbox } from '../components/ui/ImageViewer';
 import { useToast } from '../components/ui/Toast';
+import { validateExtractedData } from '../services/vlmService';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Datos efectivos de un item ya procesado (extracción + correcciones de
+ * revisión) y si aún necesita atención antes de guardarse. Una boleta puede
+ * quedar "lista" pero con campos que la IA no pudo leer (ej. RUT en una foto
+ * arrugada): en ese caso se marca "Revisar datos" en vez de "Listo".
+ */
+function getReviewState(item) {
+  if (item.status !== 'done' || !item.extractedData) {
+    return { needsReview: false, reasons: [] };
+  }
+  const data = { ...item.extractedData, ...(item.review || {}) };
+  const { errors } = validateExtractedData(data);
+  return { needsReview: errors.length > 0, reasons: errors };
+}
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -108,6 +124,8 @@ export default function UploadPage() {
   const processedFiles = queue.filter(item => item.status === 'done' || item.status === 'error').length;
   const successfulFiles = queue.filter(item => item.status === 'done').length;
   const failedFiles = queue.filter(item => item.status === 'error').length;
+  // Boletas listas pero con datos incompletos que conviene revisar antes de guardar
+  const needsReviewFiles = queue.filter(item => getReviewState(item).needsReview).length;
   const globalProgress = totalFiles > 0 ? Math.round((processedFiles / totalFiles) * 100) : 0;
 
   return (
@@ -234,6 +252,9 @@ export default function UploadPage() {
               </h3>
               <p className="text-xs text-muted" style={{ marginTop: 2 }}>
                 {processedFiles} de {totalFiles} archivos procesados · {successfulFiles} exitosos
+                {needsReviewFiles > 0 && (
+                  <> · <span style={{ color: 'var(--color-warning)', fontWeight: 600 }}>{needsReviewFiles} para revisar</span></>
+                )}
               </p>
             </div>
             <span
@@ -301,7 +322,9 @@ export default function UploadPage() {
             <span className="text-xs text-muted">Procesamiento secuencial</span>
           </div>
 
-          {queue.map((item, i) => (
+          {queue.map((item, i) => {
+            const review = getReviewState(item);
+            return (
             <div
               key={item.id}
               className="flex gap-3 items-center queue-item"
@@ -351,6 +374,11 @@ export default function UploadPage() {
                     <span className="text-mono font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                       ${Number(item.extractedData.totalAmount).toLocaleString('es-CL')}
                     </span>
+                    {review.needsReview && (
+                      <span style={{ display: 'block', color: 'var(--color-warning)', marginTop: 2 }}>
+                        {review.reasons[0]}
+                      </span>
+                    )}
                   </div>
                 ) : item.status === 'error' ? (
                   <p className="text-xs" style={{ color: 'var(--color-danger)', margin: 0 }}>
@@ -367,7 +395,11 @@ export default function UploadPage() {
               {item.status === 'pending' && <span className="badge badge-warning" style={{ flexShrink: 0 }}>Pendiente</span>}
               {item.status === 'waiting' && <span className="badge badge-warning animate-pulse" style={{ flexShrink: 0 }}>Esperando cuota…</span>}
               {item.status === 'processing' && <span className="badge badge-info animate-pulse" style={{ flexShrink: 0 }}>Procesando…</span>}
-              {item.status === 'done' && <span className="badge badge-success" style={{ flexShrink: 0 }}>Listo</span>}
+              {item.status === 'done' && (
+                review.needsReview
+                  ? <span className="badge badge-warning" style={{ flexShrink: 0 }} title={review.reasons.join(' · ')}>Revisar datos</span>
+                  : <span className="badge badge-success" style={{ flexShrink: 0 }}>Listo</span>
+              )}
               {item.status === 'error' && <span className="badge badge-danger" style={{ flexShrink: 0 }}>Error</span>}
 
               {/* Acciones del item */}
@@ -392,7 +424,8 @@ export default function UploadPage() {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
