@@ -2114,18 +2114,23 @@ img { max-width: 100%; height: auto; }
     backdrop-filter: blur(20px);
     border-top: 1px solid var(--color-border);
     z-index: 50;
-    padding: var(--space-2) var(--space-3) calc(var(--space-2) + var(--safe-bottom));
+    /* Sin padding horizontal: la barra entera debe ser área interactiva,
+       sin huecos vacíos en los bordes a los costados de los íconos */
+    padding: var(--space-2) 0 calc(var(--space-2) + var(--safe-bottom));
     box-shadow: var(--shadow-lg);
   }
-  
+
   .mobile-nav-items {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 2px;
+    display: flex;
+    width: 100%;
+    /* space-around reparte el sobrante de forma simétrica entre íconos aunque
+       la pantalla sea más ancha (celular grande / tablet en modo retrato) */
+    justify-content: space-around;
   }
 
   .mobile-nav-link {
     display: flex;
+    flex: 1;
     flex-direction: column;
     align-items: center;
     gap: 3px;
