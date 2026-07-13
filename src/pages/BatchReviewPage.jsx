@@ -1,5 +1,5 @@
 import logger from '../utils/logger';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { validateRut, formatRut } from '../utils/rutValidator';
@@ -20,23 +20,45 @@ const COLUMNS = [
   { key: 'netAmount', label: 'Neto', type: 'number' },
   { key: 'ivaAmount', label: 'IVA', type: 'number' },
   { key: 'totalAmount', label: 'Total', type: 'number' },
-  { key: 'taxStatus', label: 'Estado Trib.', type: 'select', options: ['pending', 'reviewed', 'declared'] }
 ];
-
-const TAX_STATUS_LABELS = {
-  pending: 'Pendiente',
-  reviewed: 'Revisado',
-  declared: 'Declarado'
-};
 
 export default function BatchReviewPage() {
   const navigate = useNavigate();
-  const { batchInvoices, addInvoice, setBatchInvoices } = useInvoiceStore();
+  const { addInvoice } = useInvoiceStore();
 
-  const [rows, setRows] = useState([]);
+  /**
+   * Fuente única de verdad: la cola de subida (persistida en IndexedDB).
+   * - Las boletas recién extraídas aparecen aquí automáticamente.
+   * - Las correcciones se guardan en el item (review) y sobreviven
+   *   recargas, cierres de ventana y de sesión.
+   */
+  const queue = useUploadQueueStore((s) => s.queue);
+  const updateReview = useUploadQueueStore((s) => s.updateReview);
+  const removeItems = useUploadQueueStore((s) => s.removeItems);
+
+  const rows = useMemo(
+    () =>
+      queue
+        .filter((q) => q.status === 'done' && q.extractedData)
+        .map((q) => ({
+          id: q.id,
+          file: q.file,
+          fileName: q.name,
+          tempPreviewUrl: q.tempPreviewUrl,
+          isDuplicate: q.isDuplicate,
+          ...q.extractedData,
+          ...(q.review || {}),
+        })),
+    [queue]
+  );
+
+  // Boletas aún en extracción: se muestran como "en camino"
+  const extractingCount = queue.filter((q) =>
+    ['pending', 'processing', 'waiting'].includes(q.status)
+  ).length;
+
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeRowId, setActiveRowId] = useState(null);
-  const [previewImageUrl, setPreviewImageUrl] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   // Confirmación pendiente: 'save-selected' | 'save-all' | 'save-one' | 'discard' | null
   const [confirmAction, setConfirmAction] = useState(null);
@@ -49,31 +71,22 @@ export default function BatchReviewPage() {
   // Guardar valor original para "Escape to cancel"
   const editingCellRef = useRef(null);
 
-  // Cargar comprobantes de lote desde el store
+  // Mantener una fila activa válida (nuevas boletas o filas removidas)
   useEffect(() => {
-    if (batchInvoices && batchInvoices.length > 0) {
-      setRows(batchInvoices);
-      setActiveRowId(batchInvoices[0].id);
-    } else {
-      setRows([]);
-    }
-  }, [batchInvoices]);
-
-  // Actualizar la vista previa de la imagen para el renglón activo
-  useEffect(() => {
-    if (!activeRowId) {
-      setPreviewImageUrl(null);
+    if (rows.length === 0) {
+      if (activeRowId !== null) setActiveRowId(null);
       return;
     }
-    const activeRow = rows.find(r => r.id === activeRowId);
-    if (activeRow && activeRow.file) {
-      const url = URL.createObjectURL(activeRow.file);
-      setPreviewImageUrl(url);
-      return () => URL.revokeObjectURL(url);
-    } else {
-      setPreviewImageUrl(null);
+    if (!rows.some((r) => r.id === activeRowId)) {
+      setActiveRowId(rows[0].id);
     }
-  }, [activeRowId, rows]);
+  }, [rows, activeRowId]);
+
+  // Limpiar selección de filas que ya no existen
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => rows.some((r) => r.id === id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length]);
 
   // Validador en tiempo real por fila
   const getRowErrors = (row) => {
@@ -141,6 +154,7 @@ export default function BatchReviewPage() {
   // ── Navegación del modo enfocado ──
   const activeIndex = Math.max(0, visibleRows.findIndex(r => r.id === activeRowId));
   const activeRow = visibleRows[activeIndex] || visibleRows[0] || null;
+  const previewImageUrl = activeRow?.tempPreviewUrl || null;
 
   const goTo = (index) => {
     const target = visibleRows[index];
@@ -162,32 +176,25 @@ export default function BatchReviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, activeIndex, visibleRows.length]);
 
-  // Manejar el cambio de valor en una celda
+  /**
+   * Editar una celda: la corrección va directo al store (y a IndexedDB),
+   * así nada se pierde aunque se cierre la ventana a mitad de revisión.
+   */
   const handleCellChange = (rowId, key, value) => {
-    setRows(prev => prev.map(row => {
-      if (row.id !== rowId) return row;
+    const row = rows.find((r) => r.id === rowId);
+    if (!row) return;
 
-      const updated = { ...row, [key]: value };
+    const patch = { [key]: value };
+    // Si cambia Neto o IVA, recalcular Total para Facturas/NC automáticamente
+    const nextType = key === 'documentType' ? value : row.documentType;
+    const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(nextType);
+    if (isInvoiceOrNC && (key === 'netAmount' || key === 'ivaAmount')) {
+      const net = key === 'netAmount' ? Number(value) || 0 : Number(row.netAmount) || 0;
+      const iva = key === 'ivaAmount' ? Number(value) || 0 : Number(row.ivaAmount) || 0;
+      patch.totalAmount = net + iva;
+    }
 
-      // Si cambia Neto o IVA, recalcular Total para Facturas/NC automáticamente
-      const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(updated.documentType);
-      if (isInvoiceOrNC && (key === 'netAmount' || key === 'ivaAmount')) {
-        updated.totalAmount = (Number(updated.netAmount) || 0) + (Number(updated.ivaAmount) || 0);
-      }
-
-      return updated;
-    }));
-  };
-
-  // Cambio de taxStatus masivo (Bulk Change)
-  const handleBulkTaxStatusChange = (status) => {
-    if (selectedIds.length === 0) return;
-    setRows(prev => prev.map(row => {
-      if (selectedIds.includes(row.id)) {
-        return { ...row, taxStatus: status };
-      }
-      return row;
-    }));
+    updateReview(rowId, patch);
   };
 
   // Navegación por teclado (Tab, Shift+Tab, Flechas, Enter, Escape)
@@ -247,7 +254,7 @@ export default function BatchReviewPage() {
 
   // Checkbox: Seleccionar individual
   const handleSelectRow = (id) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
   };
@@ -261,13 +268,48 @@ export default function BatchReviewPage() {
     }
   };
 
+  /** Convierte una fila de revisión en el payload del comprobante. */
+  const toInvoiceData = (row) => {
+    const { id, file, fileName, tempPreviewUrl, isDuplicate, ...invoiceData } = row;
+    return {
+      ...invoiceData,
+      netAmount: Number(invoiceData.netAmount) || 0,
+      ivaAmount: Number(invoiceData.ivaAmount) || 0,
+      totalAmount: Number(invoiceData.totalAmount) || 0,
+      totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
+      totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
+      specificTax: Number(invoiceData.specificTax) || 0,
+    };
+  };
+
+  const saveRows = async (rowsToSave) => {
+    setIsSaving(true);
+    let successCount = 0;
+    const savedIds = [];
+
+    for (const row of rowsToSave) {
+      try {
+        await addInvoice(toInvoiceData(row), row.file);
+        successCount++;
+        savedIds.push(row.id);
+      } catch (err) {
+        logger.error('Error al guardar fila:', row, err);
+      }
+    }
+
+    // Sacar de la cola (y de IndexedDB) los items ya convertidos en comprobantes
+    removeItems(savedIds);
+    setSelectedIds((prev) => prev.filter((id) => !savedIds.includes(id)));
+    setIsSaving(false);
+    return { successCount, savedIds, failed: rowsToSave.length - successCount };
+  };
+
   // Guardar seleccionados
   const handleSaveSelected = async () => {
     if (isSaving) return;
     const selectedRows = rows.filter(r => selectedIds.includes(r.id));
     if (selectedRows.length === 0) return;
 
-    // Verificar si hay errores en las filas seleccionadas
     const hasErrors = selectedRows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
       setConfirmAction('save-selected');
@@ -277,49 +319,10 @@ export default function BatchReviewPage() {
   };
 
   const performSaveSelected = async () => {
-    setIsSaving(true);
-    let successCount = 0;
-    const savedIds = [];
-    const remaining = [];
-
-    for (const row of rows) {
-      if (selectedIds.includes(row.id)) {
-        try {
-          // isDuplicate es metadata de revisión, no un campo del comprobante
-          const { id, file, isDuplicate, ...invoiceData } = row;
-          // Normalizar montos
-          const cleanData = {
-            ...invoiceData,
-            netAmount: Number(invoiceData.netAmount) || 0,
-            ivaAmount: Number(invoiceData.ivaAmount) || 0,
-            totalAmount: Number(invoiceData.totalAmount) || 0,
-            totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
-            totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
-            specificTax: Number(invoiceData.specificTax) || 0,
-          };
-          await addInvoice(cleanData, file);
-          successCount++;
-          savedIds.push(row.id);
-        } catch (err) {
-          logger.error('Error al guardar fila:', row, err);
-          remaining.push(row);
-        }
-      } else {
-        remaining.push(row);
-      }
-    }
-
-    setRows(remaining);
-    setBatchInvoices(remaining);
-    setSelectedIds([]);
-    setIsSaving(false);
-    // Sacar de la cola de carga los items ya convertidos en comprobantes
-    useUploadQueueStore.getState().removeItems(savedIds);
+    const selectedRows = rows.filter((r) => selectedIds.includes(r.id));
+    const { successCount, savedIds } = await saveRows(selectedRows);
     addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
-
-    if (remaining.length === 0) {
-      navigate('/invoices');
-    }
+    if (rows.length - savedIds.length === 0 && extractingCount === 0) navigate('/invoices');
   };
 
   // Guardar todos
@@ -327,7 +330,6 @@ export default function BatchReviewPage() {
     if (isSaving) return;
     if (rows.length === 0) return;
 
-    // Verificar si hay errores
     const hasErrors = rows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
       setConfirmAction('save-all');
@@ -337,44 +339,9 @@ export default function BatchReviewPage() {
   };
 
   const performSaveAll = async () => {
-    setIsSaving(true);
-    let successCount = 0;
-    const savedIds = [];
-    const remaining = [];
-
-    for (const row of rows) {
-      try {
-        // isDuplicate es metadata de revisión, no un campo del comprobante
-        const { id, file, isDuplicate, ...invoiceData } = row;
-        const cleanData = {
-          ...invoiceData,
-          netAmount: Number(invoiceData.netAmount) || 0,
-          ivaAmount: Number(invoiceData.ivaAmount) || 0,
-          totalAmount: Number(invoiceData.totalAmount) || 0,
-          totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
-          totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
-          specificTax: Number(invoiceData.specificTax) || 0,
-        };
-        await addInvoice(cleanData, file);
-        successCount++;
-        savedIds.push(row.id);
-      } catch (err) {
-        logger.error('Error al guardar fila:', row, err);
-        remaining.push(row);
-      }
-    }
-
-    setRows(remaining);
-    setBatchInvoices(remaining);
-    setSelectedIds([]);
-    setIsSaving(false);
-    // Sacar de la cola de carga los items ya convertidos en comprobantes
-    useUploadQueueStore.getState().removeItems(savedIds);
+    const { successCount, savedIds } = await saveRows(rows);
     addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
-
-    if (remaining.length === 0) {
-      navigate('/invoices');
-    }
+    if (rows.length - savedIds.length === 0 && extractingCount === 0) navigate('/invoices');
   };
 
   // Descartar seleccionados (Bulk Delete)
@@ -384,23 +351,17 @@ export default function BatchReviewPage() {
   };
 
   const performDiscard = () => {
-    const remaining = rows.filter(r => !selectedIds.includes(r.id));
-    setRows(remaining);
-    setBatchInvoices(remaining);
+    removeItems(selectedIds);
     setSelectedIds([]);
-    if (remaining.length > 0) {
-      setActiveRowId(remaining[0].id);
-    } else {
-      setActiveRowId(null);
-    }
     addToast('Filas descartadas.', 'info');
   };
 
   // ── Modo revisión enfocada: guardar/descartar la boleta activa ──
 
-  const advanceAfter = (removedId, remaining) => {
+  const advanceAfter = (removedId) => {
     // Mantener el foco en la siguiente boleta pendiente
-    const oldIndex = rows.findIndex(r => r.id === removedId);
+    const remaining = rows.filter((r) => r.id !== removedId);
+    const oldIndex = rows.findIndex((r) => r.id === removedId);
     const next = remaining[Math.min(oldIndex, remaining.length - 1)];
     setActiveRowId(next ? next.id : null);
   };
@@ -410,28 +371,12 @@ export default function BatchReviewPage() {
     if (!row || isSaving) return;
     setIsSaving(true);
     try {
-      // isDuplicate es metadata de revisión, no un campo del comprobante
-      const { id: _rowId, file, isDuplicate, ...invoiceData } = row;
-      const cleanData = {
-        ...invoiceData,
-        netAmount: Number(invoiceData.netAmount) || 0,
-        ivaAmount: Number(invoiceData.ivaAmount) || 0,
-        totalAmount: Number(invoiceData.totalAmount) || 0,
-        totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
-        totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
-        specificTax: Number(invoiceData.specificTax) || 0,
-      };
-      await addInvoice(cleanData, file);
-
-      const remaining = rows.filter(r => r.id !== id);
-      setRows(remaining);
-      setBatchInvoices(remaining);
+      await addInvoice(toInvoiceData(row), row.file);
+      advanceAfter(id);
+      removeItems([id]);
       setSelectedIds(prev => prev.filter(s => s !== id));
-      useUploadQueueStore.getState().removeItems([id]);
-      advanceAfter(id, remaining);
       addToast('Comprobante guardado.', 'success');
-
-      if (remaining.length === 0) navigate('/invoices');
+      if (rows.length - 1 === 0 && extractingCount === 0) navigate('/invoices');
     } catch (err) {
       logger.error('Error al guardar comprobante:', err);
       addToast('Error al guardar: ' + err.message, 'error');
@@ -451,30 +396,39 @@ export default function BatchReviewPage() {
   };
 
   const discardOne = (id) => {
-    const remaining = rows.filter(r => r.id !== id);
-    setRows(remaining);
-    setBatchInvoices(remaining);
+    advanceAfter(id);
+    removeItems([id]);
     setSelectedIds(prev => prev.filter(s => s !== id));
-    useUploadQueueStore.getState().removeItems([id]);
-    advanceAfter(id, remaining);
     addToast('Boleta descartada.', 'info');
   };
 
-  // Volver a UploadPage si no hay datos (Empty State)
+  // Estado vacío: nada extraído aún
   if (rows.length === 0) {
     return (
       <div className="space-y-6 text-center py-12 animate-fade-in">
         <div className="card max-w-md mx-auto p-8 space-y-6">
-          <div className="empty-state-icon">
-            <Icon name="archive" size={24} />
+          <div className="empty-state-icon" style={{ margin: '0 auto' }}>
+            {extractingCount > 0 ? <div className="spinner" /> : <Icon name="archive" size={24} />}
           </div>
-          <h2 className="text-xl font-bold">No hay comprobantes cargados en lote</h2>
-          <p className="text-slate-400 text-sm">
-            Para revisar comprobantes en lote, primero debes subir imágenes en la pantalla de Carga Masiva.
-          </p>
-          <button className="btn btn-primary w-full" style={{ minHeight: '44px' }} onClick={() => navigate('/upload')}>
-            Ir a Carga Masiva
-          </button>
+          {extractingCount > 0 ? (
+            <>
+              <h2 className="text-xl font-bold">Extrayendo {extractingCount} boleta(s)...</h2>
+              <p className="text-muted text-sm">
+                Aparecerán aquí automáticamente cuando terminen. Puedes quedarte en esta
+                página o navegar a otra: el proceso continúa en segundo plano.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-bold">No hay boletas para revisar</h2>
+              <p className="text-muted text-sm">
+                Sube fotos de tus boletas y la IA extraerá los datos para revisarlos aquí.
+              </p>
+              <button className="btn btn-primary w-full" onClick={() => navigate('/upload')}>
+                Cargar boletas
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -498,29 +452,6 @@ export default function BatchReviewPage() {
             background: var(--color-bg-secondary);
             border-bottom: 2px solid var(--color-border) !important;
           }
-        }
-
-        /* ── Selector de vista (segmented control) ── */
-        .view-toggle {
-          display: inline-flex;
-          background: var(--color-bg-secondary);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-lg);
-          padding: 3px;
-          gap: 2px;
-        }
-        .view-toggle button {
-          display: inline-flex; align-items: center; gap: 6px;
-          border: none; background: transparent;
-          color: var(--color-text-secondary);
-          font-size: var(--font-size-sm); font-weight: 600;
-          padding: 8px 14px; border-radius: calc(var(--radius-lg) - 3px);
-          cursor: pointer; min-height: 38px;
-        }
-        .view-toggle button.active {
-          background: var(--color-bg-elevated);
-          color: var(--color-text-primary);
-          box-shadow: var(--shadow-sm);
         }
 
         /* ── Modo enfocado: formulario a la izquierda, imagen fija a la derecha ── */
@@ -562,7 +493,8 @@ export default function BatchReviewPage() {
         .focus-nav { display: flex; align-items: center; gap: var(--space-2); }
         .focus-counter {
           font-size: var(--font-size-sm); font-weight: 600;
-          font-variant-numeric: tabular-nums; color: var(--color-text-secondary);
+          font-family: var(--font-family-mono);
+          color: var(--color-text-secondary);
           min-width: 56px; text-align: center;
         }
 
@@ -587,11 +519,11 @@ export default function BatchReviewPage() {
             margin-top: 16px;
           }
           .spreadsheet-table td {
-            border-bottom: 1px solid var(--color-border-subtle) !important;
+            border-bottom: 1px solid var(--color-border) !important;
             padding: 10px 0 !important;
             min-height: 48px;
           }
-          .spreadsheet-table td input, 
+          .spreadsheet-table td input,
           .spreadsheet-table td select {
             text-align: right;
             width: auto !important;
@@ -623,7 +555,7 @@ export default function BatchReviewPage() {
 
       <div className="page-header flex justify-between items-center flex-wrap gap-4">
         <div>
-          <h1 className="page-title">Revisión de boletas</h1>
+          <h1 className="page-title">Revisión en lote</h1>
           <p className="page-subtitle">Compara cada dato extraído contra la foto original antes de guardar.</p>
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="badge badge-success">{okCount} OK</span>
@@ -632,6 +564,9 @@ export default function BatchReviewPage() {
             )}
             {dupCount > 0 && (
               <span className="badge badge-warning">{dupCount} posible(s) duplicado(s)</span>
+            )}
+            {extractingCount > 0 && (
+              <span className="badge badge-info animate-pulse">{extractingCount} extrayéndose…</span>
             )}
             {(errorRowIds.size > 0 || dupCount > 0) && (
               <label className="text-sm flex items-center gap-2" style={{ cursor: 'pointer', userSelect: 'none' }}>
@@ -645,23 +580,23 @@ export default function BatchReviewPage() {
             )}
           </div>
         </div>
-        
+
         {/* Selector de vista + acciones */}
         <div className="flex gap-3 flex-wrap bulk-actions-container" style={{ alignItems: 'center' }}>
-          <div className="view-toggle" role="group" aria-label="Modo de revisión">
+          <div className="seg-control" role="group" aria-label="Modo de revisión">
             <button
               type="button"
               className={viewMode === 'focus' ? 'active' : ''}
               onClick={() => setViewMode('focus')}
             >
-              <Icon name="photo" size={14} /> Enfocada
+              Enfocada
             </button>
             <button
               type="button"
               className={viewMode === 'table' ? 'active' : ''}
               onClick={() => setViewMode('table')}
             >
-              <Icon name="table" size={14} /> Tabla
+              Tabla
             </button>
           </div>
 
@@ -670,7 +605,6 @@ export default function BatchReviewPage() {
               className="btn btn-primary"
               onClick={handleSaveAll}
               disabled={isSaving}
-              style={{ minHeight: '44px' }}
             >
               Guardar todas ({rows.length})
             </button>
@@ -680,51 +614,21 @@ export default function BatchReviewPage() {
           <button
             className="btn btn-secondary"
             onClick={handleSelectAll}
-            style={{ minHeight: '44px' }}
           >
             {selectedIds.length === visibleRows.length && visibleRows.length > 0 ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </button>
 
-          <select
-            className="spreadsheet-select"
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleBulkTaxStatusChange(e.target.value);
-                e.target.value = ""; 
-              }
-            }}
-            disabled={selectedIds.length === 0}
-            style={{ 
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-bg-secondary)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)',
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              minHeight: '44px'
-            }}
-          >
-            <option value="" disabled>Cambiar Estado Trib. (Lote)...</option>
-            <option value="pending">Pendiente</option>
-            <option value="reviewed">Revisado</option>
-            <option value="declared">Declarado</option>
-          </select>
-
-          <button 
-            className="btn btn-secondary" 
-            onClick={handleDiscardSelected} 
+          <button
+            className="btn btn-danger"
+            onClick={handleDiscardSelected}
             disabled={selectedIds.length === 0 || isSaving}
-            style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', minHeight: '44px' }}
           >
             <Icon name="trash" /> Descartar ({selectedIds.length})
           </button>
-          <button 
-            className="btn btn-secondary" 
-            onClick={handleSaveSelected} 
+          <button
+            className="btn btn-secondary"
+            onClick={handleSaveSelected}
             disabled={selectedIds.length === 0 || isSaving}
-            style={{ minHeight: '44px' }}
           >
             Guardar seleccionados ({selectedIds.length})
           </button>
@@ -732,7 +636,6 @@ export default function BatchReviewPage() {
             className="btn btn-primary"
             onClick={handleSaveAll}
             disabled={isSaving}
-            style={{ minHeight: '44px' }}
           >
             Guardar todos ({rows.length})
           </button>
@@ -740,7 +643,7 @@ export default function BatchReviewPage() {
         </div>
       </div>
 
-      {/* ══ MODO ENFOCADO: imagen grande + formulario, una boleta a la vez ══ */}
+      {/* ══ MODO ENFOCADO: formulario + imagen grande, una boleta a la vez ══ */}
       {viewMode === 'focus' && activeRow && (() => {
         const errors = getRowErrors(activeRow);
         const fieldError = (k) => errors[k];
@@ -751,7 +654,7 @@ export default function BatchReviewPage() {
             <div className="card focus-image-card">
               <div className="focus-image-head">
                 <span className="truncate text-sm font-semibold">
-                  {activeRow.file?.name || 'Comprobante'}
+                  {activeRow.fileName || 'Comprobante'}
                 </span>
                 <button
                   type="button"
@@ -760,7 +663,7 @@ export default function BatchReviewPage() {
                   disabled={!previewImageUrl}
                   title="Ver a pantalla completa"
                 >
-                  <Icon name="search" size={16} /> Ampliar
+                  <Icon name="search" size={14} /> Ampliar
                 </button>
               </div>
               {previewImageUrl ? (
@@ -804,7 +707,7 @@ export default function BatchReviewPage() {
                   <div className="form-group">
                     <label className="form-label">RUT proveedor</label>
                     <input
-                      className="form-input"
+                      className="form-input text-mono"
                       value={activeRow.providerRut ?? ''}
                       onChange={(e) => set('providerRut', e.target.value)}
                       onBlur={(e) => e.target.value && set('providerRut', formatRut(e.target.value))}
@@ -815,7 +718,7 @@ export default function BatchReviewPage() {
                   <div className="form-group">
                     <label className="form-label">N° documento</label>
                     <input
-                      className="form-input"
+                      className="form-input text-mono"
                       value={activeRow.documentNumber ?? ''}
                       onChange={(e) => set('documentNumber', e.target.value)}
                     />
@@ -837,7 +740,7 @@ export default function BatchReviewPage() {
                     <label className="form-label">Fecha</label>
                     <input
                       type="date"
-                      className="form-input"
+                      className="form-input text-mono"
                       value={activeRow.date ?? ''}
                       onChange={(e) => set('date', e.target.value)}
                       style={fieldError('date') ? { borderColor: 'var(--color-danger)' } : undefined}
@@ -891,17 +794,6 @@ export default function BatchReviewPage() {
                   </div>
                 </div>
                 {fieldError('amounts') && <span className="form-error">{errors.amounts}</span>}
-
-                <div className="form-group">
-                  <label className="form-label">Estado tributario</label>
-                  <select
-                    className="form-select"
-                    value={activeRow.taxStatus ?? 'pending'}
-                    onChange={(e) => set('taxStatus', e.target.value)}
-                  >
-                    {Object.entries(TAX_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </div>
               </div>
 
               {/* Barra de acciones fija del formulario */}
@@ -917,12 +809,11 @@ export default function BatchReviewPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    className="btn btn-secondary"
+                    className="btn btn-danger"
                     onClick={() => discardOne(activeRow.id)}
                     disabled={isSaving}
-                    style={{ color: 'var(--color-danger)' }}
                   >
-                    <Icon name="trash" /> Descartar
+                    Descartar
                   </button>
                   <button
                     className="btn btn-primary"
@@ -941,7 +832,7 @@ export default function BatchReviewPage() {
       {lightboxOpen && previewImageUrl && (
         <ImageLightbox
           src={previewImageUrl}
-          title={activeRow?.file?.name || 'Comprobante'}
+          title={activeRow?.fileName || 'Comprobante'}
           onClose={() => setLightboxOpen(false)}
         />
       )}
@@ -949,9 +840,9 @@ export default function BatchReviewPage() {
       {/* ══ MODO TABLA: planilla para operaciones masivas ══ */}
       {viewMode === 'table' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'var(--grid-cols, 1fr 340px)', gap: '20px', alignItems: 'start' }} className="batch-grid">
-        
+
         {/* Tabla Spreadsheet */}
-        <div className="card spreadsheet-container p-0" style={{ minWidth: 0 }}>
+        <div className="card spreadsheet-container p-0" style={{ minWidth: 0, padding: 0 }}>
           <table className="table spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
             <thead>
               <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)' }}>
@@ -978,21 +869,21 @@ export default function BatchReviewPage() {
                 const isActive = row.id === activeRowId;
 
                 return (
-                  <tr 
-                    key={row.id} 
+                  <tr
+                    key={row.id}
                     onClick={() => setActiveRowId(row.id)}
-                    style={{ 
-                      borderBottom: '1px solid var(--color-border)', 
+                    style={{
+                      borderBottom: '1px solid var(--color-border)',
                       background: isActive ? 'var(--color-bg-hover)' : 'transparent',
                       transition: 'background 0.2s'
                     }}
                   >
                     {/* Checkbox */}
                     <td data-label="Seleccionar" style={{ padding: '6px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedIds.includes(row.id)} 
-                        onChange={() => handleSelectRow(row.id)} 
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(row.id)}
+                        onChange={() => handleSelectRow(row.id)}
                       />
                     </td>
 
@@ -1049,7 +940,7 @@ export default function BatchReviewPage() {
                               {col.key === 'expenseType' && <option value="" disabled>Seleccione...</option>}
                               {col.options.map(opt => (
                                 <option key={opt} value={opt} style={{ background: 'var(--color-bg-secondary)' }}>
-                                  {col.key === 'taxStatus' ? TAX_STATUS_LABELS[opt] : opt}
+                                  {opt}
                                 </option>
                               ))}
                             </select>
@@ -1079,6 +970,7 @@ export default function BatchReviewPage() {
                                 padding: '6px',
                                 textDecoration: hasCellError ? 'underline dotted var(--color-danger)' : 'none',
                                 fontWeight: col.key === 'totalAmount' ? 'bold' : 'normal',
+                                fontFamily: ['netAmount', 'ivaAmount', 'totalAmount', 'date', 'providerRut', 'documentNumber'].includes(col.key) ? 'var(--font-family-mono)' : 'inherit',
                                 minHeight: '44px'
                               }}
                               title={hasCellError ? errors.providerRut : hasAmountError ? errors.amounts : ''}
@@ -1098,7 +990,7 @@ export default function BatchReviewPage() {
         <div className="card document-viewer-card p-4 space-y-4" style={{ position: 'sticky', top: '20px' }}>
           <h3 className="font-semibold border-b border-slate-800 pb-2 flex justify-between items-center text-sm">
             <span><Icon name="photo" />Documento activo</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono)' }}>
               {rows.findIndex(r => r.id === activeRowId) + 1} de {rows.length}
             </span>
           </h3>
@@ -1133,7 +1025,7 @@ export default function BatchReviewPage() {
                 type="button"
                 className="btn btn-secondary w-full text-center text-xs"
                 onClick={() => setLightboxOpen(true)}
-                style={{ padding: '6px', minHeight: '44px' }}
+                style={{ padding: '6px' }}
               >
                 <Icon name="search" size={14} /> Ampliar con zoom
               </button>

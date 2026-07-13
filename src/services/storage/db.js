@@ -21,6 +21,16 @@ db.version(1).stores({
   settings: 'key',
 });
 
+db.version(2).stores({
+  invoices: 'id, date, providerName, providerRut, documentType, expenseType, status, createdAt',
+  images: 'id',
+  settings: 'key',
+  // Cola de extracción/revisión: persiste el archivo (Blob), los datos
+  // extraídos y las correcciones del usuario para que cerrar la ventana
+  // o la sesión no pierda el progreso de revisión.
+  uploadQueue: 'id, addedAt',
+});
+
 /**
  * Copia los datos de la base legacy a la nueva la primera vez que se abre.
  * La base antigua se conserva como respaldo (no se elimina).

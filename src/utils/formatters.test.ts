@@ -53,29 +53,24 @@ describe('formatters', () => {
     });
   });
 
+  // Estado binario: 'declared' = ya exportada en una rendición;
+  // cualquier otro valor (incluidos los legacy) cuenta como pendiente.
   describe('getStatusLabel', () => {
-    it('should return correct labels for known statuses', () => {
+    it('declared es Declarada; todo lo demás es Pendiente', () => {
+      expect(getStatusLabel('declared')).toBe('Declarada');
       expect(getStatusLabel('pending')).toBe('Pendiente');
-      expect(getStatusLabel('reviewed')).toBe('Revisado');
-      expect(getStatusLabel('approved')).toBe('Aprobado');
-    });
-
-    it('should return status itself for unknown', () => {
-      expect(getStatusLabel('unknown')).toBe('unknown');
-      expect(getStatusLabel('declared')).toBe('declared');
+      expect(getStatusLabel('reviewed')).toBe('Pendiente');
+      expect(getStatusLabel('approved')).toBe('Pendiente');
+      expect(getStatusLabel(undefined as unknown as string)).toBe('Pendiente');
     });
   });
 
   describe('getStatusVariant', () => {
-    it('should return correct variant classes for known statuses', () => {
+    it('declared es success; todo lo demás warning', () => {
+      expect(getStatusVariant('declared')).toBe('success');
       expect(getStatusVariant('pending')).toBe('warning');
-      expect(getStatusVariant('reviewed')).toBe('info');
-      expect(getStatusVariant('approved')).toBe('success');
-    });
-
-    it('should return default for unknown', () => {
-      expect(getStatusVariant('declared')).toBe('default');
-      expect(getStatusVariant('unknown')).toBe('default');
+      expect(getStatusVariant('reviewed')).toBe('warning');
+      expect(getStatusVariant(undefined as unknown as string)).toBe('warning');
     });
   });
 });

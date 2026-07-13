@@ -1,8 +1,7 @@
 import logger from '../utils/logger';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import useInvoiceStore from '../store/invoiceStore';
-import { formatCurrency, formatDate, getMonthName } from '../utils/formatters';
-import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
+import { formatCurrency, formatDate, getMonthName, getStatusLabel, getStatusVariant } from '../utils/formatters';
 import { exportToRendicion, exportToExcel, exportToCSV, downloadFile } from '../services/exportService';
 import { validateRut, cleanRut, formatRut } from '../utils/rutValidator';
 import { getStorageProvider } from '../services/storage/StorageProvider';
@@ -39,43 +38,145 @@ const MAPPING_LABELS = {
   specificTax: 'Impuesto Específico'
 };
 
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+/** Mes anterior al actual: el período que normalmente se declara (F29). */
+function previousMonth() {
+  const now = new Date();
+  let m = now.getMonth(); // getMonth() es 0-based → ya es "mes anterior" en 1-based
+  let y = now.getFullYear();
+  if (m === 0) {
+    m = 12;
+    y -= 1;
+  }
+  return { month: m, year: y };
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
 export default function ReportsPage() {
   const invoices = useInvoiceStore((state) => state.invoices);
+  const loadInvoices = useInvoiceStore((state) => state.loadInvoices);
   const updateInvoice = useInvoiceStore((state) => state.updateInvoice);
-  
+  const markDeclared = useInvoiceStore((state) => state.markDeclared);
+
+  useEffect(() => { loadInvoices(); }, [loadInvoices]);
+
+  // ── Período: Mes / Rango de meses / Año tributario ──
+  const [periodMode, setPeriodMode] = useState('month');
+  const [month, setMonth] = useState(previousMonth());
+  const [rangeFrom, setRangeFrom] = useState(previousMonth());
+  const [rangeTo, setRangeTo] = useState(previousMonth());
+  const [taxYear, setTaxYear] = useState(new Date().getFullYear());
+  // Filtro de estado: por defecto se trabaja sobre lo pendiente de declarar
+  const [statusChip, setStatusChip] = useState('all');
+
+  // Años disponibles: los presentes en los datos + el actual
+  const availableYears = useMemo(() => {
+    const years = new Set([new Date().getFullYear()]);
+    invoices.forEach((inv) => {
+      const y = Number(String(inv.date).slice(0, 4));
+      if (!Number.isNaN(y)) years.add(y);
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [invoices]);
+
+  // Rango [desde, hasta] en formato ISO según el modo activo
+  const periodRange = useMemo(() => {
+    if (periodMode === 'month') {
+      const start = `${month.year}-${pad2(month.month)}-01`;
+      const lastDay = new Date(month.year, month.month, 0).getDate();
+      return [start, `${month.year}-${pad2(month.month)}-${pad2(lastDay)}`];
+    }
+    if (periodMode === 'range') {
+      // Si el usuario invierte el rango, se corrige solo
+      let a = rangeFrom;
+      let b = rangeTo;
+      if (a.year > b.year || (a.year === b.year && a.month > b.month)) [a, b] = [b, a];
+      const start = `${a.year}-${pad2(a.month)}-01`;
+      const lastDay = new Date(b.year, b.month, 0).getDate();
+      return [start, `${b.year}-${pad2(b.month)}-${pad2(lastDay)}`];
+    }
+    return [`${taxYear}-01-01`, `${taxYear}-12-31`];
+  }, [periodMode, month, rangeFrom, rangeTo, taxYear]);
+
+  // Comprobantes del período (más filtro de estado)
+  const periodInvoices = useMemo(() => {
+    const [start, end] = periodRange;
+    return invoices
+      .filter((inv) => inv.date >= start && inv.date <= end)
+      .filter((inv) => {
+        if (statusChip === 'pending') return inv.taxStatus !== 'declared';
+        if (statusChip === 'declared') return inv.taxStatus === 'declared';
+        return true;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [invoices, periodRange, statusChip]);
+
+  // ── Selección por fila: al cambiar el período se seleccionan todas ──
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const periodKey = `${periodRange[0]}|${periodRange[1]}|${statusChip}`;
+  const prevPeriodKey = useRef(null);
+
+  useEffect(() => {
+    if (prevPeriodKey.current !== periodKey) {
+      prevPeriodKey.current = periodKey;
+      setSelectedIds(new Set(periodInvoices.map((inv) => inv.id)));
+    } else {
+      // Mantener la selección coherente si cambian los datos (ej. borrado)
+      setSelectedIds((prev) => {
+        const valid = new Set(periodInvoices.map((inv) => inv.id));
+        const next = new Set([...prev].filter((id) => valid.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
+    }
+  }, [periodKey, periodInvoices]);
+
+  const selectedRows = useMemo(
+    () => periodInvoices.filter((inv) => selectedIds.has(inv.id)),
+    [periodInvoices, selectedIds]
+  );
+
+  const allSelected = periodInvoices.length > 0 && selectedIds.size === periodInvoices.length;
+
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(periodInvoices.map((inv) => inv.id)));
+  };
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const totals = useMemo(() => selectedRows.reduce((acc, inv) => ({
+    netAmount: acc.netAmount + (inv.netAmount || 0),
+    ivaAmount: acc.ivaAmount + (inv.ivaAmount || 0),
+    totalAmount: acc.totalAmount + (inv.totalAmount || 0),
+  }), { netAmount: 0, ivaAmount: 0, totalAmount: 0 }), [selectedRows]);
+
+  // ── Plantilla de rendición + mapping (modal "Configurar plantilla") ──
   const templateInputRef = useRef(null);
-
-  // Filter States
-  const [filterText, setFilterText] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [expenseType, setExpenseType] = useState('');
-  const [documentType, setDocumentType] = useState('');
-
   const [templateBuffer, setTemplateBuffer] = useState(null);
-  const [templateName, setTemplateName] = useState('Cargando plantilla predeterminada...');
+  const [templateName, setTemplateName] = useState('');
   const [templateSize, setTemplateSize] = useState(null);
-  const [isLoadingTemplate, setIsLoadingTemplate] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
-
-  // States para Mapping Modal
-  const [showMappingModal, setShowMappingModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [rutEmpresa, setRutEmpresa] = useState('');
   const [mapping, setMapping] = useState(DEFAULT_MAPPING);
 
-  // States para Corrección Inline
   const [editingInvoice, setEditingInvoice] = useState(null);
-
-  // Confirmación de exportación con advertencias pendientes
   const [confirmExport, setConfirmExport] = useState(false);
 
   const { addToast } = useToast();
-  const mappingModalRef = useRef(null);
+  const templateModalRef = useRef(null);
   const editModalRef = useRef(null);
-  useDialogBehavior(mappingModalRef, () => setShowMappingModal(false), showMappingModal);
+  useDialogBehavior(templateModalRef, () => setShowTemplateModal(false), showTemplateModal);
   useDialogBehavior(editModalRef, () => setEditingInvoice(null), Boolean(editingInvoice));
 
-  // Lista de RUTs de empresas emisoras o proveedoras para sugerir mapping
+  // RUTs de proveedores para sugerir el RUT de la empresa en el mapping
   const distinctInvoicesRuts = useMemo(() => {
     const ruts = new Set();
     invoices.forEach(inv => {
@@ -84,18 +185,13 @@ export default function ReportsPage() {
     return Array.from(ruts);
   }, [invoices]);
 
-  // Al abrir el modal de mapping, inicializar rutEmpresa si está vacío
   useEffect(() => {
-    if (showMappingModal && !rutEmpresa) {
-      if (distinctInvoicesRuts.length > 0) {
-        setRutEmpresa(distinctInvoicesRuts[0]);
-      } else {
-        setRutEmpresa('12345678-9');
-      }
+    if (showTemplateModal && !rutEmpresa && distinctInvoicesRuts.length > 0) {
+      setRutEmpresa(distinctInvoicesRuts[0]);
     }
-  }, [showMappingModal, rutEmpresa, distinctInvoicesRuts]);
+  }, [showTemplateModal, rutEmpresa, distinctInvoicesRuts]);
 
-  // Cargar mapping de la empresa activa desde el almacenamiento local
+  // Cargar mapping guardado para la empresa activa
   useEffect(() => {
     async function loadMapping() {
       if (!rutEmpresa) return;
@@ -105,11 +201,7 @@ export default function ReportsPage() {
         // Fallback al prefijo legacy de versiones anteriores
         const saved = (await storage.getSetting(`export_mapping_${rutClean}`))
           || (await storage.getSetting(`saludent_mapping_${rutClean}`));
-        if (saved) {
-          setMapping(saved);
-        } else {
-          setMapping(DEFAULT_MAPPING);
-        }
+        setMapping(saved || DEFAULT_MAPPING);
       } catch (err) {
         logger.error('Error al cargar mapping:', err);
       }
@@ -117,7 +209,6 @@ export default function ReportsPage() {
     loadMapping();
   }, [rutEmpresa]);
 
-  // Guardar configuración del mapping
   const handleSaveMapping = async () => {
     if (!rutEmpresa) {
       addToast('Especifica el RUT de la empresa para asociar este mapping.', 'warning');
@@ -136,14 +227,14 @@ export default function ReportsPage() {
         upperMapping[k] = (mapping[k] || '').toUpperCase();
       });
       await storage.saveSetting(key, upperMapping);
-      addToast(`Mapping guardado para la empresa RUT ${formatRut(rutEmpresa)}.`, 'success');
-      setShowMappingModal(false);
+      addToast(`Configuración guardada para la empresa RUT ${formatRut(rutEmpresa)}.`, 'success');
+      setShowTemplateModal(false);
     } catch (err) {
-      addToast('Error al guardar el mapping: ' + err.message, 'error');
+      addToast('Error al guardar: ' + err.message, 'error');
     }
   };
 
-  // Cargar plantilla por defecto al iniciar
+  // Plantilla por defecto (public/template.xlsm) al iniciar
   useEffect(() => {
     const loadDefaultTemplate = async () => {
       try {
@@ -153,22 +244,14 @@ export default function ReportsPage() {
           setTemplateBuffer(buffer);
           setTemplateName('template.xlsm');
           setTemplateSize(buffer.byteLength);
-        } else {
-          setTemplateName(''); 
-          setTemplateSize(null);
         }
       } catch (error) {
         logger.error('Error cargando plantilla por defecto:', error);
-        setTemplateName('');
-        setTemplateSize(null);
-      } finally {
-        setIsLoadingTemplate(false);
       }
     };
     loadDefaultTemplate();
   }, []);
 
-  // Procesar archivo de plantilla subido
   const processTemplateFile = (file) => {
     if (!file) return;
     setTemplateName(file.name);
@@ -178,55 +261,10 @@ export default function ReportsPage() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processTemplateFile(file);
-    }
-  };
-
-  // Filtrar comprobantes por los criterios avanzados
-  const filtered = useMemo(() => {
-    return invoices.filter((inv) => {
-      // 1. Filtro de Texto (Proveedor, RUT o Detalle)
-      if (filterText) {
-        const term = filterText.toLowerCase();
-        const matchesText = 
-          (inv.providerName && inv.providerName.toLowerCase().includes(term)) ||
-          (inv.providerRut && inv.providerRut.toLowerCase().includes(term)) ||
-          (inv.detail && inv.detail.toLowerCase().includes(term));
-        if (!matchesText) return false;
-      }
-
-      // 2. Filtro de Rango de Fechas
-      if (dateFrom && inv.date < dateFrom) return false;
-      if (dateTo && inv.date > dateTo) return false;
-
-      // 3. Filtro por Tipo de Gasto
-      if (expenseType && inv.expenseType !== expenseType) return false;
-
-      // 4. Filtro por Tipo de Documento
-      if (documentType && inv.documentType !== documentType) return false;
-
-      return true;
-    });
-  }, [invoices, filterText, dateFrom, dateTo, expenseType, documentType]);
-
-  // Validación Pre-export
-  const preExportIssues = useMemo(() => {
-    const issues = [];
-    filtered.forEach((inv) => {
+  // ── Validación pre-exportación sobre las filas SELECCIONADAS ──
+  const rowIssues = useMemo(() => {
+    const issues = new Map();
+    periodInvoices.forEach((inv) => {
       const invErrors = [];
       if (!inv.providerRut) {
         invErrors.push('Falta el RUT del proveedor.');
@@ -251,42 +289,19 @@ export default function ReportsPage() {
         invErrors.push('El monto total es cero (0).');
       }
 
-      if (invErrors.length > 0) {
-        issues.push({
-          id: inv.id,
-          invoice: inv,
-          errors: invErrors
-        });
-      }
+      if (invErrors.length > 0) issues.set(inv.id, invErrors);
     });
     return issues;
-  }, [filtered]);
+  }, [periodInvoices]);
 
-  // Conteo resumen de problemas pre-export
-  const preExportSummaryText = useMemo(() => {
-    let missingRuts = 0;
-    let invalidDates = 0;
-    let zeroTotals = 0;
+  const selectedIssuesCount = selectedRows.filter((inv) => rowIssues.has(inv.id)).length;
 
-    preExportIssues.forEach(issue => {
-      if (issue.errors.some(e => e.includes('RUT'))) missingRuts++;
-      if (issue.errors.some(e => e.includes('fecha') || e.includes('Fecha'))) invalidDates++;
-      if (issue.errors.some(e => e.includes('cero'))) zeroTotals++;
-    });
-
-    const parts = [];
-    if (missingRuts > 0) parts.push(`Faltan ${missingRuts} RUTs`);
-    if (invalidDates > 0) parts.push(`${invalidDates} fechas inválidas`);
-    if (zeroTotals > 0) parts.push(`${zeroTotals} total=0`);
-
-    return parts.length > 0 ? parts.join(', ') : 'Ninguno';
-  }, [preExportIssues]);
-
-  // Export handlers
+  // ── Exportaciones (operan sobre la selección) ──
   const doExportRendicion = async () => {
     try {
       const activeMapping = rutEmpresa ? mapping : null;
-      const data = await exportToRendicion(filtered, templateBuffer, {
+      const rows = selectedRows;
+      const data = await exportToRendicion(rows, templateBuffer, {
         fechaRendicion: formatDate(new Date().toISOString().split('T')[0]),
         rut: rutEmpresa || ''
       }, activeMapping);
@@ -294,18 +309,32 @@ export default function ReportsPage() {
       const filename = `Rendicion-${new Date().toISOString().split('T')[0]}.xlsx`;
       const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       downloadFile(data, filename, mimeType);
-      addToast(`Rendición exportada: ${filename}`, 'success');
+
+      // La rendición ES la declaración: marcar lo exportado como declarado
+      const toMark = rows.filter((r) => r.taxStatus !== 'declared').map((r) => r.id);
+      if (toMark.length > 0) {
+        try {
+          await markDeclared(toMark);
+          addToast(`Rendición exportada. ${toMark.length} boleta(s) marcadas como declaradas.`, 'success');
+        } catch {
+          addToast(`Rendición exportada: ${filename} (no se pudo actualizar el estado).`, 'warning');
+        }
+      } else {
+        addToast(`Rendición exportada: ${filename}`, 'success');
+      }
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');
     }
   };
 
   const handleExportRendicion = () => {
+    if (selectedRows.length === 0) return;
     if (!templateBuffer) {
-      addToast('Primero carga la plantilla Excel (.xlsm o .xlsx).', 'warning');
+      addToast('Primero carga la plantilla Excel (.xlsm o .xlsx) en "Configurar plantilla".', 'warning');
+      setShowTemplateModal(true);
       return;
     }
-    if (preExportIssues.length > 0) {
+    if (selectedIssuesCount > 0) {
       setConfirmExport(true);
       return;
     }
@@ -313,8 +342,9 @@ export default function ReportsPage() {
   };
 
   const handleExportExcel = async () => {
+    if (selectedRows.length === 0) return;
     try {
-      const data = await exportToExcel(filtered, { includeMonthlySheet: true, includeCategorySheet: true });
+      const data = await exportToExcel(selectedRows, { includeMonthlySheet: true, includeCategorySheet: true });
       downloadFile(data, `Comprobantes-${new Date().toISOString().split('T')[0]}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');
@@ -322,19 +352,20 @@ export default function ReportsPage() {
   };
 
   const handleExportCSV = () => {
-    const data = exportToCSV(filtered);
+    if (selectedRows.length === 0) return;
+    const data = exportToCSV(selectedRows);
     downloadFile(data, `Comprobantes-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8;');
   };
 
-  // Preview dinámico de celda en modal de Mapping
+  // Preview dinámico de celda en el modal de configuración
   const getCellPreview = (fieldKey) => {
     const col = mapping[fieldKey] || '';
     if (!col) return '(Ignorado)';
-    const firstVal = filtered[0] ? filtered[0][fieldKey] : null;
+    const firstVal = selectedRows[0] ? selectedRows[0][fieldKey] : null;
     return `Columna ${col.toUpperCase()}21: "${firstVal !== null && firstVal !== undefined ? firstVal : '—'}"`;
   };
 
-  // Guardar edición del comprobante corregido inline
+  // Guardar corrección hecha desde el modal de edición
   const handleSaveEditingInvoice = async (e) => {
     e.preventDefault();
     if (!editingInvoice) return;
@@ -348,494 +379,399 @@ export default function ReportsPage() {
     }
   };
 
-  const monthly = useMemo(() => generateMonthlySummary(filtered), [filtered]);
-  const category = useMemo(() => generateCategorySummary(filtered), [filtered]);
+  const monthSelect = (value, onChange, ariaLabel) => (
+    <select
+      className="form-select"
+      value={value.month}
+      onChange={(e) => onChange({ ...value, month: Number(e.target.value) })}
+      style={{ width: 150 }}
+      aria-label={ariaLabel}
+    >
+      {MONTHS.map((m) => <option key={m} value={m}>{getMonthName(m)}</option>)}
+    </select>
+  );
 
-  const totals = useMemo(() => filtered.reduce((acc, inv) => ({
-    count: acc.count + 1,
-    netAmount: acc.netAmount + (inv.netAmount || 0),
-    ivaAmount: acc.ivaAmount + (inv.ivaAmount || 0),
-    specificTax: acc.specificTax + (inv.specificTax || 0),
-    totalAmount: acc.totalAmount + (inv.totalAmount || 0),
-  }), { count: 0, netAmount: 0, ivaAmount: 0, specificTax: 0, totalAmount: 0 }), [filtered]);
+  const yearSelect = (value, onChange, ariaLabel) => (
+    <select
+      className="form-select"
+      value={value.year}
+      onChange={(e) => onChange({ ...value, year: Number(e.target.value) })}
+      style={{ width: 105 }}
+      aria-label={ariaLabel}
+    >
+      {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+    </select>
+  );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Estilos locales para responsividad de exportación, mapping y touch targets */}
+    <div className="space-y-6 animate-fade-in" style={{ paddingBottom: 0 }}>
       <style>{`
+        .report-table-bar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 18px;
+          border-bottom: 1px solid var(--color-border);
+          background: var(--color-bg-tertiary);
+          flex-wrap: wrap;
+        }
+        .report-row-issue {
+          color: var(--color-warning);
+          display: inline-flex;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 2px;
+          vertical-align: middle;
+        }
+        input[type="checkbox"].report-check {
+          width: 15px;
+          height: 15px;
+          accent-color: var(--color-accent);
+          cursor: pointer;
+        }
         @media (max-width: 768px) {
-          .export-actions {
-            flex-direction: column !important;
+          .report-period-controls {
+            flex-direction: column;
             align-items: stretch !important;
+          }
+          .report-period-controls select {
             width: 100% !important;
           }
-          .export-actions .btn {
-            width: 100% !important;
-            min-height: 44px !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-          }
-          .mapping-grid-header {
-            display: none !important;
-          }
+          .mapping-grid-header { display: none !important; }
           .mapping-grid-row {
             grid-template-columns: 1fr !important;
             gap: 8px !important;
-            align-items: flex-start !important;
             border-bottom: 1px solid var(--color-border) !important;
             padding-bottom: 12px !important;
             margin-bottom: 12px !important;
           }
-          .mapping-grid-row input {
-            width: 100% !important;
-            max-width: unset !important;
-            min-height: 44px !important;
-          }
-          .mapping-grid-row .flex {
-            width: 100% !important;
-          }
-          .form-group input, 
-          .form-group select, 
-          .form-group button {
-            min-height: 44px !important;
-          }
-          .modal-actions .btn {
-            min-height: 44px !important;
-          }
         }
-
         .mapping-modal-dialog {
-          max-width: 600px;
-          width: 90%;
+          max-width: 620px;
+          width: 92%;
         }
         @media (max-width: 768px) {
-          .mapping-modal-dialog {
-            max-width: 100%;
-            width: 100%;
-          }
+          .mapping-modal-dialog { max-width: 100%; width: 100%; }
         }
       `}</style>
 
       <div className="page-header flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="page-title">Reportes</h1>
-          <p className="page-subtitle">Resumen de gastos y exportación de datos</p>
+          <p className="page-subtitle">Elige un período y selecciona qué comprobantes exportar.</p>
         </div>
-        <div className="flex gap-2">
-          <button className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setShowMappingModal(true)}>
-            <Icon name="settings" /> Configurar mapping
-          </button>
-        </div>
+        <button className="btn btn-secondary" onClick={() => setShowTemplateModal(true)}>
+          <Icon name="settings" size={15} /> Configurar plantilla
+        </button>
       </div>
 
-      {/* Filtros Avanzados */}
+      {/* Selector de modo de período */}
+      <div className="seg-control" role="group" aria-label="Modo de período">
+        <button className={periodMode === 'month' ? 'active' : ''} onClick={() => setPeriodMode('month')}>
+          Mes
+        </button>
+        <button className={periodMode === 'range' ? 'active' : ''} onClick={() => setPeriodMode('range')}>
+          Rango de meses
+        </button>
+        <button className={periodMode === 'year' ? 'active' : ''} onClick={() => setPeriodMode('year')}>
+          Año tributario
+        </button>
+      </div>
+
+      {/* Controles del período */}
       <div className="card">
-        <h3 className="card-title mb-4 flex justify-between items-center flex-wrap gap-2">
-          <span><Icon name="search" />Filtros de búsqueda</span>
-          {(filterText || dateFrom || dateTo || expenseType || documentType) && (
-            <button 
-              className="btn btn-ghost btn-sm" 
-              onClick={() => {
-                setFilterText('');
-                setDateFrom('');
-                setDateTo('');
-                setExpenseType('');
-                setDocumentType('');
-              }}
-            >
-              Limpiar filtros <Icon name="x" size={14} />
-            </button>
+        <div className="report-period-controls flex items-center gap-4 flex-wrap">
+          {periodMode === 'month' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="form-label" style={{ marginRight: 4 }}>Mes</label>
+              {monthSelect(month, setMonth, 'Mes')}
+              {yearSelect(month, setMonth, 'Año')}
+            </div>
           )}
-        </h3>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
-          {/* Búsqueda por Texto */}
-          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-            <label className="form-label">Buscar Proveedor, RUT o Detalle</label>
-            <input 
-              className="form-input" 
-              type="text" 
-              placeholder="Ej. Sodimac, 76.123.456-7..."
-              value={filterText} 
-              onChange={(e) => setFilterText(e.target.value)} 
-            />
-          </div>
 
-          {/* Rango de Fechas */}
-          <div className="form-group">
-            <label className="form-label">Desde Fecha</label>
-            <input 
-              className="form-input" 
-              type="date" 
-              value={dateFrom} 
-              onChange={(e) => setDateFrom(e.target.value)} 
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Hasta Fecha</label>
-            <input 
-              className="form-input" 
-              type="date" 
-              value={dateTo} 
-              onChange={(e) => setDateTo(e.target.value)} 
-            />
-          </div>
+          {periodMode === 'range' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="form-label">Desde</label>
+                {monthSelect(rangeFrom, setRangeFrom, 'Mes desde')}
+                {yearSelect(rangeFrom, setRangeFrom, 'Año desde')}
+              </div>
+              <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
+              <div className="flex items-center gap-2">
+                <label className="form-label">Hasta</label>
+                {monthSelect(rangeTo, setRangeTo, 'Mes hasta')}
+                {yearSelect(rangeTo, setRangeTo, 'Año hasta')}
+              </div>
+            </div>
+          )}
 
-          {/* Tipo de Documento */}
-          <div className="form-group">
-            <label className="form-label">Tipo de Documento</label>
-            <select 
-              className="form-input"
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-            >
-              <option value="">Todos los documentos</option>
-              {DOCUMENT_TYPES.map(doc => (
-                <option key={doc} value={doc}>{doc}</option>
-              ))}
-            </select>
-          </div>
+          {periodMode === 'year' && (
+            <div className="flex items-center gap-2">
+              <label className="form-label" style={{ marginRight: 4 }}>Año tributario</label>
+              <select
+                className="form-select"
+                value={taxYear}
+                onChange={(e) => setTaxYear(Number(e.target.value))}
+                style={{ width: 120 }}
+                aria-label="Año tributario"
+              >
+                {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          )}
 
-          {/* Tipo de Gasto */}
-          <div className="form-group">
-            <label className="form-label">Categoría de Gasto</label>
-            <select 
-              className="form-input"
-              value={expenseType}
-              onChange={(e) => setExpenseType(e.target.value)}
-            >
-              <option value="">Todas las categorías</option>
-              {EXPENSE_TYPES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+          {/* Estado: todas / pendientes / declaradas */}
+          <div className="flex items-center gap-2" style={{ marginLeft: 'auto' }}>
+            <button className={`chip ${statusChip === 'all' ? 'active' : ''}`} onClick={() => setStatusChip('all')}>
+              Todas
+            </button>
+            <button className={`chip ${statusChip === 'pending' ? 'active' : ''}`} onClick={() => setStatusChip('pending')}>
+              Pendientes
+            </button>
+            <button className={`chip ${statusChip === 'declared' ? 'active' : ''}`} onClick={() => setStatusChip('declared')}>
+              Declaradas
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Pre-export Validation Panel */}
-      {preExportIssues.length > 0 && (
-        <div className="card" style={{ borderColor: 'var(--color-danger-border)' }}>
-          <h3 className="card-title text-red-400 mb-2">
-            <Icon name="alert" style={{ color: 'var(--color-danger)' }} /> Advertencias pre-exportación ({preExportIssues.length})
-          </h3>
-          <p className="text-xs text-slate-400 mb-4">
-            Resumen de problemas: <strong className="text-red-400">{preExportSummaryText}</strong>. Haz clic en cualquier fila para corregir de inmediato.
-          </p>
-
-          <div style={{ maxHeight: '180px', overflowY: 'auto' }} className="space-y-2 pr-2">
-            {preExportIssues.map((issue) => (
-              <div 
-                key={issue.id} 
-                onClick={() => setEditingInvoice(issue.invoice)}
-                style={{ 
-                  background: 'rgba(239, 68, 68, 0.05)', 
-                  border: '1px solid rgba(239, 68, 68, 0.15)',
-                  borderRadius: '6px',
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'between',
-                  alignItems: 'center',
-                  fontSize: '0.8rem',
-                  transition: 'background 0.2s',
-                  minHeight: '44px'
-                }}
-                className="hover:bg-red-500/10"
-              >
-                <div style={{ flex: 1 }}>
-                  <strong>{issue.invoice.providerName || 'Sin Nombre'}</strong> (N° {issue.invoice.documentNumber || 'S/N'} — {formatDate(issue.invoice.date)})
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '2px', color: 'var(--color-danger)', fontSize: '0.75rem' }}>
-                    {issue.errors.map((err, i) => <span key={i}>• {err}</span>)}
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.75rem', textDecoration: 'underline', color: 'var(--color-accent-light)' }}>Corregir</span>
-              </div>
-            ))}
+      {/* Aviso de datos incompletos en la selección */}
+      {selectedIssuesCount > 0 && (
+        <div className="alert alert-warning" style={{ padding: 'var(--space-3) var(--space-4)' }}>
+          <Icon name="alert" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div className="text-sm">
+            {selectedIssuesCount} comprobante(s) seleccionados tienen datos incompletos.
+            Haz clic en el ícono <Icon name="alert" size={12} style={{ verticalAlign: -1 }} /> de la fila para corregirlos antes de exportar.
           </div>
         </div>
       )}
 
-      {/* Grand Totals */}
-      <div className="card">
-        <h3 className="card-title mb-4">Total Acumulado</h3>
-        <div className="grid-metrics" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-          <div>
-            <p className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Comprobantes</p>
-            <p className="font-bold" style={{ fontSize: '1.5rem', marginTop: 4 }}>{totals.count}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Neto</p>
-            <p className="font-bold" style={{ fontSize: '1.5rem', marginTop: 4 }}>{formatCurrency(totals.netAmount)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>IVA</p>
-            <p className="font-bold" style={{ fontSize: '1.5rem', marginTop: 4 }}>{formatCurrency(totals.ivaAmount)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Imp. Específico</p>
-            <p className="font-bold" style={{ fontSize: '1.5rem', marginTop: 4 }}>{formatCurrency(totals.specificTax)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Total</p>
-            <p className="font-bold text-accent" style={{ fontSize: '1.5rem', marginTop: 4 }}>{formatCurrency(totals.totalAmount)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Monthly Summary */}
+      {/* Tabla de comprobantes del período */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
-          <h3 className="card-title">Resumen Mensual</h3>
+        <div className="report-table-bar">
+          <input
+            type="checkbox"
+            className="report-check"
+            checked={allSelected}
+            onChange={toggleAll}
+            aria-label="Seleccionar todo"
+          />
+          <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+            Seleccionar todo
+          </span>
+          <span className="text-xs" style={{ marginLeft: 'auto', color: 'var(--color-text-tertiary)' }}>
+            {periodInvoices.length} comprobante(s) en este período
+          </span>
         </div>
-        {monthly.length > 0 ? (
-          <div className="table-container">
+
+        {periodInvoices.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon"><Icon name="document" size={24} /></div>
+            <h3 className="empty-state-title">Sin comprobantes en el período</h3>
+            <p className="empty-state-text">
+              Cambia el período o el filtro de estado, o carga boletas nuevas para verlas aquí.
+            </p>
+          </div>
+        ) : (
+          <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
             <table className="table">
               <thead>
                 <tr>
-                  <th>Mes</th>
-                  <th className="text-right">Comprobantes</th>
-                  <th className="text-right">Neto</th>
-                  <th className="text-right">IVA</th>
+                  <th style={{ width: 40 }}></th>
+                  <th>Fecha</th>
+                  <th>Proveedor</th>
+                  <th className="table-mobile-hidden">Tipo de gasto</th>
                   <th className="text-right">Total</th>
+                  <th>Estado</th>
+                  <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {monthly.map((m) => (
-                  <tr key={`${m.year}-${m.month}`}>
-                    <td className="font-semibold" data-label="Mes">{getMonthName(m.month)} {m.year}</td>
-                    <td className="text-right" data-label="Comprobantes">{m.count}</td>
-                    <td className="text-right text-mono" data-label="Neto">{formatCurrency(m.netAmount)}</td>
-                    <td className="text-right text-mono" data-label="IVA">{formatCurrency(m.ivaAmount)}</td>
-                    <td className="text-right text-mono font-semibold" data-label="Total">{formatCurrency(m.totalAmount)}</td>
+                {periodInvoices.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    onClick={() => toggleOne(inv.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td data-label="Seleccionar" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="report-check"
+                        checked={selectedIds.has(inv.id)}
+                        onChange={() => toggleOne(inv.id)}
+                        aria-label={`Seleccionar ${inv.providerName}`}
+                      />
+                    </td>
+                    <td data-label="Fecha" className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                      {formatDate(inv.date)}
+                    </td>
+                    <td data-label="Proveedor" className="truncate" style={{ maxWidth: 220, fontWeight: 500 }} title={inv.providerName}>
+                      {inv.providerName}
+                    </td>
+                    <td data-label="Tipo de gasto" className="table-mobile-hidden" style={{ color: 'var(--color-text-secondary)' }}>
+                      {inv.expenseType}
+                    </td>
+                    <td data-label="Total" className="text-right text-mono">
+                      {formatCurrency(inv.totalAmount || 0)}
+                    </td>
+                    <td data-label="Estado">
+                      <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
+                        {getStatusLabel(inv.taxStatus)}
+                      </span>
+                    </td>
+                    <td data-label="Avisos" onClick={(e) => e.stopPropagation()}>
+                      {rowIssues.has(inv.id) && (
+                        <button
+                          type="button"
+                          className="report-row-issue"
+                          title={rowIssues.get(inv.id).join(' · ') + ' — clic para corregir'}
+                          onClick={() => setEditingInvoice(inv)}
+                          aria-label="Corregir datos incompletos"
+                        >
+                          <Icon name="alert" size={15} />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="text-muted text-center" style={{ padding: '2rem' }}>Sin datos</p>
         )}
       </div>
 
-      {/* Category Summary */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
-          <h3 className="card-title">Resumen por Tipo de Gasto</h3>
+      {/* Barra sticky de exportación: refleja la selección actual */}
+      <div className="export-bar">
+        <div className="export-bar-summary">
+          <strong>{selectedIds.size}</strong> comprobante(s) seleccionados
+          {' · '}Neto <span className="mono">{formatCurrency(totals.netAmount)}</span>
+          {' · '}IVA <span className="mono">{formatCurrency(totals.ivaAmount)}</span>
+          {' · '}Total <span className="mono">{formatCurrency(totals.totalAmount)}</span>
         </div>
-        {category.length > 0 ? (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tipo de Gasto</th>
-                  <th className="text-right">Comprobantes</th>
-                  <th className="text-right">Neto</th>
-                  <th className="text-right">IVA</th>
-                  <th className="text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {category.map((c) => (
-                  <tr key={c.category}>
-                    <td className="font-semibold" data-label="Tipo Gasto">{c.category}</td>
-                    <td className="text-right" data-label="Comprobantes">{c.count}</td>
-                    <td className="text-right text-mono" data-label="Neto">{formatCurrency(c.netAmount)}</td>
-                    <td className="text-right text-mono" data-label="IVA">{formatCurrency(c.ivaAmount)}</td>
-                    <td className="text-right text-mono font-semibold" data-label="Total">{formatCurrency(c.totalAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-muted text-center" style={{ padding: '2rem' }}>Sin datos</p>
-        )}
-      </div>
-
-      {/* Export */}
-      <div className="card">
-        <h3 className="card-title mb-4">Exportar Datos</h3>
-
-        {/* Template upload instruction */}
-        <div className="alert alert-info mb-4">
-          <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1 }}>
-            <strong>Exportar a Rendición:</strong> Arrastra la plantilla Excel (.xlsm) al recuadro de abajo para cargarla. Se rellenará con los datos filtrados según el mapping.
-          </div>
-        </div>
-
-        {/* Drag and drop zone with preview */}
-        <div className="mb-6 space-y-4">
-          <div 
-            className={`dropzone ${isDragging ? 'dragging' : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => templateInputRef.current?.click()}
-            style={{
-              border: '2px dashed var(--color-border)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '30px var(--space-4)',
-              textAlign: 'center',
-              cursor: 'pointer',
-              background: isDragging ? 'var(--color-bg-hover)' : 'var(--color-bg-secondary)',
-              transition: 'all 0.2s ease',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              minHeight: '160px'
-            }}
-          >
-            <input 
-              ref={templateInputRef} 
-              type="file" 
-              accept=".xlsm,.xlsx" 
-              onChange={(e) => processTemplateFile(e.target.files?.[0])} 
-              style={{ display: 'none' }} 
-            />
-            
-            {templateBuffer ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)' }}>
-                  <Icon name="table" size={24} />
-                </div>
-                <div style={{ fontWeight: '600', color: 'var(--color-text-primary)', wordBreak: 'break-all' }}>
-                  {templateName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                  {templateSize ? `${(templateSize / 1024).toFixed(1)} KB` : 'Plantilla por defecto'} • Lista para exportar
-                </div>
-                <button 
-                  className="btn btn-ghost btn-sm" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTemplateBuffer(null);
-                    setTemplateName('');
-                    setTemplateSize(null);
-                  }}
-                  style={{ 
-                    color: 'var(--color-danger)', 
-                    marginTop: '8px',
-                    minHeight: '44px',
-                    display: 'inline-flex',
-                    alignItems: 'center'
-                  }}
-                >
-                  Remover plantilla
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="empty-state-icon">
-                  <Icon name="upload" size={24} />
-                </div>
-                <div>
-                  <p className="font-semibold" style={{ margin: 0 }}>Arrastra la plantilla Excel aquí</p>
-                  <p className="text-xs text-slate-400" style={{ margin: '4px 0 0 0' }}>O haz clic para seleccionar archivo (.xlsm, .xlsx)</p>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="export-actions flex gap-3 flex-wrap" style={{ width: '100%' }}>
-            <button 
-              className="btn btn-primary" 
-              onClick={handleExportRendicion} 
-              disabled={!templateBuffer}
-              style={{ flex: 1, minHeight: '44px' }}
-            >
-              <Icon name="table" /> Exportar a rendición
-            </button>
-          </div>
-        </div>
-
-        <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-4)' }}>
-          <p className="text-sm text-muted mb-4">Exportaciones simples:</p>
-          <div className="export-actions flex gap-3 flex-wrap" style={{ width: '100%' }}>
-            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportExcel}><Icon name="download" /> Excel simple</button>
-            <button className="btn btn-secondary" style={{ flex: 1, minHeight: '44px' }} onClick={handleExportCSV}><Icon name="document" /> CSV</button>
-          </div>
+        <div className="export-bar-actions">
+          <button className="btn btn-secondary" onClick={handleExportCSV} disabled={selectedIds.size === 0}>
+            CSV
+          </button>
+          <button className="btn btn-secondary" onClick={handleExportExcel} disabled={selectedIds.size === 0}>
+            Excel simple
+          </button>
+          <button className="btn btn-primary" onClick={handleExportRendicion} disabled={selectedIds.size === 0}>
+            Exportar a plantilla de rendición
+          </button>
         </div>
       </div>
 
-      {/* Configurar Mapping Modal (Bottom Sheet on Mobile) */}
-      {showMappingModal && (
-        <div className="modal-overlay" onClick={() => setShowMappingModal(false)}>
-          <div ref={mappingModalRef} className="modal mapping-modal-dialog" role="dialog" aria-modal="true" aria-label="Configurar mapping de columnas Excel" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+      {/* Modal: Configurar plantilla + mapping de columnas */}
+      {showTemplateModal && (
+        <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
+          <div ref={templateModalRef} className="modal mapping-modal-dialog" role="dialog" aria-modal="true" aria-label="Configurar plantilla de rendición" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Configurar mapping de columnas Excel</h3>
-              <button 
-                className="modal-close" 
-                onClick={() => setShowMappingModal(false)}
-                style={{ width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
+              <h3 className="modal-title">Configurar plantilla de rendición</h3>
+              <button className="modal-close" onClick={() => setShowTemplateModal(false)} aria-label="Cerrar">
                 <Icon name="x" size={18} />
               </button>
             </div>
-            
+
             <div className="modal-body space-y-4" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-              <div className="alert alert-info text-xs">
-                <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  Configura a qué letra de columna Excel (A, B, C...) corresponde cada campo en la hoja "base" de la plantilla. Se guarda de forma independiente para cada empresa.
+              {/* Plantilla activa */}
+              <div className="form-group">
+                <label className="form-label">Plantilla Excel (.xlsm / .xlsx)</label>
+                <div className="flex items-center gap-3 flex-wrap" style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                }}>
+                  <Icon name="table" size={18} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    {templateBuffer ? (
+                      <>
+                        <div className="text-sm font-semibold truncate">{templateName}</div>
+                        <div className="text-xs text-muted">
+                          {templateSize ? `${(templateSize / 1024).toFixed(1)} KB` : 'Plantilla por defecto'}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-muted">Sin plantilla cargada</div>
+                    )}
+                  </div>
+                  <input
+                    ref={templateInputRef}
+                    type="file"
+                    accept=".xlsm,.xlsx"
+                    onChange={(e) => processTemplateFile(e.target.files?.[0])}
+                    style={{ display: 'none' }}
+                  />
+                  <button className="btn btn-secondary btn-sm" onClick={() => templateInputRef.current?.click()}>
+                    {templateBuffer ? 'Cambiar archivo' : 'Elegir archivo'}
+                  </button>
+                  {templateBuffer && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => { setTemplateBuffer(null); setTemplateName(''); setTemplateSize(null); }}
+                    >
+                      Quitar
+                    </button>
+                  )}
                 </div>
+                <span className="text-xs text-muted">
+                  La rendición se genera rellenando esta plantilla con los comprobantes seleccionados.
+                </span>
               </div>
 
-              {/* Selector de Empresa */}
+              {/* RUT de la empresa */}
               <div className="form-group">
-                <label className="form-label">RUT Empresa (Asociar Mapping)</label>
+                <label className="form-label">RUT de la empresa (asocia el mapping)</label>
                 <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                  <input 
-                    type="text" 
-                    placeholder="12.345.678-9" 
-                    value={rutEmpresa} 
-                    onChange={(e) => setRutEmpresa(e.target.value)} 
-                    onBlur={() => setRutEmpresa(formatRut(rutEmpresa))} 
-                    className="form-input"
-                    style={{ flex: 1, minHeight: '44px' }}
+                  <input
+                    type="text"
+                    placeholder="12.345.678-9"
+                    value={rutEmpresa}
+                    onChange={(e) => setRutEmpresa(e.target.value)}
+                    onBlur={() => setRutEmpresa(formatRut(rutEmpresa))}
+                    className="form-input text-mono"
+                    style={{ flex: 1, minWidth: 150 }}
                   />
                   {distinctInvoicesRuts.length > 0 && (
-                    <select 
-                      onChange={(e) => setRutEmpresa(e.target.value)} 
-                      value={rutEmpresa}
-                      className="form-select text-xs"
-                      style={{ width: '100%', maxWidth: '100%', minHeight: '44px' }}
+                    <select
+                      onChange={(e) => e.target.value && setRutEmpresa(e.target.value)}
+                      value=""
+                      className="form-select"
+                      style={{ width: 'auto' }}
+                      aria-label="Sugerencias de RUT"
                     >
-                      <option value="">Sugerir RUT...</option>
+                      <option value="">Sugerir…</option>
                       {distinctInvoicesRuts.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
                   )}
                 </div>
                 {rutEmpresa && !validateRut(rutEmpresa) && (
-                  <span className="text-xs text-red-400">RUT de Empresa inválido</span>
+                  <span className="form-error">RUT de empresa inválido</span>
                 )}
               </div>
 
-              {/* Dos Columnas de Campos y Letras Excel */}
+              {/* Mapping de columnas */}
               <div className="mapping-grid-header" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '15px', borderTop: '1px solid var(--color-border)', paddingTop: '15px' }}>
-                <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>Campo de la App</div>
-                <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>Columna Excel (Letra) & Vista Previa</div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Campo de la app</div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Columna Excel y vista previa</div>
               </div>
 
-              <div className="space-y-3" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '10px' }}>
+              <div className="space-y-3">
                 {Object.keys(DEFAULT_MAPPING).map((fieldKey) => (
                   <div key={fieldKey} className="mapping-grid-row" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '15px', alignItems: 'center' }}>
-                    <span className="text-sm font-medium">{MAPPING_LABELS[fieldKey]}</span>
+                    <span className="text-sm">{MAPPING_LABELS[fieldKey]}</span>
                     <div className="flex gap-2 items-center">
-                      <input 
-                        type="text" 
-                        maxLength={2} 
-                        value={mapping[fieldKey] || ''} 
-                        onChange={(e) => setMapping(prev => ({ ...prev, [fieldKey]: e.target.value.toUpperCase() }))} 
-                        className="form-input text-center font-bold"
-                        style={{ width: '60px', padding: '4px', minHeight: '44px' }}
+                      <input
+                        type="text"
+                        maxLength={2}
+                        value={mapping[fieldKey] || ''}
+                        onChange={(e) => setMapping(prev => ({ ...prev, [fieldKey]: e.target.value.toUpperCase() }))}
+                        className="form-input text-center text-mono font-bold"
+                        style={{ width: '56px' }}
                         placeholder="A"
+                        aria-label={`Columna para ${MAPPING_LABELS[fieldKey]}`}
                       />
-                      <span className="text-xs text-slate-400 truncate" style={{ maxWidth: '160px' }} title={getCellPreview(fieldKey)}>
+                      <span className="text-xs text-muted truncate" style={{ maxWidth: '170px' }} title={getCellPreview(fieldKey)}>
                         {getCellPreview(fieldKey)}
                       </span>
                     </div>
@@ -845,26 +781,21 @@ export default function ReportsPage() {
             </div>
 
             <div className="modal-actions">
-              <button className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setShowMappingModal(false)}>Cancelar</button>
-              <button className="btn btn-primary" style={{ minHeight: '44px' }} onClick={handleSaveMapping}>Guardar mapping</button>
+              <button className="btn btn-secondary" onClick={() => setShowTemplateModal(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSaveMapping}>Guardar configuración</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Corrección de Comprobante Inline */}
+      {/* Modal: corrección de un comprobante con datos incompletos */}
       {editingInvoice && (
         <div className="modal-overlay" onClick={() => setEditingInvoice(null)}>
           <div ref={editModalRef} className="modal" style={{ maxWidth: '700px', width: '90%' }} role="dialog" aria-modal="true" aria-label="Corregir comprobante" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <form onSubmit={handleSaveEditingInvoice}>
               <div className="modal-header">
                 <h3 className="modal-title">Corregir comprobante</h3>
-                <button 
-                  type="button" 
-                  className="modal-close" 
-                  onClick={() => setEditingInvoice(null)}
-                  style={{ width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
+                <button type="button" className="modal-close" onClick={() => setEditingInvoice(null)} aria-label="Cerrar">
                   <Icon name="x" size={18} />
                 </button>
               </div>
@@ -872,37 +803,34 @@ export default function ReportsPage() {
               <div className="modal-body form-grid space-y-4" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
                 <div className="form-group">
                   <label className="form-label">Nombre Proveedor</label>
-                  <input 
-                    className="form-input" 
-                    value={editingInvoice.providerName || ''} 
+                  <input
+                    className="form-input"
+                    value={editingInvoice.providerName || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, providerName: e.target.value }))}
                     required
-                    style={{ minHeight: '44px' }}
                   />
                 </div>
-                
+
                 <div className="form-group">
                   <label className="form-label">RUT Proveedor</label>
-                  <input 
-                    className="form-input" 
-                    value={editingInvoice.providerRut || ''} 
+                  <input
+                    className="form-input text-mono"
+                    value={editingInvoice.providerRut || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, providerRut: e.target.value }))}
                     onBlur={() => setEditingInvoice(prev => ({ ...prev, providerRut: formatRut(prev.providerRut) }))}
                     required
-                    style={{ minHeight: '44px' }}
                   />
                   {editingInvoice.providerRut && !validateRut(editingInvoice.providerRut) && (
-                    <span className="text-xs text-red-400">RUT inválido</span>
+                    <span className="form-error">RUT inválido</span>
                   )}
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Tipo Documento</label>
-                  <select 
-                    className="form-select" 
-                    value={editingInvoice.documentType || 'Boleta'} 
+                  <select
+                    className="form-select"
+                    value={editingInvoice.documentType || 'Boleta'}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, documentType: e.target.value }))}
-                    style={{ minHeight: '44px' }}
                   >
                     {DOCUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -910,34 +838,31 @@ export default function ReportsPage() {
 
                 <div className="form-group">
                   <label className="form-label">N° Documento</label>
-                  <input 
-                    className="form-input" 
-                    value={editingInvoice.documentNumber || ''} 
+                  <input
+                    className="form-input text-mono"
+                    value={editingInvoice.documentNumber || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, documentNumber: e.target.value }))}
-                    style={{ minHeight: '44px' }}
                   />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Fecha</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={editingInvoice.date || ''} 
+                  <input
+                    type="date"
+                    className="form-input text-mono"
+                    value={editingInvoice.date || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, date: e.target.value }))}
                     required
-                    style={{ minHeight: '44px' }}
                   />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Tipo Gasto</label>
-                  <select 
-                    className="form-select" 
-                    value={editingInvoice.expenseType || ''} 
+                  <select
+                    className="form-select"
+                    value={editingInvoice.expenseType || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, expenseType: e.target.value }))}
                     required
-                    style={{ minHeight: '44px' }}
                   >
                     <option value="" disabled>Seleccione...</option>
                     {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -946,11 +871,10 @@ export default function ReportsPage() {
 
                 <div className="form-group form-full">
                   <label className="form-label">Detalle</label>
-                  <input 
-                    className="form-input" 
-                    value={editingInvoice.detail || ''} 
+                  <input
+                    className="form-input"
+                    value={editingInvoice.detail || ''}
                     onChange={(e) => setEditingInvoice(prev => ({ ...prev, detail: e.target.value }))}
-                    style={{ minHeight: '44px' }}
                   />
                 </div>
 
@@ -958,10 +882,10 @@ export default function ReportsPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }} className="form-full">
                   <div className="form-group">
                     <label className="form-label">Monto Neto</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={editingInvoice.netAmount ?? 0} 
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={editingInvoice.netAmount ?? 0}
                       onChange={(e) => {
                         const net = Number(e.target.value) || 0;
                         setEditingInvoice(prev => {
@@ -969,15 +893,14 @@ export default function ReportsPage() {
                           return { ...prev, netAmount: net, totalAmount: net + iva };
                         });
                       }}
-                      style={{ minHeight: '44px' }}
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Monto IVA</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={editingInvoice.ivaAmount ?? 0} 
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={editingInvoice.ivaAmount ?? 0}
                       onChange={(e) => {
                         const iva = Number(e.target.value) || 0;
                         setEditingInvoice(prev => {
@@ -985,25 +908,24 @@ export default function ReportsPage() {
                           return { ...prev, ivaAmount: iva, totalAmount: net + iva };
                         });
                       }}
-                      style={{ minHeight: '44px' }}
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Total Documento</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={editingInvoice.totalAmount ?? 0} 
+                    <input
+                      type="number"
+                      className="form-input text-mono"
+                      value={editingInvoice.totalAmount ?? 0}
                       onChange={(e) => setEditingInvoice(prev => ({ ...prev, totalAmount: Number(e.target.value) || 0 }))}
-                      style={{ fontWeight: 'bold', minHeight: '44px' }}
+                      style={{ fontWeight: 'bold' }}
                     />
                   </div>
                 </div>
               </div>
 
               <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" style={{ minHeight: '44px' }} onClick={() => setEditingInvoice(null)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" style={{ minHeight: '44px' }}>Guardar cambios</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingInvoice(null)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary">Guardar cambios</button>
               </div>
             </form>
           </div>
@@ -1014,8 +936,8 @@ export default function ReportsPage() {
         <ConfirmDialog
           title="Exportar con advertencias"
           message={
-            `Faltan datos críticos en ${preExportIssues.length} comprobante(s): ${preExportSummaryText}.\n\n` +
-            '¿Quieres exportar de todas formas? Puedes corregirlos primero desde el panel de advertencias.'
+            `${selectedIssuesCount} comprobante(s) seleccionados tienen datos incompletos.\n\n` +
+            '¿Quieres exportar de todas formas? Puedes corregirlos primero desde el ícono de advertencia de cada fila.'
           }
           confirmLabel="Exportar igualmente"
           onConfirm={() => {

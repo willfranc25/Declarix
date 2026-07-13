@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
+import useUploadQueueStore from '../store/uploadQueueStore';
 import { formatCurrency, formatDate, getMonthName, getStatusLabel, getStatusVariant } from '../utils/formatters';
 import { getInvoicesForMonth, generateCategorySummary, buildYearMonths } from '../utils/calculations';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import Icon from '../components/ui/Icon';
 
-const PIE_COLORS = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1'];
+// Paleta de categorías anclada en los tokens del tema (accent primero)
+const PIE_COLORS = [
+  'var(--color-accent)',
+  'oklch(70% 0.12 190)',
+  'var(--color-success)',
+  'var(--color-warning)',
+  'oklch(65% 0.14 320)',
+  'oklch(60% 0.14 20)',
+  'oklch(72% 0.11 120)',
+  'oklch(58% 0.12 250)',
+];
 
 const MONTH_SHORT_NAMES = [
   'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -16,6 +27,10 @@ const MONTH_SHORT_NAMES = [
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { invoices, loadInvoices, isLoading } = useInvoiceStore();
+  // Boletas extraídas esperando revisión (cola persistente)
+  const pendingReview = useUploadQueueStore(
+    (s) => s.queue.filter((q) => q.status === 'done').length
+  );
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
@@ -293,26 +308,54 @@ export default function DashboardPage() {
         }
       `}</style>
 
-      {/* Header */}
+      {/* Header: título + navegación de mes ‹ Mes › + acción primaria */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Resumen de gastos y métricas</p>
-        </div>
-        <div className="datepicker-container" ref={pickerRef}>
-          <button
-            type="button"
-            className="picker-toggle-btn"
-            onClick={() => {
-              setShowPicker(!showPicker);
-              setPickerYear(activeYear);
-            }}
-            aria-label="Seleccionar fecha"
-            aria-expanded={showPicker}
-          >
-            <span>{getMonthName(activeMonth)} {activeYear}</span>
-            <Icon name="chevron-down" size={14} style={{ opacity: 0.7 }} />
-          </button>
+          <h1 className="page-title" style={{ marginBottom: 10 }}>Resumen</h1>
+          <div className="month-nav datepicker-container" ref={pickerRef}>
+            <button
+              type="button"
+              className="month-nav-btn"
+              onClick={() => {
+                let m = activeMonth - 1;
+                let y = activeYear;
+                if (m === 0) { m = 12; y -= 1; }
+                setSelectedYear(y);
+                setSelectedMonth(m);
+              }}
+              disabled={activeYear <= minYear && activeMonth <= 1}
+              aria-label="Mes anterior"
+            >
+              <Icon name="chevron-left" size={13} />
+            </button>
+            <button
+              type="button"
+              className="month-nav-label"
+              onClick={() => {
+                setShowPicker(!showPicker);
+                setPickerYear(activeYear);
+              }}
+              aria-label="Elegir mes y año"
+              aria-expanded={showPicker}
+              title="Elegir mes y año"
+            >
+              {getMonthName(activeMonth)} {activeYear}
+            </button>
+            <button
+              type="button"
+              className="month-nav-btn"
+              onClick={() => {
+                let m = activeMonth + 1;
+                let y = activeYear;
+                if (m === 13) { m = 1; y += 1; }
+                setSelectedYear(y);
+                setSelectedMonth(m);
+              }}
+              disabled={activeYear >= currentYear && activeMonth >= currentMonth}
+              aria-label="Mes siguiente"
+            >
+              <Icon name="chevron-right" size={13} />
+            </button>
 
           {showPicker && (
             <>
@@ -364,7 +407,11 @@ export default function DashboardPage() {
               </div>
             </>
           )}
+          </div>
         </div>
+        <button className="btn btn-primary" onClick={() => navigate('/upload')}>
+          Cargar boleta
+        </button>
       </div>
 
       {invoices.length === 0 && (
@@ -376,33 +423,26 @@ export default function DashboardPage() {
           <p className="empty-state-text">
             Sube la foto de tu primera boleta y la IA extraerá los datos por ti.
           </p>
-          <button className="btn btn-primary mt-4" onClick={() => navigate('/upload')}>
+          <button className="btn btn-secondary mt-4" onClick={() => navigate('/upload')}>
             <Icon name="upload" /> Subir primera boleta
           </button>
         </div>
       )}
 
-      {/* Metric Cards — una sola tarjeta dividida por separadores internos */}
+      {/* KPIs — una sola tarjeta dividida por separadores internos (prototipo) */}
       <div className="grid-metrics">
         <div className="metric-card">
           <div className="metric-content">
-            <div className="metric-label">Total Gastado</div>
+            <div className="metric-label">Total gastado</div>
             <div className="metric-value">{formatCurrency(metrics.total)}</div>
             <div className="metric-sub">{getMonthName(activeMonth)} {activeYear}</div>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-content">
-            <div className="metric-label">Total Neto</div>
-            <div className="metric-value">{formatCurrency(metrics.neto)}</div>
-            <div className="metric-sub">Sin IVA</div>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-content">
-            <div className="metric-label">Total IVA</div>
+            <div className="metric-label">IVA acumulado</div>
             <div className="metric-value">{formatCurrency(metrics.iva)}</div>
-            <div className="metric-sub">19%</div>
+            <div className="metric-sub">Crédito del período</div>
           </div>
         </div>
         <div className="metric-card">
@@ -410,6 +450,29 @@ export default function DashboardPage() {
             <div className="metric-label">Comprobantes</div>
             <div className="metric-value">{metrics.count}</div>
             <div className="metric-sub">{getMonthName(activeMonth)} {activeYear}</div>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-content">
+            <div className="metric-label">Pendientes de revisar</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <div className="metric-value" style={pendingReview > 0 ? { color: 'var(--color-warning)' } : undefined}>
+                {pendingReview}
+              </div>
+              {pendingReview > 0 && (
+                <button
+                  onClick={() => navigate('/batch-review')}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    fontSize: 'var(--font-size-xs)', fontWeight: 600,
+                    color: 'var(--color-accent-light)', fontFamily: 'var(--font-family)',
+                  }}
+                >
+                  Revisar →
+                </button>
+              )}
+            </div>
+            <div className="metric-sub">Boletas extraídas sin guardar</div>
           </div>
         </div>
       </div>
@@ -455,9 +518,9 @@ export default function DashboardPage() {
             </div>
           )}
           {/* Legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '12px' }}>
             {categoryData.slice(0, 6).map((cat, i) => (
-              <div key={cat.category} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#94a3b8' }}>
+              <div key={cat.category} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length] }} />
                 {cat.category}
               </div>
@@ -468,25 +531,30 @@ export default function DashboardPage() {
         {/* Bar Chart — Mensual */}
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Gastos Mensuales {activeYear}</h3>
+            <h3 className="card-title">Gastos mensuales {activeYear}</h3>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-light)" vertical={false} />
               <XAxis
                 dataKey="month"
                 tickFormatter={(m) => getMonthName(m).slice(0, 3)}
-                stroke="#64748b"
+                stroke="var(--color-text-tertiary)"
                 fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: 'var(--color-border)' }}
               />
               <YAxis
                 tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                stroke="#64748b"
+                stroke="var(--color-text-tertiary)"
                 fontSize={11}
+                tickLine={false}
+                axisLine={false}
               />
               <Tooltip
                 formatter={(value) => formatCurrency(value)}
                 labelFormatter={(m) => getMonthName(m)}
+                cursor={{ fill: 'var(--color-bg-hover)' }}
                 contentStyle={{
                   background: 'var(--color-bg-secondary)',
                   border: '1px solid var(--color-border)',
@@ -497,8 +565,8 @@ export default function DashboardPage() {
               <Bar
                 dataKey="totalAmount"
                 name="Total"
-                fill="#3b82f6"
-                radius={[2, 2, 0, 0]}
+                fill="var(--color-accent)"
+                radius={[3, 3, 0, 0]}
                 cursor="pointer"
                 onClick={(data) => {
                   setSelectedMonth(data.month);
@@ -510,36 +578,36 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent Invoices */}
+      {/* Últimos comprobantes (card sin padding, header interno con hairline) */}
       {recentInvoices.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">Últimos Comprobantes</h3>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="flex justify-between items-center" style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+            <h3 className="card-title">Últimos comprobantes</h3>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/invoices')}>
               Ver todos →
             </button>
           </div>
-          <div className="table-container">
+          <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
             <table className="table">
               <thead>
                 <tr>
                   <th>Fecha</th>
                   <th>Proveedor</th>
-                  <th className="table-mobile-hidden">Tipo Gasto</th>
+                  <th className="table-mobile-hidden">Tipo de gasto</th>
                   <th className="text-right">Total</th>
-                  <th className="text-center">Estado</th>
+                  <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
                 {recentInvoices.map((inv) => (
                   <tr key={inv.id} className="clickable" onClick={() => navigate(`/invoices/${inv.id}`)}>
-                    <td data-label="Fecha">{formatDate(inv.date)}</td>
-                    <td data-label="Proveedor" className="truncate" style={{ maxWidth: 180 }}>{inv.providerName}</td>
-                    <td data-label="Tipo Gasto" className="table-mobile-hidden text-muted">{inv.expenseType}</td>
+                    <td data-label="Fecha" className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>{formatDate(inv.date)}</td>
+                    <td data-label="Proveedor" className="truncate" style={{ maxWidth: 200, fontWeight: 500 }}>{inv.providerName}</td>
+                    <td data-label="Tipo de gasto" className="table-mobile-hidden" style={{ color: 'var(--color-text-secondary)' }}>{inv.expenseType}</td>
                     <td data-label="Total" className="text-right text-mono">{formatCurrency(inv.totalAmount || 0)}</td>
-                    <td data-label="Estado" className="text-center">
-                      <span className={`badge badge-${getStatusVariant(inv.status)}`}>
-                        {getStatusLabel(inv.status)}
+                    <td data-label="Estado">
+                      <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
+                        {getStatusLabel(inv.taxStatus)}
                       </span>
                     </td>
                   </tr>

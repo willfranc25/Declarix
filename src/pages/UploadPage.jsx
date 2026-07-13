@@ -13,7 +13,7 @@ export default function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const { invoices, loadInvoices, setBatchInvoices, clearBatchInvoices } = useInvoiceStore();
+  const { invoices, loadInvoices } = useInvoiceStore();
 
   // La cola vive en un store global: la extracción continúa aunque el
   // usuario navegue a otra página. Esta vista solo la observa.
@@ -88,7 +88,6 @@ export default function UploadPage() {
   const handleClearQueue = () => {
     clearQueue();
     setGlobalError(null);
-    clearBatchInvoices();
     addToast('Cola de procesamiento limpia.', 'info');
   };
 
@@ -98,20 +97,9 @@ export default function UploadPage() {
     addToast('Archivo removido de la cola.', 'info');
   };
 
-  // Avanzar a la pantalla de revisión en lote
+  // La revisión lee directo de la cola: basta con navegar.
+  // Las boletas que sigan extrayéndose aparecerán allí solas al terminar.
   const handleReviewAll = () => {
-    const processedItems = queue.filter(item => item.status === 'done');
-    if (processedItems.length === 0) return;
-
-    // Mapear los datos guardando la referencia del archivo para la subida posterior
-    const batchInvoicesData = processedItems.map(item => ({
-      id: item.id,
-      ...item.extractedData,
-      isDuplicate: item.isDuplicate,
-      file: item.file
-    }));
-
-    setBatchInvoices(batchInvoicesData);
     navigate('/batch-review');
   };
 
@@ -166,8 +154,8 @@ export default function UploadPage() {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Carga Masiva de Boletas</h1>
-          <p className="page-subtitle">Sube múltiples comprobantes y la IA los procesará en cola secuencialmente.</p>
+          <h1 className="page-title">Cargar boleta</h1>
+          <p className="page-subtitle">Sube una o varias fotos. La IA extrae los datos y los deja listos para revisar.</p>
         </div>
       </div>
 
@@ -181,8 +169,8 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Zona de Dropzone */}
-      <div className="card">
+      {/* Zona de Dropzone (sin card contenedora: la dropzone ES la superficie) */}
+      <div>
         <div
           className={`drop-zone ${isDragging ? 'dragging' : ''}`}
           onDragEnter={handleDragEnter}
@@ -190,16 +178,16 @@ export default function UploadPage() {
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          style={{ padding: '40px 20px', cursor: 'pointer' }}
+          style={{ cursor: 'pointer' }}
         >
-          <div className="empty-state-icon" style={{ background: 'var(--color-accent-glow)', color: 'var(--color-accent-light)', marginBottom: '1rem' }}>
-            <Icon name="photo" size={24} />
+          <div className="drop-zone-icon">
+            <Icon name="photo" size={18} />
           </div>
           <p className="drop-zone-text">
-            <strong>Haz clic para elegir de tu galería</strong> o arrastra múltiples imágenes aquí
+            <strong>Elige archivos</strong> o arrástralos aquí
           </p>
-          <p className="drop-zone-hint" style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
-            Puedes seleccionar varias a la vez · JPEG, PNG o WEBP (máx. 10 MB por archivo)
+          <p className="drop-zone-hint">
+            JPEG, PNG o WEBP · máx. 10 MB por archivo · puedes seleccionar varios a la vez
           </p>
         </div>
 
@@ -235,230 +223,197 @@ export default function UploadPage() {
         />
       </div>
 
-      {/* Barra Global de Progreso */}
+      {/* Card de progreso (prototipo: caption pequeño + % en mono + barra fina) */}
       {totalFiles > 0 && (
-        <div className="card p-6 space-y-4">
+        <div className="card space-y-4">
           <div className="flex justify-between items-center flex-wrap gap-2">
-            <h3 className="font-semibold text-lg flex items-center gap-2">
-              Progreso de procesamiento
-              {isProcessing && <span className="spinner spinner-sm" />}
-            </h3>
-            <span className="text-sm font-medium bg-slate-800 px-3 py-1 rounded-full text-slate-300">
-              {processedFiles} de {totalFiles} procesados ({successfulFiles} exitosos)
+            <div>
+              <h3 className="card-title flex items-center gap-2">
+                Progreso de procesamiento
+                {isProcessing && <span className="spinner" style={{ width: 14, height: 14 }} />}
+              </h3>
+              <p className="text-xs text-muted" style={{ marginTop: 2 }}>
+                {processedFiles} de {totalFiles} archivos procesados · {successfulFiles} exitosos
+              </p>
+            </div>
+            <span
+              className="text-mono font-semibold"
+              style={{
+                fontSize: 'var(--font-size-base)',
+                color: globalProgress === 100 ? 'var(--color-success)' : 'var(--color-text-secondary)',
+              }}
+            >
+              {globalProgress}%
             </span>
           </div>
 
-          <div className="progress-bar-container" style={{ background: 'var(--color-bg-primary)', height: 10, borderRadius: 999, overflow: 'hidden' }}>
-            <div 
-              className="progress-bar" 
-              style={{ 
-                width: `${globalProgress}%`, 
-                height: '100%', 
-                background: 'var(--gradient-accent)',
+          <div style={{ height: 6, borderRadius: 3, background: 'var(--color-border)', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${globalProgress}%`,
+                height: '100%',
+                background: globalProgress === 100 && failedFiles === 0 ? 'var(--color-success)' : 'var(--color-accent)',
                 transition: 'width 0.4s ease'
               }}
             />
           </div>
 
-          <div className="flex justify-between items-center flex-wrap gap-3 pt-2">
-            <div className="flex gap-3">
-              <button 
-                className="btn btn-primary" 
-                onClick={handleReviewAll} 
-                disabled={successfulFiles === 0}
-              >
-                <Icon name="pencil" /> Revisar todos ({successfulFiles} listos)
-              </button>
-              {failedFiles > 0 && (
-                <button
-                  className="btn btn-secondary"
-                  onClick={retryFailed}
-                  disabled={isProcessing}
-                >
-                  <Icon name="refresh" /> Reintentar fallidos ({failedFiles})
-                </button>
-              )}
+          <div className="flex items-center flex-wrap gap-3">
+            <button
+              className="btn btn-primary"
+              onClick={handleReviewAll}
+              disabled={successfulFiles === 0}
+              style={{ flex: 1, minWidth: 180 }}
+            >
+              Revisar todos ({successfulFiles} listos)
+            </button>
+            {failedFiles > 0 && (
               <button
                 className="btn btn-secondary"
-                onClick={handleClearQueue}
+                onClick={retryFailed}
+                disabled={isProcessing}
               >
-                Limpiar Cola
+                <Icon name="refresh" /> Reintentar fallidos ({failedFiles})
               </button>
-            </div>
-            {isProcessing && (
-              <span className="text-sm text-muted flex items-center gap-1">
-                Extrayendo en segundo plano — puedes navegar a otras páginas sin perder el avance.
-              </span>
             )}
+            <button
+              className="btn btn-secondary"
+              onClick={handleClearQueue}
+            >
+              Limpiar cola
+            </button>
           </div>
+
+          {isProcessing && (
+            <p className="text-xs text-muted" style={{ margin: 0 }}>
+              Extrayendo en segundo plano — puedes navegar a otras páginas o cerrar la ventana:
+              el avance queda guardado en este dispositivo.
+            </p>
+          )}
         </div>
       )}
 
-      {/* Cola de Archivos */}
+      {/* Cola de archivos (card sin padding, filas separadas por hairline) */}
       {queue.length > 0 && (
-        <div className="card">
-          <div className="card-header border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
-            <h3 className="card-title">Cola de Archivos</h3>
-            <span className="text-xs text-slate-400">Procesamiento secuencial activo</span>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="flex justify-between items-center" style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
+            <h3 className="card-title">Cola de archivos</h3>
+            <span className="text-xs text-muted">Procesamiento secuencial</span>
           </div>
 
-          <div className="divide-y divide-slate-800 space-y-4">
-            {queue.map((item) => (
-              <div key={item.id} className="flex gap-4 py-4 items-start flex-wrap md:flex-nowrap queue-item">
-                {/* Miniatura (clic para ampliar con zoom) */}
-                <button
-                  type="button"
-                  onClick={() => item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
-                  title="Ver boleta ampliada"
-                  style={{
-                    width: 60, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
-                    background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-                    padding: 0, cursor: item.tempPreviewUrl ? 'zoom-in' : 'default'
-                  }}
-                >
-                  {item.tempPreviewUrl ? (
-                    <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>
-                      <Icon name="document" size={22} />
-                    </div>
-                  )}
-                </button>
-
-                {/* Detalles y Progreso */}
-                <div style={{ flex: 1, minWidth: 200 }} className="space-y-2">
-                  <div className="flex justify-between items-start gap-2 flex-wrap">
-                    <div>
-                      <h4 className="font-medium text-sm text-slate-200 truncate" style={{ maxWidth: 350 }} title={item.name}>
-                        {item.name}
-                      </h4>
-                      <span className="text-xs text-slate-400">
-                        {(item.size / 1024 / 1024).toFixed(2)} MB
-                      </span>
-                    </div>
-
-                    {/* Badge de Estado */}
-                    <div>
-                      {item.status === 'pending' && (
-                        <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
-                          Pendiente
-                        </span>
-                      )}
-                      {item.status === 'waiting' && (
-                        <span className="badge animate-pulse" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
-                          Esperando cuota...
-                        </span>
-                      )}
-                      {item.status === 'processing' && (
-                        <span className="badge animate-pulse" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>
-                          Procesando...
-                        </span>
-                      )}
-                      {item.status === 'done' && (
-                        <div className="flex gap-2 items-center">
-                          {item.isDuplicate && (
-                            <span className="badge" style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
-                              Posible duplicado
-                            </span>
-                          )}
-                          <span className="badge" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
-                            Listo
-                          </span>
-                        </div>
-                      )}
-                      {item.status === 'error' && (
-                        <span className="badge" style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger)' }}>
-                          Error
-                        </span>
-                      )}
-                    </div>
+          {queue.map((item, i) => (
+            <div
+              key={item.id}
+              className="flex gap-3 items-center queue-item"
+              style={{
+                padding: '14px 20px',
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+                flexWrap: 'wrap',
+              }}
+            >
+              {/* Miniatura (clic para ampliar con zoom) */}
+              <button
+                type="button"
+                onClick={() => item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
+                title="Ver boleta ampliada"
+                style={{
+                  width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+                  background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
+                  padding: 0, cursor: item.tempPreviewUrl ? 'zoom-in' : 'default',
+                  minWidth: 44, minHeight: 44,
+                }}
+              >
+                {item.tempPreviewUrl ? (
+                  <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>
+                    <Icon name="document" size={20} />
                   </div>
+                )}
+              </button>
 
-                  {/* Barra de progreso de este archivo */}
-                  <div style={{ width: '100%', height: 4, background: 'var(--color-bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div 
-                      style={{ 
-                        width: `${item.progress}%`, 
-                        height: '100%', 
-                        background: item.status === 'error' ? 'var(--color-danger)' : item.status === 'done' ? 'var(--color-success)' : 'var(--color-accent)',
-                        transition: 'width 0.3s ease'
-                      }}
-                    />
-                  </div>
-
-                  {/* Mostrar errores del archivo */}
-                  {item.status === 'error' && (
-                    <p className="text-xs text-red-400 mt-1">
-                      <Icon name="alert" size={14} style={{ verticalAlign: -2, marginRight: 4 }} />{item.error}
-                    </p>
-                  )}
-
-                  {/* Mostrar previsualización de datos si ya está listo */}
-                  {item.status === 'done' && item.extractedData && (
-                    <div className="text-xs text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800 space-y-1">
-                      <div className="flex justify-between flex-wrap gap-2">
-                        <span><strong>Prov:</strong> {item.extractedData.providerName || 'N/A'} ({item.extractedData.providerRut || 'Sin RUT'})</span>
-                        <span><strong>N°:</strong> {item.extractedData.documentNumber || 'S/N'}</span>
-                        <span><strong>Monto:</strong> ${Number(item.extractedData.totalAmount).toLocaleString('es-CL')}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Skeleton loading while processing */}
-                  {item.status === 'processing' && (
-                    <div className="text-xs text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800 space-y-2">
-                      <div className="skeleton skeleton-text" style={{ width: '70%', height: '12px', margin: 0 }} />
-                      <div className="skeleton skeleton-text" style={{ width: '45%', height: '12px', margin: 0 }} />
-                    </div>
+              {/* Detalles */}
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 2 }}>
+                  <span className="text-sm font-semibold truncate" style={{ maxWidth: 280 }} title={item.name}>
+                    {item.name}
+                  </span>
+                  {item.status === 'done' && item.isDuplicate && (
+                    <span className="badge badge-warning">Posible duplicado</span>
                   )}
                 </div>
 
-                {/* Acciones del item */}
-                <div style={{ alignSelf: 'center', display: 'flex', gap: 4 }}>
-                  {item.status === 'error' && (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => retryItem(item.id)}
-                      title="Reintentar extracción"
-                      style={{
-                        minWidth: '44px',
-                        minHeight: '44px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <Icon name="refresh" size={16} />
-                    </button>
-                  )}
-                  <button
-                    className="btn btn-ghost btn-sm text-slate-400 hover:text-red-400"
-                    onClick={() => handleRemoveItem(item.id)}
-                    disabled={item.status === 'processing'}
-                    title="Eliminar de la cola"
-                    style={{
-                      minWidth: '44px',
-                      minHeight: '44px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <Icon name="x" size={16} />
-                  </button>
-                </div>
+                {item.status === 'done' && item.extractedData ? (
+                  <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {item.extractedData.providerName || 'Proveedor sin identificar'}
+                    {' · '}N° {item.extractedData.documentNumber || 'S/N'}
+                    {' · '}
+                    <span className="text-mono font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                      ${Number(item.extractedData.totalAmount).toLocaleString('es-CL')}
+                    </span>
+                  </div>
+                ) : item.status === 'error' ? (
+                  <p className="text-xs" style={{ color: 'var(--color-danger)', margin: 0 }}>
+                    {item.error}
+                  </p>
+                ) : item.status === 'processing' ? (
+                  <div className="skeleton skeleton-text" style={{ width: '55%', height: 10, margin: '4px 0 0' }} />
+                ) : (
+                  <span className="text-xs text-muted">{(item.size / 1024 / 1024).toFixed(2)} MB</span>
+                )}
               </div>
-            ))}
-          </div>
+
+              {/* Badge de estado */}
+              {item.status === 'pending' && <span className="badge badge-warning" style={{ flexShrink: 0 }}>Pendiente</span>}
+              {item.status === 'waiting' && <span className="badge badge-warning animate-pulse" style={{ flexShrink: 0 }}>Esperando cuota…</span>}
+              {item.status === 'processing' && <span className="badge badge-info animate-pulse" style={{ flexShrink: 0 }}>Procesando…</span>}
+              {item.status === 'done' && <span className="badge badge-success" style={{ flexShrink: 0 }}>Listo</span>}
+              {item.status === 'error' && <span className="badge badge-danger" style={{ flexShrink: 0 }}>Error</span>}
+
+              {/* Acciones del item */}
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                {item.status === 'error' && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => retryItem(item.id)}
+                    title="Reintentar extracción"
+                  >
+                    <Icon name="refresh" size={15} />
+                  </button>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => handleRemoveItem(item.id)}
+                  disabled={item.status === 'processing'}
+                  title="Quitar de la cola"
+                  aria-label="Quitar de la cola"
+                >
+                  <Icon name="x" size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Instructions */}
-      <div className="alert alert-info">
-        <Icon name="info" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>
-          <strong>Consejo para carga masiva:</strong> Puedes arrastrar y soltar varias fotos de boletas al mismo tiempo. Se irán extrayendo secuencialmente para no saturar tu cuota de API. Cuando terminen, haz clic en <strong>Revisar todos</strong> para corregir e importarlas masivamente.
-        </div>
+      {/* Tip (prototipo: fondo accentSubtle, sin ícono) */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          padding: '14px 16px',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--color-accent-glow)',
+          fontSize: 'var(--font-size-base)',
+          color: 'var(--color-text-secondary)',
+        }}
+      >
+        <span style={{ fontWeight: 700, color: 'var(--color-accent)', flexShrink: 0 }}>Tip</span>
+        <span>
+          Arrastra varias fotos a la vez — se procesan en secuencia y el avance queda guardado
+          aunque cierres la ventana. Cuando terminen, usa{' '}
+          <strong style={{ color: 'var(--color-text-primary)' }}>Revisar todos</strong> para corregir e importar en lote.
+        </span>
       </div>
 
       {preview && (

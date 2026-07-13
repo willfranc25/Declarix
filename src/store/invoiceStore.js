@@ -3,13 +3,9 @@ import { getStorageProvider } from '../services/storage/StorageProvider';
 
 const useInvoiceStore = create((set, get) => ({
   invoices: [],
-  batchInvoices: [],
   filters: {},
   isLoading: false,
   error: null,
-
-  setBatchInvoices: (batchInvoices) => set({ batchInvoices }),
-  clearBatchInvoices: () => set({ batchInvoices: [] }),
 
   /**
    * Carga todos los comprobantes desde el provider de almacenamiento.
@@ -99,6 +95,24 @@ const useInvoiceStore = create((set, get) => ({
   },
 
   /**
+   * Marca un conjunto de comprobantes como declarados (post-exportación
+   * de la rendición). Best-effort: los que fallen quedan pendientes.
+   */
+  markDeclared: async (ids) => {
+    const storage = getStorageProvider();
+    const results = await Promise.allSettled(
+      ids.map((id) => storage.update(id, { taxStatus: 'declared' }))
+    );
+    const okIds = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        okIds.has(inv.id) ? { ...inv, taxStatus: 'declared' } : inv
+      ),
+    }));
+    return okIds.size;
+  },
+
+  /**
    * Establece filtros.
    */
   setFilters: (newFilters) => {
@@ -131,8 +145,12 @@ const useInvoiceStore = create((set, get) => ({
         if (y !== filters.year) return false;
       }
       if (filters.expenseType && inv.expenseType !== filters.expenseType) return false;
-      if (filters.status && inv.status !== filters.status) return false;
-      if (filters.taxStatus && (inv.taxStatus || 'pending') !== filters.taxStatus) return false;
+      if (filters.taxStatus) {
+        // Binario: todo lo que no está declarado cuenta como pendiente
+        const isDeclared = inv.taxStatus === 'declared';
+        if (filters.taxStatus === 'declared' && !isDeclared) return false;
+        if (filters.taxStatus === 'pending' && isDeclared) return false;
+      }
       if (filters.providerSearch && filters.providerSearch.trim()) {
         const search = filters.providerSearch.toLowerCase().trim();
         if (!inv.providerName.toLowerCase().includes(search)) return false;

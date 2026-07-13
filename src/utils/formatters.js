@@ -61,17 +61,14 @@ export function getMonthName(month) {
 }
 
 /**
- * Retorna el label del status en español.
+ * Estado de un comprobante frente a la declaración: binario a propósito.
+ * Todo lo que no fue exportado en una rendición sigue "Pendiente"
+ * (los valores legacy 'reviewed'/'approved' cuentan como pendiente).
  */
-export function getStatusLabel(status) {
-  const labels = { pending: 'Pendiente', reviewed: 'Revisado', approved: 'Aprobado' };
-  return labels[status] || status;
+export function getStatusLabel(taxStatus) {
+  return taxStatus === 'declared' ? 'Declarada' : 'Pendiente';
 }
 
-/**
- * Retorna la clase CSS para el badge de status.
- */
-export function getStatusVariant(status) {
-  const variants = { pending: 'warning', reviewed: 'info', approved: 'success' };
-  return variants[status] || 'default';
+export function getStatusVariant(taxStatus) {
+  return taxStatus === 'declared' ? 'success' : 'warning';
 }

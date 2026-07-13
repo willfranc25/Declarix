@@ -12,6 +12,17 @@ vi.mock('../utils/imageCompression', () => ({
 vi.mock('./invoiceStore', () => ({
   default: { getState: () => ({ invoices: [] }) },
 }));
+// La persistencia en IndexedDB es best-effort; en tests se simula la tabla
+vi.mock('../services/storage/db', () => ({
+  default: {
+    uploadQueue: {
+      put: vi.fn(async () => undefined),
+      update: vi.fn(async () => undefined),
+      bulkDelete: vi.fn(async () => undefined),
+      orderBy: () => ({ toArray: async () => [] }),
+    },
+  },
+}));
 
 import useUploadQueueStore from '../store/uploadQueueStore';
 

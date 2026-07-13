@@ -24,10 +24,10 @@ export function applyTheme(theme) {
   const value = THEMES.includes(theme) ? theme : 'dark';
   document.documentElement.dataset.theme = value;
 
-  // Sincronizar el color de la barra del navegador (PWA)
+  // Sincronizar el color de la barra del navegador (PWA) con --color-bg-primary
   const meta = document.querySelector('meta[name="theme-color"]:not([media])');
   if (meta) {
-    meta.setAttribute('content', value === 'light' ? '#f8fafc' : '#0b1120');
+    meta.setAttribute('content', value === 'light' ? '#f7f8fa' : '#17181c');
   }
 }
 

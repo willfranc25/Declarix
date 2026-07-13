@@ -43,8 +43,10 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  const handleStatusChange = async (status) => {
-    await updateInvoice(id, { status });
+  const isDeclared = invoice.taxStatus === 'declared';
+
+  const handleToggleDeclared = async () => {
+    await updateInvoice(id, { taxStatus: isDeclared ? 'pending' : 'declared' });
   };
 
   const handleDelete = async () => {
@@ -87,26 +89,16 @@ export default function InvoiceDetailPage() {
           <h1 className="page-title">{invoice.providerName || 'Comprobante'}</h1>
           <p className="page-subtitle">N° {invoice.documentNumber || 'Sin número'} — {formatDate(invoice.date)}</p>
         </div>
-        <div className="flex gap-3">
-          <select
-            className="form-select"
-            value={invoice.status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            style={{ minWidth: 130 }}
-          >
-            <option value="pending">Pendiente</option>
-            <option value="reviewed">Revisado</option>
-            <option value="approved">Aprobado</option>
-          </select>
+        <div className="flex gap-3 items-center">
+          <span className={`badge badge-${getStatusVariant(invoice.taxStatus)}`} style={{ fontSize: '13px', padding: '4px 10px' }}>
+            {getStatusLabel(invoice.taxStatus)}
+          </span>
+          <button className="btn btn-secondary btn-sm" onClick={handleToggleDeclared}>
+            <Icon name={isDeclared ? 'refresh' : 'check-circle'} size={15} />
+            {isDeclared ? 'Marcar pendiente' : 'Marcar declarada'}
+          </button>
           <button className="btn btn-danger btn-sm" onClick={() => setShowDeleteModal(true)}><Icon name="trash" /> Eliminar</button>
         </div>
-      </div>
-
-      {/* Status badge */}
-      <div>
-        <span className={`badge badge-${getStatusVariant(invoice.status)}`} style={{ fontSize: '14px', padding: '4px 12px' }}>
-          {getStatusLabel(invoice.status)}
-        </span>
       </div>
 
       {/* Detail split */}

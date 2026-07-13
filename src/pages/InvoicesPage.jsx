@@ -2,7 +2,7 @@ import logger from '../utils/logger';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, getStatusLabel, getStatusVariant } from '../utils/formatters';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
@@ -14,7 +14,6 @@ function InvoiceRow({
   isMobile,
   navigate,
   setDeleteId,
-  handleStatusChange,
   handleTaxStatusChange,
   menuOpen,
   onToggleMenu,
@@ -88,108 +87,41 @@ function InvoiceRow({
     }
   };
 
-  const currentTaxStatus = inv.taxStatus || 'pending';
+  const isDeclared = inv.taxStatus === 'declared';
 
   const cells = (
     <>
-      <td data-label="Fecha" onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}>
+      <td data-label="Fecha" className="text-mono" style={{ color: 'var(--color-text-secondary)' }} onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}>
         {formatDate(inv.date)}
       </td>
-      <td 
-        data-label="Proveedor" 
-        className="truncate" 
-        style={{ maxWidth: 180 }} 
+      <td
+        data-label="Proveedor"
+        className="truncate"
+        style={{ maxWidth: 200, fontWeight: 500 }}
         title={inv.providerName}
         onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}
       >
         {inv.providerName}
       </td>
-      <td data-label="Tipo Doc." className="table-mobile-hidden text-muted text-sm">
+      <td data-label="Doc." className="table-mobile-hidden" style={{ color: 'var(--color-text-secondary)' }}>
         {inv.documentType}
       </td>
-      <td data-label="Tipo Gasto" className="table-mobile-hidden text-muted text-sm">
+      <td data-label="Tipo de gasto" className="table-mobile-hidden" style={{ color: 'var(--color-text-secondary)' }}>
         {inv.expenseType}
       </td>
-      <td 
-        data-label="Total" 
-        className="text-right text-mono font-semibold"
+      <td
+        data-label="Total"
+        className="text-right text-mono"
         onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}
       >
         {formatCurrency(inv.totalAmount || 0)}
       </td>
-      
-      {/* Flujo Interno */}
-      <td data-label="Flujo Interno" className="text-center">
-        <select
-          className="form-select text-xs"
-          value={inv.status}
-          onChange={(e) => handleStatusChange(inv.id, e.target.value)}
-          style={isMobile ? {
-            minHeight: '44px',
-            fontSize: '14px',
-            width: '100%',
-            padding: '8px 36px 8px 12px'
-          } : {
-            padding: '2px 24px 2px 6px',
-            fontSize: '11px',
-            minWidth: 90
-          }}
-        >
-          <option value="pending">Pendiente</option>
-          <option value="reviewed">Revisado</option>
-          <option value="approved">Aprobado</option>
-        </select>
-      </td>
 
-      {/* Estado Tributario */}
-      <td data-label="Estado Trib." className="text-center">
-        <select
-          className="form-select text-xs font-semibold rounded"
-          value={currentTaxStatus}
-          onChange={(e) => handleTaxStatusChange(inv.id, e.target.value)}
-          style={isMobile ? {
-            minHeight: '44px',
-            fontSize: '14px',
-            width: '100%',
-            padding: '8px 36px 8px 12px',
-            borderRadius: '4px',
-            border: '1px solid transparent',
-            background: 
-              currentTaxStatus === 'declared'
-                ? 'var(--color-success-bg)'
-                : currentTaxStatus === 'reviewed'
-                ? 'var(--color-info-bg)'
-                : 'var(--color-warning-bg)',
-            color: 
-              currentTaxStatus === 'declared'
-                ? 'var(--color-success)'
-                : currentTaxStatus === 'reviewed'
-                ? 'var(--color-info)'
-                : 'var(--color-warning)',
-          } : {
-            padding: '2px 24px 2px 6px',
-            fontSize: '11px',
-            minWidth: 110,
-            borderRadius: '4px',
-            border: '1px solid transparent',
-            background: 
-              currentTaxStatus === 'declared'
-                ? 'var(--color-success-bg)'
-                : currentTaxStatus === 'reviewed'
-                ? 'var(--color-info-bg)'
-                : 'var(--color-warning-bg)',
-            color: 
-              currentTaxStatus === 'declared'
-                ? 'var(--color-success)'
-                : currentTaxStatus === 'reviewed'
-                ? 'var(--color-info)'
-                : 'var(--color-warning)',
-          }}
-        >
-          <option value="pending" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Pendiente</option>
-          <option value="reviewed" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Revisado</option>
-          <option value="declared" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }}>Declarado</option>
-        </select>
+      {/* Estado binario: Pendiente (sin declarar) / Declarada (ya exportada) */}
+      <td data-label="Estado">
+        <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
+          {getStatusLabel(inv.taxStatus)}
+        </span>
       </td>
 
       {/* Acciones: menú "⋯" en vez de íconos siempre visibles (evita borrado accidental) */}
@@ -207,6 +139,13 @@ function InvoiceRow({
           <div className="row-actions-menu" role="menu" onClick={(e) => e.stopPropagation()}>
             <button role="menuitem" onClick={() => { onToggleMenu(null); navigate(`/invoices/${inv.id}`); }}>
               <Icon name="eye" size={15} /> Ver detalle
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => { onToggleMenu(null); handleTaxStatusChange(inv.id, isDeclared ? 'pending' : 'declared'); }}
+            >
+              <Icon name={isDeclared ? 'refresh' : 'check-circle'} size={15} />
+              {isDeclared ? 'Marcar pendiente' : 'Marcar declarada'}
             </button>
             <button role="menuitem" className="danger" onClick={() => { onToggleMenu(null); setDeleteId(inv.id); }}>
               <Icon name="trash" size={15} /> Eliminar
@@ -289,18 +228,17 @@ function InvoiceRow({
 
 export default function InvoicesPage() {
   const navigate = useNavigate();
-  const { 
-    loadInvoices, 
-    deleteInvoice, 
-    updateInvoice, 
-    updateTaxStatus, 
-    filters, 
-    setFilters, 
-    clearFilters, 
-    getFilteredInvoices, 
-    isLoading, 
-    error, 
-    clearError 
+  const {
+    loadInvoices,
+    deleteInvoice,
+    updateTaxStatus,
+    filters,
+    setFilters,
+    clearFilters,
+    getFilteredInvoices,
+    isLoading,
+    error,
+    clearError
   } = useInvoiceStore();
 
   const filteredInvoices = getFilteredInvoices();
@@ -309,6 +247,7 @@ export default function InvoicesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [activePreset, setActivePreset] = useState(null);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -404,17 +343,9 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleStatusChange = async (id, status) => {
-    try { 
-      await updateInvoice(id, { status }); 
-    } catch (err) {
-      logger.error(err);
-    }
-  };
-
   const handleTaxStatusChange = async (id, taxStatus) => {
-    try { 
-      await updateTaxStatus(id, taxStatus); 
+    try {
+      await updateTaxStatus(id, taxStatus);
     } catch (err) {
       logger.error(err);
     }
@@ -424,6 +355,14 @@ export default function InvoicesPage() {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
+
+    // Repetir clic en un chip activo lo desactiva (quita el filtro de fecha)
+    if (activePreset === preset) {
+      setActivePreset(null);
+      setFilters({ month: undefined, months: undefined, year: undefined });
+      return;
+    }
+    setActivePreset(preset);
 
     if (preset === 'this_month') {
       setFilters({ month: currentMonth, year: currentYear, months: undefined });
@@ -508,84 +447,48 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Preset Filters (Filtros Rápidos) */}
-      <div className="flex gap-2 items-center flex-wrap" style={{ background: 'var(--color-bg-secondary)', padding: '10px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-        <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mr-2">Filtros Rápidos:</span>
-        <button 
-          className="btn btn-secondary btn-sm" 
-          style={isMobile ? { 
-            padding: '10px 16px', 
-            fontSize: '14px', 
-            minHeight: '44px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          } : { 
-            padding: '6px 12px', 
-            fontSize: '12px' 
-          }} 
+      {/* Chips de filtro rápido + buscador (prototipo: fila plana, sin card) */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <button
+          className={`chip ${activePreset === 'this_month' ? 'active' : ''}`}
           onClick={() => handlePresetFilter('this_month')}
         >
           Este mes
         </button>
-        <button 
-          className="btn btn-secondary btn-sm" 
-          style={isMobile ? { 
-            padding: '10px 16px', 
-            fontSize: '14px', 
-            minHeight: '44px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          } : { 
-            padding: '6px 12px', 
-            fontSize: '12px' 
-          }} 
+        <button
+          className={`chip ${activePreset === 'prev_month' ? 'active' : ''}`}
           onClick={() => handlePresetFilter('prev_month')}
         >
           Mes anterior
         </button>
-        <button 
-          className="btn btn-secondary btn-sm" 
-          style={isMobile ? { 
-            padding: '10px 16px', 
-            fontSize: '14px', 
-            minHeight: '44px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          } : { 
-            padding: '6px 12px', 
-            fontSize: '12px' 
-          }} 
+        <button
+          className={`chip ${activePreset === 'this_quarter' ? 'active' : ''}`}
           onClick={() => handlePresetFilter('this_quarter')}
         >
           Trimestre actual
         </button>
-        <button 
-          className="btn btn-secondary btn-sm" 
-          style={isMobile ? { 
-            padding: '10px 16px', 
-            fontSize: '14px', 
-            minHeight: '44px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          } : { 
-            padding: '6px 12px', 
-            fontSize: '12px' 
-          }} 
+        <button
+          className={`chip ${activePreset === 'tax_year' ? 'active' : ''}`}
           onClick={() => handlePresetFilter('tax_year')}
         >
-          Año tributario ({new Date().getFullYear()})
+          Año tributario {new Date().getFullYear()}
         </button>
+        <span style={{ width: 1, height: 16, background: 'var(--color-border)', margin: '0 4px' }} aria-hidden="true" />
+        <input
+          className="form-input"
+          placeholder="Buscar proveedor…"
+          value={filters.providerSearch || ''}
+          onChange={(e) => setFilters({ providerSearch: e.target.value || undefined })}
+          style={{ width: 220, padding: '6px 11px', fontSize: 'var(--font-size-xs)' }}
+          aria-label="Buscar proveedor"
+        />
         <button
-          className="btn btn-ghost btn-sm"
+          className="chip"
           style={{ marginLeft: 'auto' }}
           onClick={() => setShowMoreFilters((v) => !v)}
           aria-expanded={showMoreFilters}
         >
-          Más filtros <Icon name="chevron-down" size={14} className={showMoreFilters ? 'accordion-chevron open' : 'accordion-chevron'} />
+          Más filtros <Icon name="chevron-down" size={13} className={showMoreFilters ? 'accordion-chevron open' : 'accordion-chevron'} style={{ width: 13, height: 13 }} />
         </button>
       </div>
 
@@ -622,29 +525,24 @@ export default function InvoicesPage() {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Estado Trib.</label>
+            <label className="form-label">Estado</label>
             <select className="form-select" value={filters.taxStatus || ''} onChange={(e) => setFilters({ taxStatus: e.target.value || undefined })}>
               <option value="">Todos</option>
               <option value="pending">Pendiente</option>
-              <option value="reviewed">Revisado</option>
-              <option value="declared">Declarado</option>
+              <option value="declared">Declarada</option>
             </select>
           </div>
-          <div className="form-group">
-            <label className="form-label">Proveedor</label>
-            <input className="form-input" placeholder="Buscar..." value={filters.providerSearch || ''} onChange={(e) => setFilters({ providerSearch: e.target.value || undefined })} />
-          </div>
           <div className="form-group" style={isMobile ? { width: '100%' } : { alignSelf: 'flex-end' }}>
-            <button 
-              className="btn btn-ghost btn-sm" 
-              style={isMobile ? { 
-                minHeight: '44px', 
+            <button
+              className="btn btn-ghost btn-sm"
+              style={isMobile ? {
+                minHeight: '44px',
                 width: '100%',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center'
-              } : {}} 
-              onClick={clearFilters}
+              } : {}}
+              onClick={() => { clearFilters(); setActivePreset(null); }}
             >
               Limpiar
             </button>
@@ -687,12 +585,11 @@ export default function InvoicesPage() {
                 <tr>
                   <th>Fecha</th>
                   <th>Proveedor</th>
-                  <th className="table-mobile-hidden">Tipo Doc.</th>
-                  <th className="table-mobile-hidden">Tipo Gasto</th>
+                  <th className="table-mobile-hidden">Doc.</th>
+                  <th className="table-mobile-hidden">Tipo de gasto</th>
                   <th className="text-right">Total</th>
-                  <th className="text-center">Flujo Interno</th>
-                  <th className="text-center">Estado Trib.</th>
-                  <th className="table-mobile-hidden text-center">Acciones</th>
+                  <th>Estado</th>
+                  <th className="table-mobile-hidden" style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -703,7 +600,6 @@ export default function InvoicesPage() {
                     isMobile={isMobile}
                     navigate={navigate}
                     setDeleteId={setDeleteId}
-                    handleStatusChange={handleStatusChange}
                     handleTaxStatusChange={handleTaxStatusChange}
                     menuOpen={openMenuId === inv.id}
                     onToggleMenu={(id) => setOpenMenuId((prev) => (id === null ? null : prev === id ? null : id))}

@@ -161,8 +161,9 @@ export default function SettingsPage() {
       </div>
 
       {/* CUENTA: plan + extracción con IA como filas internas de una sola card */}
-      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+      <div>
         <p className="settings-section-title">Cuenta</p>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
         <div className="settings-row">
           <div>
@@ -185,11 +186,13 @@ export default function SettingsPage() {
           </div>
           <span className="badge badge-success">Activa</span>
         </div>
+        </div>
       </div>
 
       {/* APARIENCIA */}
-      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+      <div>
         <p className="settings-section-title">Apariencia</p>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="settings-row">
           <div>
             <p className="settings-row-title">Tema</p>
@@ -200,11 +203,13 @@ export default function SettingsPage() {
             {theme === 'light' ? 'Cambiar a oscuro' : 'Cambiar a claro'}
           </button>
         </div>
+        </div>
       </div>
 
       {/* DATOS: backup/restauración y eliminación como filas, sin acordeones */}
-      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+      <div>
         <p className="settings-section-title">Datos</p>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
         <div className="settings-row settings-row-stack">
           <div>
@@ -212,7 +217,7 @@ export default function SettingsPage() {
             <p className="settings-row-desc">Exporta todo (comprobantes, imágenes, ajustes) a un ZIP o restaura desde uno.</p>
           </div>
           <div className="settings-actions flex flex-wrap gap-3">
-            <button className="btn btn-primary btn-sm" onClick={handleExport} disabled={exporting}>
+            <button className="btn btn-secondary btn-sm" onClick={handleExport} disabled={exporting}>
               {exporting ? <><div className="spinner" /> Generando ZIP...</> : <><Icon name="download" size={15} /> Exportar backup</>}
             </button>
             <label className="btn btn-secondary btn-sm cursor-pointer" style={{ display: 'inline-flex', alignItems: 'center' }}>
@@ -262,11 +267,13 @@ export default function SettingsPage() {
             <Icon name="trash" size={15} /> Eliminar todo
           </button>
         </div>
+        </div>
       </div>
 
       {/* SOPORTE */}
-      <div className="card settings-section" style={{ padding: 0, overflow: 'hidden' }}>
+      <div>
         <p className="settings-section-title">Soporte</p>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="settings-row">
           <div>
             <p className="settings-row-title">¿Necesitas ayuda?</p>
@@ -281,6 +288,7 @@ export default function SettingsPage() {
             <p className="settings-row-title">Declarix</p>
             <p className="settings-row-desc">Versión 1.0.0 · React + Vite + PWA</p>
           </div>
+        </div>
         </div>
       </div>
 

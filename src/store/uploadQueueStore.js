@@ -4,14 +4,17 @@ import { extractInvoiceData } from '../services/vlmService';
 import { compressImage } from '../utils/imageCompression';
 import { cleanRut, formatRut } from '../utils/rutValidator';
 import useInvoiceStore from './invoiceStore';
+import db from '../services/storage/db';
 
 /**
  * Cola de extracción de boletas, FUERA de los componentes.
  *
- * Antes la cola vivía en el estado local de UploadPage: al navegar a otra
- * ruta el componente se desmontaba y se perdía todo el procesamiento.
- * Como store de Zustand (módulo singleton), la extracción continúa aunque
- * el usuario cambie de página; UploadPage es solo una vista de la cola.
+ * - Como store de Zustand (módulo singleton), la extracción continúa aunque
+ *   el usuario cambie de página; UploadPage es solo una vista de la cola.
+ * - Cada item se persiste en IndexedDB (tabla `uploadQueue`) con su Blob,
+ *   los datos extraídos y las correcciones hechas en Revisión (`review`):
+ *   cerrar la ventana o la sesión NO pierde el progreso. Al volver a abrir,
+ *   la cola se rehidrata y las extracciones pendientes se reanudan solas.
  *
  * Manejo de volumen (100+ boletas):
  *   - Procesamiento secuencial (respeta el límite de ráfaga del backend).
@@ -26,9 +29,8 @@ const BURST_WAIT_MS = 45_000;
 const MAX_BURST_WAITS = 5;
 
 // Límite de ráfaga por minuto. Cubre tanto el mensaje de nuestro backend
-// como el error crudo del proveedor (Gemini/OpenAI) cuando el usuario usa
-// su propia API key: "exceeded your current quota", "rate limit",
-// "resource exhausted", HTTP 429.
+// como el error crudo del proveedor (Gemini/OpenAI): "exceeded your current
+// quota", "rate limit", "resource exhausted", HTTP 429.
 const isBurstLimitError = (err) =>
   /demasiadas extracciones|exceeded your current quota|rate.?limit|resource has been exhausted|too many requests|\b429\b/i.test(
     err?.message || ''
@@ -61,9 +63,54 @@ function detectDuplicate(data) {
   });
 }
 
+// ── Persistencia en IndexedDB (best-effort: nunca bloquea la UI) ──
+
+/** Campos serializables de un item (excluye file/tempPreviewUrl). */
+function toRecord(item) {
+  const { file, tempPreviewUrl, ...rest } = item;
+  return { ...rest, fileBlob: file };
+}
+
+function persistPut(item) {
+  db.uploadQueue.put(toRecord(item)).catch((err) => {
+    logger.error('[uploadQueue] No se pudo persistir el item:', err);
+  });
+}
+
+function persistPatch(id, patch) {
+  // Nunca persistir referencias de runtime
+  const { file: _f, tempPreviewUrl: _t, ...clean } = patch;
+  if (Object.keys(clean).length === 0) return;
+  db.uploadQueue.update(id, clean).catch((err) => {
+    logger.error('[uploadQueue] No se pudo actualizar el item persistido:', err);
+  });
+}
+
+function persistDelete(ids) {
+  db.uploadQueue.bulkDelete(ids).catch((err) => {
+    logger.error('[uploadQueue] No se pudo borrar del almacenamiento:', err);
+  });
+}
+
+// Las correcciones de revisión llegan por teclazo: se agrupan antes de escribir
+const reviewWriteTimers = new Map();
+function persistReviewDebounced(id, review) {
+  clearTimeout(reviewWriteTimers.get(id));
+  reviewWriteTimers.set(
+    id,
+    setTimeout(() => {
+      reviewWriteTimers.delete(id);
+      db.uploadQueue.update(id, { review }).catch((err) => {
+        logger.error('[uploadQueue] No se pudo guardar la corrección:', err);
+      });
+    }, 250)
+  );
+}
+
 const useUploadQueueStore = create((set, get) => ({
   queue: [],
   isProcessing: false,
+  isHydrated: false,
   // Resumen del último lote terminado; lo consume UploadQueueWatcher
   // para notificar aunque el usuario esté en otra página.
   lastBatchSummary: null,
@@ -72,6 +119,41 @@ const useUploadQueueStore = create((set, get) => ({
     set((state) => ({
       queue: state.queue.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     }));
+    persistPatch(id, patch);
+  },
+
+  /**
+   * Rehidrata la cola desde IndexedDB al abrir la app. Los items que
+   * quedaron a medio procesar vuelven a 'pending' y se retoman solos.
+   */
+  async hydrate() {
+    if (get().isHydrated) return;
+    try {
+      const records = await db.uploadQueue.orderBy('addedAt').toArray();
+      const restored = records
+        .filter((r) => r.fileBlob)
+        .map(({ fileBlob, ...rest }) => ({
+          ...rest,
+          status: ['processing', 'waiting'].includes(rest.status) ? 'pending' : rest.status,
+          progress: ['processing', 'waiting'].includes(rest.status) ? 0 : rest.progress,
+          burstWaits: 0,
+          file: fileBlob,
+          tempPreviewUrl: URL.createObjectURL(fileBlob),
+        }));
+      if (restored.length > 0) {
+        // Los items agregados antes de terminar la hidratación van después
+        set((state) => ({
+          queue: [...restored, ...state.queue.filter((q) => !restored.some((r) => r.id === q.id))],
+          isHydrated: true,
+        }));
+        if (restored.some((r) => r.status === 'pending')) get()._process();
+      } else {
+        set({ isHydrated: true });
+      }
+    } catch (err) {
+      logger.error('[uploadQueue] Falló la rehidratación de la cola:', err);
+      set({ isHydrated: true });
+    }
   },
 
   /**
@@ -95,21 +177,41 @@ const useUploadQueueStore = create((set, get) => ({
         progress: 0,
         error: null,
         extractedData: null,
+        review: null,
         isDuplicate: false,
         burstWaits: 0,
+        addedAt: Date.now(),
         tempPreviewUrl: URL.createObjectURL(file),
       };
       set((state) => ({ queue: [...state.queue, item] }));
+      persistPut(item);
       added++;
     }
     if (added > 0) get()._process();
     return added;
   },
 
+  /**
+   * Guarda correcciones hechas durante la revisión, mezclándolas sobre
+   * los datos extraídos. Sobreviven recargas (IndexedDB).
+   */
+  updateReview(id, patch) {
+    let merged = null;
+    set((state) => ({
+      queue: state.queue.map((item) => {
+        if (item.id !== id) return item;
+        merged = { ...(item.review || {}), ...patch };
+        return { ...item, review: merged };
+      }),
+    }));
+    if (merged) persistReviewDebounced(id, merged);
+  },
+
   removeItem(id) {
     const item = get().queue.find((q) => q.id === id);
     if (item?.tempPreviewUrl) URL.revokeObjectURL(item.tempPreviewUrl);
     set((state) => ({ queue: state.queue.filter((q) => q.id !== id) }));
+    persistDelete([id]);
   },
 
   /** Saca de la cola los items ya guardados como comprobantes. */
@@ -119,13 +221,16 @@ const useUploadQueueStore = create((set, get) => ({
       if (idSet.has(item.id) && item.tempPreviewUrl) URL.revokeObjectURL(item.tempPreviewUrl);
     });
     set((state) => ({ queue: state.queue.filter((q) => !idSet.has(q.id)) }));
+    persistDelete(ids);
   },
 
   clearQueue() {
+    const ids = get().queue.map((q) => q.id);
     get().queue.forEach((item) => {
       if (item.tempPreviewUrl) URL.revokeObjectURL(item.tempPreviewUrl);
     });
     set({ queue: [], lastBatchSummary: null });
+    persistDelete(ids);
   },
 
   retryItem(id) {
@@ -141,6 +246,9 @@ const useUploadQueueStore = create((set, get) => ({
           : item
       ),
     }));
+    get()
+      .queue.filter((q) => q.status === 'pending')
+      .forEach((q) => persistPatch(q.id, { status: 'pending', progress: 0, error: null }));
     get()._process();
   },
 
@@ -202,6 +310,9 @@ const useUploadQueueStore = create((set, get) => ({
         if (isMonthlyLimitError(err)) {
           // Límite mensual del plan: no tiene sentido seguir intentando
           const message = err.message;
+          const affected = get().queue.filter(
+            (q) => q.id === item.id || q.status === 'pending' || q.status === 'waiting'
+          );
           set((state) => ({
             queue: state.queue.map((q) =>
               q.id === item.id || q.status === 'pending' || q.status === 'waiting'
@@ -209,6 +320,7 @@ const useUploadQueueStore = create((set, get) => ({
                 : q
             ),
           }));
+          affected.forEach((q) => persistPatch(q.id, { status: 'error', progress: 100, error: message }));
           break;
         }
 
@@ -232,5 +344,10 @@ const useUploadQueueStore = create((set, get) => ({
     });
   },
 }));
+
+// Rehidratar apenas carga el módulo (solo en navegador, no en tests SSR)
+if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+  useUploadQueueStore.getState().hydrate();
+}
 
 export default useUploadQueueStore;

@@ -91,18 +91,11 @@ export default function LoginPage() {
           flex-direction: column;
           justify-content: space-between;
           padding: var(--space-10);
-          background: var(--color-bg-secondary);
+          background-color: var(--color-bg-tertiary);
           border-right: 1px solid var(--color-border);
           background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
-          background-size: 20px 20px;
+          background-size: 22px 22px;
           overflow: hidden;
-        }
-        .login-brand-panel::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(180deg, var(--color-bg-secondary) 0%, transparent 30%, transparent 70%, var(--color-bg-secondary) 100%);
-          pointer-events: none;
         }
         .login-brand-logo {
           position: relative;
@@ -144,7 +137,7 @@ export default function LoginPage() {
         }
         .login-card {
           width: 100%;
-          max-width: 380px;
+          max-width: 360px;
         }
         .login-title {
           font-size: var(--font-size-2xl);
