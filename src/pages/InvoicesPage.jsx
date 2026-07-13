@@ -158,63 +158,80 @@ function InvoiceRow({
 
   if (isMobile) {
     const transitionStyle = isDragging ? 'none' : 'transform 0.2s ease';
+    // Nota: un <tr> solo puede contener <td>/<th> — envolver <div>s directo
+    // en un <tr> es HTML inválido y el navegador los "foster-parentea" fuera
+    // de la tabla, rompiendo el layout (así se veían los botones flotando
+    // sobre texto de otras filas). Por eso todo el contenido va dentro de
+    // un único <td> que ocupa toda la fila.
     return (
-      <tr 
-        className="swipe-container"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          boxShadow: 'none',
-          padding: 0,
-          margin: 0,
-          marginBottom: 'var(--space-3)',
-          display: 'block',
-          width: '100%',
-          overflow: 'hidden'
-        }}
-      >
-        <div 
-          className="swipe-content" 
-          onClick={handleCardClick}
-          style={{ 
-            transform: `translateX(${currentX}px)`,
-            transition: transitionStyle,
-            display: 'block',
-            width: '100%',
-            padding: 'var(--space-4)',
-            border: '1px solid var(--color-border)',
-            boxShadow: 'var(--shadow-sm)'
-          }}
-        >
-          {cells}
-        </div>
-        <div className="swipe-actions">
-          <button 
-            className="swipe-action-btn edit" 
-            style={{ minWidth: 44, minHeight: 44 }}
-            onClick={() => {
-              closeSwipe();
-              navigate(`/invoices/${inv.id}`);
-            }}
-            title="Ver"
+      <tr>
+        <td style={{ padding: 0, border: 'none', display: 'block' }}>
+          <div
+            className="swipe-container"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            style={{ marginBottom: 'var(--space-3)' }}
           >
-            <Icon name="eye" size={18} />
-          </button>
-          <button 
-            className="swipe-action-btn delete" 
-            style={{ minWidth: 44, minHeight: 44 }}
-            onClick={() => {
-              closeSwipe();
-              setDeleteId(inv.id);
-            }}
-            title="Eliminar"
-          >
-            <Icon name="trash" size={18} />
-          </button>
-        </div>
+            <div
+              className="swipe-content"
+              onClick={handleCardClick}
+              style={{
+                transform: `translateX(${currentX}px)`,
+                transition: transitionStyle,
+                padding: 'var(--space-4)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <div className="table-field" data-label="Fecha">
+                <span className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>{formatDate(inv.date)}</span>
+              </div>
+              <div className="table-field" data-label="Proveedor">
+                <span className="truncate" style={{ maxWidth: 200, fontWeight: 500 }} title={inv.providerName}>
+                  {inv.providerName}
+                </span>
+              </div>
+              <div className="table-field" data-label="Doc.">
+                <span style={{ color: 'var(--color-text-secondary)' }}>{inv.documentType}</span>
+              </div>
+              <div className="table-field" data-label="Tipo de gasto">
+                <span style={{ color: 'var(--color-text-secondary)' }}>{inv.expenseType}</span>
+              </div>
+              <div className="table-field" data-label="Total">
+                <span className="text-mono">{formatCurrency(inv.totalAmount || 0)}</span>
+              </div>
+              <div className="table-field" data-label="Estado">
+                <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
+                  {getStatusLabel(inv.taxStatus)}
+                </span>
+              </div>
+            </div>
+            <div className="swipe-actions">
+              <button
+                className="swipe-action-btn edit"
+                style={{ minWidth: 44, minHeight: 44 }}
+                onClick={() => {
+                  closeSwipe();
+                  navigate(`/invoices/${inv.id}`);
+                }}
+                title="Ver"
+              >
+                <Icon name="eye" size={18} />
+              </button>
+              <button
+                className="swipe-action-btn delete"
+                style={{ minWidth: 44, minHeight: 44 }}
+                onClick={() => {
+                  closeSwipe();
+                  setDeleteId(inv.id);
+                }}
+                title="Eliminar"
+              >
+                <Icon name="trash" size={18} />
+              </button>
+            </div>
+          </div>
+        </td>
       </tr>
     );
   }
@@ -448,43 +465,44 @@ export default function InvoicesPage() {
       )}
 
       {/* Chips de filtro rápido + buscador (prototipo: fila plana, sin card) */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <button
-          className={`chip ${activePreset === 'this_month' ? 'active' : ''}`}
-          onClick={() => handlePresetFilter('this_month')}
-        >
-          Este mes
-        </button>
-        <button
-          className={`chip ${activePreset === 'prev_month' ? 'active' : ''}`}
-          onClick={() => handlePresetFilter('prev_month')}
-        >
-          Mes anterior
-        </button>
-        <button
-          className={`chip ${activePreset === 'this_quarter' ? 'active' : ''}`}
-          onClick={() => handlePresetFilter('this_quarter')}
-        >
-          Trimestre actual
-        </button>
-        <button
-          className={`chip ${activePreset === 'tax_year' ? 'active' : ''}`}
-          onClick={() => handlePresetFilter('tax_year')}
-        >
-          Año tributario {new Date().getFullYear()}
-        </button>
-        <span style={{ width: 1, height: 16, background: 'var(--color-border)', margin: '0 4px' }} aria-hidden="true" />
+      <div className="invoices-toolbar">
+        <div className="invoices-toolbar-chips">
+          <button
+            className={`chip ${activePreset === 'this_month' ? 'active' : ''}`}
+            onClick={() => handlePresetFilter('this_month')}
+          >
+            Este mes
+          </button>
+          <button
+            className={`chip ${activePreset === 'prev_month' ? 'active' : ''}`}
+            onClick={() => handlePresetFilter('prev_month')}
+          >
+            Mes anterior
+          </button>
+          <button
+            className={`chip ${activePreset === 'this_quarter' ? 'active' : ''}`}
+            onClick={() => handlePresetFilter('this_quarter')}
+          >
+            Trimestre actual
+          </button>
+          <button
+            className={`chip ${activePreset === 'tax_year' ? 'active' : ''}`}
+            onClick={() => handlePresetFilter('tax_year')}
+          >
+            Año tributario {new Date().getFullYear()}
+          </button>
+        </div>
+        <span className="invoices-toolbar-divider" aria-hidden="true" />
         <input
-          className="form-input"
+          className="form-input invoices-toolbar-search"
           placeholder="Buscar proveedor…"
           value={filters.providerSearch || ''}
           onChange={(e) => setFilters({ providerSearch: e.target.value || undefined })}
-          style={{ width: 220, padding: '6px 11px', fontSize: 'var(--font-size-xs)' }}
+          style={{ padding: '6px 11px', fontSize: 'var(--font-size-xs)' }}
           aria-label="Buscar proveedor"
         />
         <button
-          className="chip"
-          style={{ marginLeft: 'auto' }}
+          className="chip invoices-toolbar-more"
           onClick={() => setShowMoreFilters((v) => !v)}
           aria-expanded={showMoreFilters}
         >
