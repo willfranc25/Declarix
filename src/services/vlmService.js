@@ -169,76 +169,79 @@ async function extractWithBackend(base64Image, mimeType, feedback = '') {
   return data.text || '';
 }
 
+/** Normaliza los campos del JSON extraído (expenseType difuso + numéricos). */
+function normalizeExtracted(parsed) {
+  // Match inteligente/parcial para expenseType
+  if (parsed.expenseType && !EXPENSE_TYPES.includes(parsed.expenseType)) {
+    const lower = parsed.expenseType.toLowerCase();
+    const match = EXPENSE_TYPES.find((t) => t.toLowerCase().includes(lower) || lower.includes(t.toLowerCase()));
+    parsed.expenseType = match || '';
+  }
+  // Asegurar que todos los campos numéricos son números
+  const numericFields = ['netAmount', 'totalBoletaServicios', 'totalBoletaHonorarios', 'specificTax', 'ivaAmount', 'totalAmount'];
+  for (const field of numericFields) {
+    parsed[field] = parsed[field] == null ? 0 : (Number(parsed[field]) || 0);
+  }
+  return parsed;
+}
+
 /**
  * Servicio principal de extracción VLM.
- * Llama al backend propio y reintenta automáticamente si falla la validación
- * cruzada de los datos extraídos.
+ *
+ * Filosofía: extraer → REVISAR → guardar. Por eso, si el modelo devuelve un
+ * JSON legible pero algún campo de negocio no cumple la validación (ej. no
+ * pudo leer el RUT en una foto arrugada), NO se descarta la boleta: se
+ * reintenta una vez con feedback y, si sigue incompleta, se entrega lo
+ * extraído para que el usuario lo corrija en Revisión (donde esos mismos
+ * campos se validan y resaltan). Antes se tiraba error y la boleta se perdía.
+ *
+ * Los errores de red/proveedor (rate limit, saturación) se propagan tal cual
+ * para que la cola de subida los maneje (esperar y reintentar sola).
  */
 export async function extractInvoiceData(imageFile) {
   const base64Image = await fileToBase64(imageFile);
   const mimeType = imageFile.type || 'image/jpeg';
 
-  let attempt = 0;
+  const maxAttempts = 2; // 1 intento + 1 reintento con feedback
   let feedback = '';
-  let parsed = null;
-  const maxAttempts = 3;
+  let lastParsed = null;
 
-  while (attempt < maxAttempts) {
-    attempt++;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     logger.debug(`[VLM Service] Intento ${attempt}/${maxAttempts} de extracción para: ${imageFile.name}`);
 
-    try {
-      const rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
+    // Los errores de esta llamada (rate limit, 5xx, sin sesión) se propagan:
+    // la cola de subida decide si esperar y reintentar o marcar error.
+    const rawResponse = await extractWithBackend(base64Image, mimeType, feedback);
 
-      parsed = tryParseJson(rawResponse);
-      if (!parsed) {
-        logger.error(`[VLM Service] [Intento ${attempt}] Respuesta no JSON:`, rawResponse);
-        feedback = `La respuesta recibida no era un JSON válido. Asegúrate de responder estrictamente en formato JSON válido.`;
-        if (attempt >= maxAttempts) {
-          throw new Error('No se pudo interpretar la respuesta del modelo de IA tras 3 intentos. Asegúrate de que la imagen sea legible.');
-        }
-        continue;
-      }
-
-      // Intentar match inteligente/parcial para expenseType
-      if (parsed.expenseType && !EXPENSE_TYPES.includes(parsed.expenseType)) {
-        const lower = parsed.expenseType.toLowerCase();
-        const match = EXPENSE_TYPES.find((t) => t.toLowerCase().includes(lower) || lower.includes(t.toLowerCase()));
-        parsed.expenseType = match || '';
-      }
-
-      // Asegurar que todos los campos numéricos son números
-      const numericFields = ['netAmount', 'totalBoletaServicios', 'totalBoletaHonorarios', 'specificTax', 'ivaAmount', 'totalAmount'];
-      for (const field of numericFields) {
-        if (parsed[field] === null || parsed[field] === undefined) {
-          parsed[field] = 0;
-        } else {
-          parsed[field] = Number(parsed[field]) || 0;
-        }
-      }
-
-      // Validar datos extraídos
-      const validation = validateExtractedData(parsed);
-      if (validation.isValid) {
-        logger.debug(`[VLM Service] [Intento ${attempt}] Extracción exitosa y validada.`);
-        return parsed;
-      } else {
-        const errorsStr = validation.errors.join('; ');
-        logger.warn(`[VLM Service] [Intento ${attempt}] Falló la validación:`, validation.errors);
-        feedback = validation.errors.map((err, i) => `${i + 1}. ${err}`).join('\n');
-
-        if (attempt >= maxAttempts) {
-          throw new Error(`La extracción falló la validación final:\n${errorsStr}`);
-        }
-      }
-    } catch (err) {
-      logger.error(`[VLM Service] Error en intento ${attempt}:`, err);
+    const parsed = tryParseJson(rawResponse);
+    if (!parsed) {
+      // Respuesta no interpretable: sí vale la pena reintentar, pero si tras
+      // los intentos sigue sin ser JSON, no hay nada que llevar a revisión.
+      logger.error(`[VLM Service] [Intento ${attempt}] Respuesta no JSON:`, rawResponse);
+      feedback = 'La respuesta anterior no era un JSON válido. Responde estrictamente con JSON válido, sin texto extra.';
       if (attempt >= maxAttempts) {
-        throw err;
+        throw new Error('No se pudo interpretar la respuesta de la IA. Verifica que la foto sea legible e inténtalo de nuevo.');
       }
-      feedback = `Ocurrió un error al consultar la API: ${err.message}. Por favor reintenta y asegúrate de seguir las instrucciones.`;
+      continue;
+    }
+
+    lastParsed = normalizeExtracted(parsed);
+
+    const validation = validateExtractedData(lastParsed);
+    if (validation.isValid) {
+      logger.debug(`[VLM Service] [Intento ${attempt}] Extracción validada.`);
+      return lastParsed;
+    }
+
+    // Reglas de negocio incumplidas (RUT faltante, montos, tipo de gasto…):
+    // un reintento con feedback y, si persiste, se entrega parcial a Revisión.
+    logger.warn(`[VLM Service] [Intento ${attempt}] Validación incompleta:`, validation.errors);
+    feedback = validation.errors.map((err, i) => `${i + 1}. ${err}`).join('\n');
+    if (attempt >= maxAttempts) {
+      logger.warn('[VLM Service] Extracción parcial → pasa a Revisión para corregir.');
+      return lastParsed;
     }
   }
 
-  throw new Error('No se pudo extraer la información del documento.');
+  return lastParsed;
 }

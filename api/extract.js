@@ -56,7 +56,7 @@ async function callGemini(apiKey, base64Image, mimeType, prompt) {
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw Object.assign(new Error(`Gemini API ${response.status}`), { detail });
+    throw Object.assign(new Error(`Gemini API ${response.status}`), { status: response.status, detail });
   }
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -87,7 +87,7 @@ async function callOpenAI(apiKey, base64Image, mimeType, prompt) {
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw Object.assign(new Error(`OpenAI API ${response.status}`), { detail });
+    throw Object.assign(new Error(`OpenAI API ${response.status}`), { status: response.status, detail });
   }
   const data = await response.json();
   return data.choices?.[0]?.message?.content || '';
@@ -196,7 +196,23 @@ export default async function handler(req, res) {
       ? await callOpenAI(providerKey, imageBase64, mimeType, prompt)
       : await callGemini(providerKey, imageBase64, mimeType, prompt);
   } catch (err) {
-    console.error(`[extract][${requestId}] user=${user.id} provider=${provider} error=${err.message}`, err.detail || '');
+    const providerStatus = err.status || 0;
+    const detail = String(err.detail || err.message || '');
+    console.error(`[extract][${requestId}] user=${user.id} provider=${provider} status=${providerStatus} error=${err.message}`, detail.slice(0, 500));
+
+    // Rate limit / cuota / modelo saturado del proveedor: NO son errores
+    // duros. Se devuelve 429 con un mensaje que la cola del cliente reconoce
+    // (regex isBurstLimitError) para esperar y reintentar sola, sin perder la
+    // boleta. Se propaga el "retryDelay" de Google si viene, para respetarlo.
+    const isRateLimited = providerStatus === 429 || /RESOURCE_EXHAUSTED|rate.?limit|quota|too many requests/i.test(detail);
+    const isOverloaded = providerStatus === 503 || /UNAVAILABLE|overloaded|try again later/i.test(detail);
+    if (isRateLimited || isOverloaded) {
+      const retryMatch = /"retryDelay"\s*:\s*"?(\d+(?:\.\d+)?)s/i.exec(detail);
+      const retryHint = retryMatch ? ` Please retry in ${retryMatch[1]}s.` : '';
+      return res.status(429).json({
+        error: `El proveedor de IA está saturado (rate limit).${retryHint} Reintentando automáticamente…`,
+      });
+    }
     return res.status(502).json({ error: 'El servicio de IA no respondió correctamente. Intenta de nuevo en unos segundos.' });
   }
 

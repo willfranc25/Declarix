@@ -34,7 +34,7 @@ Reglas de montos:
 - "totalAmount": siempre el monto total final del documento
 
 Reglas de campos:
-- "providerRut": buscar RUT, R.U.T. seguido de números como 12.345.678-9. Debe tener dígito verificador válido.
+- "providerRut": buscar "RUT", "R.U.T." o "RUT:" seguido de números como 12.345.678-9. Debe tener dígito verificador válido. En vouchers de pago (Transbank/Redcompra, que suelen decir "VALIDO COMO BOLETA") el RUT del comercio aparece junto al nombre y la dirección del local; extráelo aunque la foto esté arrugada o inclinada. Si hay varios RUT, usa el del comercio/emisor, no el del portador de la tarjeta.
 - "date": convertir DD/MM/YYYY o similar a formato estándar YYYY-MM-DD.
 - "detail": describir brevemente qué se compró.
 - Retornar null o 0 para campos no visibles en la imagen.

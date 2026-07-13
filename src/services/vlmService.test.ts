@@ -123,7 +123,10 @@ describe('extractInvoiceData — backend propio (único camino)', () => {
     expect(secondBody.feedback).toContain('RUT');
   });
 
-  it('propaga el mensaje de error entendible del backend tras agotar reintentos', async () => {
+  it('propaga de inmediato el error del backend (la cola decide reintentar)', async () => {
+    // Errores de red/proveedor (rate limit, cuota) no se reintentan aquí:
+    // se propagan para que la cola de subida espere y reintente sola. Así no
+    // se queman llamadas a la IA por cada boleta que topa el límite.
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
@@ -132,6 +135,23 @@ describe('extractInvoiceData — backend propio (único camino)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(extractInvoiceData(makeImageFile())).rejects.toThrow(/límite mensual/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('NO descarta la boleta si el modelo no leyó el RUT: entrega datos parciales a Revisión', async () => {
+    // Caso real: voucher Transbank arrugado donde la IA no logra leer el RUT.
+    // Antes se lanzaba error y la boleta se perdía; ahora se entrega lo
+    // extraído para corregir el RUT en la pantalla de Revisión.
+    const sinRut = { ...validFactura, providerRut: null };
+    const fetchMock = vi.fn().mockResolvedValue(backendResponse(sinRut));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await extractInvoiceData(makeImageFile());
+
+    // Un intento + un reintento con feedback, luego se acepta lo parcial
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.providerRut).toBeNull();
+    expect(result.providerName).toBe('Sodimac');
+    expect(result.totalAmount).toBe(1190);
   });
 });
