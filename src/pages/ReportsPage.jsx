@@ -83,13 +83,24 @@ export default function ReportsPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const periodKey = `${periodRange[0]}|${periodRange[1]}|${statusChip}`;
   const prevPeriodKey = useRef(null);
+  const hadDataRef = useRef(false);
 
   useEffect(() => {
-    if (prevPeriodKey.current !== periodKey) {
+    const keyChanged = prevPeriodKey.current !== periodKey;
+    // Los comprobantes cargan asíncronos DESPUÉS del primer render: sin esto,
+    // el período ya quedó "registrado" con la lista vacía y nada se
+    // seleccionaba al llegar los datos (el botón Exportar arrancaba
+    // deshabilitado hasta tocar "Seleccionar todo"). Tratamos la llegada de
+    // datos como un cambio de período: seleccionar todo.
+    const dataJustArrived = !hadDataRef.current && periodInvoices.length > 0;
+
+    if (keyChanged || dataJustArrived) {
       prevPeriodKey.current = periodKey;
+      hadDataRef.current = periodInvoices.length > 0;
       setSelectedIds(new Set(periodInvoices.map((inv) => inv.id)));
     } else {
-      // Mantener la selección coherente si cambian los datos (ej. borrado)
+      hadDataRef.current = periodInvoices.length > 0;
+      // Mantener la selección del usuario, descartando ids que ya no existen
       setSelectedIds((prev) => {
         const valid = new Set(periodInvoices.map((inv) => inv.id));
         const next = new Set([...prev].filter((id) => valid.has(id)));

@@ -21,6 +21,21 @@ declare module '*utils/calculations' {
   export function generateMonthlySummary(invoices: any[]): any[];
 }
 
+// Componentes de página / UI usados en tests de integración (.tsx)
+declare module '*BatchReviewPage' {
+  const Component: () => any;
+  export default Component;
+}
+declare module '*ReportsPage' {
+  const Component: () => any;
+  export default Component;
+}
+declare module '*components/ui/Toast' {
+  import { ReactNode } from 'react';
+  export function ToastProvider(props: { children: ReactNode }): any;
+  export function useToast(): { addToast: (message: string, type?: string) => void };
+}
+
 declare module '*utils/reportPeriod' {
   export function previousMonth(today?: Date): { month: number; year: number };
   export function computePeriodRange(
@@ -103,8 +118,11 @@ declare module '*store/uploadQueueStore' {
   interface UploadQueueStore {
     queue: QueueItem[];
     isProcessing: boolean;
+    isHydrated: boolean;
     lastBatchSummary: { at: number; done: number; errors: number; duplicates: number } | null;
+    hydrate: () => Promise<void>;
     addFiles: (files: File[]) => Promise<number>;
+    updateReview: (id: string, patch: Record<string, any>) => void;
     removeItem: (id: string) => void;
     removeItems: (ids: string[]) => void;
     clearQueue: () => void;
