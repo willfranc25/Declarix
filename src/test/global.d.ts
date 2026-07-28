@@ -21,6 +21,36 @@ declare module '*utils/calculations' {
   export function generateMonthlySummary(invoices: any[]): any[];
 }
 
+declare module '*utils/reportPeriod' {
+  export function previousMonth(today?: Date): { month: number; year: number };
+  export function computePeriodRange(
+    mode: 'month' | 'range' | 'year',
+    state: {
+      month?: { month: number; year: number };
+      rangeFrom?: { month: number; year: number };
+      rangeTo?: { month: number; year: number };
+      taxYear?: number;
+    }
+  ): [string, string];
+  export function filterInvoicesByPeriod(
+    invoices: any[],
+    range: [string, string],
+    statusChip?: 'all' | 'pending' | 'declared'
+  ): any[];
+  export function sumInvoiceTotals(
+    rows: any[]
+  ): { netAmount: number; ivaAmount: number; totalAmount: number };
+  export function availableYears(invoices: any[], today?: Date): number[];
+}
+
+declare module '*utils/batchReview' {
+  export function deriveRowsFromQueue(queue: any[]): any[];
+  export function countExtracting(queue: any[]): number;
+  export function getRowErrors(row: any): Record<string, string>;
+  export function isRowValid(row: any): boolean;
+  export function rowToInvoiceData(row: any): Record<string, any>;
+}
+
 declare module '*services/vlmService' {
   export interface ExtractedInvoiceData {
     providerName: string;

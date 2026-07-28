@@ -2,7 +2,13 @@ import logger from '../utils/logger';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
-import { validateRut, formatRut } from '../utils/rutValidator';
+import { formatRut } from '../utils/rutValidator';
+import {
+  deriveRowsFromQueue,
+  countExtracting,
+  getRowErrors,
+  rowToInvoiceData,
+} from '../utils/batchReview';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
@@ -36,26 +42,10 @@ export default function BatchReviewPage() {
   const updateReview = useUploadQueueStore((s) => s.updateReview);
   const removeItems = useUploadQueueStore((s) => s.removeItems);
 
-  const rows = useMemo(
-    () =>
-      queue
-        .filter((q) => q.status === 'done' && q.extractedData)
-        .map((q) => ({
-          id: q.id,
-          file: q.file,
-          fileName: q.name,
-          tempPreviewUrl: q.tempPreviewUrl,
-          isDuplicate: q.isDuplicate,
-          ...q.extractedData,
-          ...(q.review || {}),
-        })),
-    [queue]
-  );
+  const rows = useMemo(() => deriveRowsFromQueue(queue), [queue]);
 
   // Boletas aún en extracción: se muestran como "en camino"
-  const extractingCount = queue.filter((q) =>
-    ['pending', 'processing', 'waiting'].includes(q.status)
-  ).length;
+  const extractingCount = countExtracting(queue);
 
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeRowId, setActiveRowId] = useState(null);
@@ -88,56 +78,6 @@ export default function BatchReviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.length]);
 
-  // Validador en tiempo real por fila
-  const getRowErrors = (row) => {
-    const errors = {};
-    if (!row.providerRut) {
-      errors.providerRut = 'Falta RUT';
-    } else if (!validateRut(row.providerRut)) {
-      errors.providerRut = 'RUT inválido';
-    }
-
-    const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(row.documentType);
-    if (isInvoiceOrNC) {
-      const net = Number(row.netAmount) || 0;
-      const iva = Number(row.ivaAmount) || 0;
-      const total = Number(row.totalAmount) || 0;
-      if (Math.abs(net + iva - total) > 2) {
-        errors.amounts = 'Neto + IVA ≠ Total';
-      }
-    }
-
-    if (['Boleta', 'Boleta Electrónica'].includes(row.documentType)) {
-      if ((Number(row.totalBoletaServicios) || 0) <= 0 && (Number(row.totalAmount) || 0) <= 0) {
-        errors.totalBoletaServicios = 'Total debe ser > 0';
-      }
-    }
-
-    if (row.documentType === 'Boleta de Honorarios') {
-      if ((Number(row.totalBoletaHonorarios) || 0) <= 0 && (Number(row.totalAmount) || 0) <= 0) {
-        errors.totalBoletaHonorarios = 'Honorarios debe ser > 0';
-      }
-    }
-
-    if (!row.date) {
-      errors.date = 'Falta fecha';
-    } else {
-      const d = new Date(row.date + 'T00:00:00');
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (isNaN(d.getTime())) {
-        errors.date = 'Fecha inválida';
-      } else if (d > today) {
-        errors.date = 'Fecha futura';
-      }
-    }
-
-    if (!row.expenseType) {
-      errors.expenseType = 'Falta tipo gasto';
-    }
-
-    return errors;
-  };
 
   // Resumen de calidad del lote y filtro "solo con problemas":
   // con 100 boletas, lo importante es revisar rápido las que fallaron
@@ -268,20 +208,6 @@ export default function BatchReviewPage() {
     }
   };
 
-  /** Convierte una fila de revisión en el payload del comprobante. */
-  const toInvoiceData = (row) => {
-    const { id, file, fileName, tempPreviewUrl, isDuplicate, ...invoiceData } = row;
-    return {
-      ...invoiceData,
-      netAmount: Number(invoiceData.netAmount) || 0,
-      ivaAmount: Number(invoiceData.ivaAmount) || 0,
-      totalAmount: Number(invoiceData.totalAmount) || 0,
-      totalBoletaServicios: Number(invoiceData.totalBoletaServicios) || 0,
-      totalBoletaHonorarios: Number(invoiceData.totalBoletaHonorarios) || 0,
-      specificTax: Number(invoiceData.specificTax) || 0,
-    };
-  };
-
   const saveRows = async (rowsToSave) => {
     setIsSaving(true);
     let successCount = 0;
@@ -289,7 +215,7 @@ export default function BatchReviewPage() {
 
     for (const row of rowsToSave) {
       try {
-        await addInvoice(toInvoiceData(row), row.file);
+        await addInvoice(rowToInvoiceData(row), row.file);
         successCount++;
         savedIds.push(row.id);
       } catch (err) {
@@ -371,7 +297,7 @@ export default function BatchReviewPage() {
     if (!row || isSaving) return;
     setIsSaving(true);
     try {
-      await addInvoice(toInvoiceData(row), row.file);
+      await addInvoice(rowToInvoiceData(row), row.file);
       advanceAfter(id);
       removeItems([id]);
       setSelectedIds(prev => prev.filter(s => s !== id));

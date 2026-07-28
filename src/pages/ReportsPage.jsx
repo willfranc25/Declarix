@@ -5,6 +5,13 @@ import { formatCurrency, formatDate, getMonthName, getStatusLabel, getStatusVari
 import { exportToRendicion, exportToExcel, exportToCSV, downloadFile } from '../services/exportService';
 import { validateRut, cleanRut, formatRut } from '../utils/rutValidator';
 import { getStorageProvider } from '../services/storage/StorageProvider';
+import {
+  previousMonth,
+  computePeriodRange,
+  filterInvoicesByPeriod,
+  sumInvoiceTotals,
+  availableYears as computeAvailableYears,
+} from '../utils/reportPeriod';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog, useDialogBehavior } from '../components/ui/Modal';
@@ -40,20 +47,6 @@ const MAPPING_LABELS = {
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-/** Mes anterior al actual: el período que normalmente se declara (F29). */
-function previousMonth() {
-  const now = new Date();
-  let m = now.getMonth(); // getMonth() es 0-based → ya es "mes anterior" en 1-based
-  let y = now.getFullYear();
-  if (m === 0) {
-    m = 12;
-    y -= 1;
-  }
-  return { month: m, year: y };
-}
-
-const pad2 = (n) => String(n).padStart(2, '0');
-
 export default function ReportsPage() {
   const invoices = useInvoiceStore((state) => state.invoices);
   const loadInvoices = useInvoiceStore((state) => state.loadInvoices);
@@ -72,46 +65,19 @@ export default function ReportsPage() {
   const [statusChip, setStatusChip] = useState('all');
 
   // Años disponibles: los presentes en los datos + el actual
-  const availableYears = useMemo(() => {
-    const years = new Set([new Date().getFullYear()]);
-    invoices.forEach((inv) => {
-      const y = Number(String(inv.date).slice(0, 4));
-      if (!Number.isNaN(y)) years.add(y);
-    });
-    return Array.from(years).sort((a, b) => b - a);
-  }, [invoices]);
+  const availableYears = useMemo(() => computeAvailableYears(invoices), [invoices]);
 
   // Rango [desde, hasta] en formato ISO según el modo activo
-  const periodRange = useMemo(() => {
-    if (periodMode === 'month') {
-      const start = `${month.year}-${pad2(month.month)}-01`;
-      const lastDay = new Date(month.year, month.month, 0).getDate();
-      return [start, `${month.year}-${pad2(month.month)}-${pad2(lastDay)}`];
-    }
-    if (periodMode === 'range') {
-      // Si el usuario invierte el rango, se corrige solo
-      let a = rangeFrom;
-      let b = rangeTo;
-      if (a.year > b.year || (a.year === b.year && a.month > b.month)) [a, b] = [b, a];
-      const start = `${a.year}-${pad2(a.month)}-01`;
-      const lastDay = new Date(b.year, b.month, 0).getDate();
-      return [start, `${b.year}-${pad2(b.month)}-${pad2(lastDay)}`];
-    }
-    return [`${taxYear}-01-01`, `${taxYear}-12-31`];
-  }, [periodMode, month, rangeFrom, rangeTo, taxYear]);
+  const periodRange = useMemo(
+    () => computePeriodRange(periodMode, { month, rangeFrom, rangeTo, taxYear }),
+    [periodMode, month, rangeFrom, rangeTo, taxYear]
+  );
 
   // Comprobantes del período (más filtro de estado)
-  const periodInvoices = useMemo(() => {
-    const [start, end] = periodRange;
-    return invoices
-      .filter((inv) => inv.date >= start && inv.date <= end)
-      .filter((inv) => {
-        if (statusChip === 'pending') return inv.taxStatus !== 'declared';
-        if (statusChip === 'declared') return inv.taxStatus === 'declared';
-        return true;
-      })
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [invoices, periodRange, statusChip]);
+  const periodInvoices = useMemo(
+    () => filterInvoicesByPeriod(invoices, periodRange, statusChip),
+    [invoices, periodRange, statusChip]
+  );
 
   // ── Selección por fila: al cambiar el período se seleccionan todas ──
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -152,11 +118,7 @@ export default function ReportsPage() {
     });
   };
 
-  const totals = useMemo(() => selectedRows.reduce((acc, inv) => ({
-    netAmount: acc.netAmount + (inv.netAmount || 0),
-    ivaAmount: acc.ivaAmount + (inv.ivaAmount || 0),
-    totalAmount: acc.totalAmount + (inv.totalAmount || 0),
-  }), { netAmount: 0, ivaAmount: 0, totalAmount: 0 }), [selectedRows]);
+  const totals = useMemo(() => sumInvoiceTotals(selectedRows), [selectedRows]);
 
   // ── Plantilla de rendición + mapping (modal "Configurar plantilla") ──
   const templateInputRef = useRef(null);
