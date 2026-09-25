@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../supabaseClient";
 import { requireCompany } from "../organizationService";
 import { normalizeDocument } from "../../utils/documentRules";
+import { findLegacyImagePath } from "./legacyImagePath";
 async function scope() {
   const company = requireCompany(); // Capture before the first await.
   const {
@@ -133,13 +134,7 @@ const supabaseProvider = {
       );
     const userId = invoice.user_id;
     let path = invoice.imagePath;
-    if (!path) {
-      const files = check(
-        await supabase.storage.from("images").list(userId, { search: id }),
-      );
-      const match = files.find((f) => f.name.startsWith(id + "."));
-      if (match) path = userId + "/" + match.name;
-    }
+    if (!path) path = await findLegacyImagePath(supabase.storage, userId, id);
     return path
       ? check(await supabase.storage.from("images").download(path))
       : null;

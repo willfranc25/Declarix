@@ -326,6 +326,16 @@ grant all on private.ai_control to service_role;
 
 insert into storage.buckets(id,name,public,file_size_limit) values('documents','documents',false,20971520) on conflict(id) do update set public=false,file_size_limit=20971520;
 create policy document_read on storage.objects for select to authenticated using(bucket_id='documents' and (storage.foldername(name))[1]=(select auth.uid())::text);
+-- Remove the legacy public-wide policy on the old images bucket. Keep private
+-- owner-folder access and allow each owner to read legacy root-level images
+-- whose filename is the ID of one of their invoices.
+drop policy if exists "Permitir todo en storage" on storage.objects;
+create policy legacy_root_image_read on storage.objects for select to authenticated
+using(bucket_id='images' and position('/' in name)=0 and exists(
+ select 1 from public.invoices i
+ where split_part(name,'.',1)=i.id::text and i.user_id=(select auth.uid())
+ and private.owns_company(i.organization_id)
+));
 -- Uploads use signed URLs minted for a reserved object only. No browser write policy.
 
 create function public.portfolio_summary(p_period text)

@@ -20,6 +20,7 @@ alter default privileges in schema public grant all on sequences to authenticate
 await db.exec(
   await readFile(new URL("../supabase/bootstrap.sql", import.meta.url), "utf8"),
 );
+await db.exec(`create policy "Permitir todo en storage" on storage.objects for all using(bucket_id='images');`);
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -88,6 +89,7 @@ assert.equal(
   1,
 );
 assert.equal((await db.query("select count(*)::int n from pg_proc where proname='topup_credits'")).rows[0].n, 0);
+assert.equal((await db.query("select count(*)::int n from pg_policies where schemaname='storage' and tablename='objects' and policyname='Permitir todo en storage'")).rows[0].n, 0, "The legacy public Storage policy must be removed");
 await fail(
   () =>
     db.query(
@@ -105,6 +107,16 @@ const inv = async (company, folio) =>
   );
 const row = (await inv(ca, "1")).rows[0],
   iid = row.id;
+await admin();
+await db.query("insert into storage.objects(bucket_id,name) values('images',$1),('images',$2)", [iid + ".jpeg", "99999999-9999-4999-8999-999999999999.jpeg"]);
+await asUser(a);
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='images' and name=$1", [iid + ".jpeg"])).rows[0].n, 1, "Owners can read their legacy root-level invoice image");
+await asUser(b);
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='images'")).rows[0].n, 0, "Other users cannot read legacy images");
+await db.exec("reset role");
+await db.exec("set role anon");
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='images'")).rows[0].n, 0, "Anonymous users cannot read private invoice images");
+await asUser(a);
 await fail(() => inv(cb, "2"), /row-level security|permission denied/);
 await fail(() => inv(ca, "0001"), /Ya existe/);
 await inv(ca2, "1"); // Same issuer+folio is allowed in another company.
