@@ -187,7 +187,7 @@ export default function LandingPage() {
         }
         .plan.highlight { border-color: var(--color-accent); box-shadow: var(--shadow-md); position: relative; }
         .plan.highlight::before {
-          content: 'Todo incluido'; position: absolute; top: -11px; left: var(--space-5);
+          content: 'Saldo compartido'; position: absolute; top: -11px; left: var(--space-5);
           background: var(--color-accent); color: white; font-size: 11px; font-weight: 700;
           padding: 2px 10px; border-radius: var(--radius-full);
         }
@@ -261,7 +261,7 @@ export default function LandingPage() {
           <div className="hero-demo" aria-hidden="true">
             <div className="receipt">
               <div className="r-center r-strong">FERRETERIA EL MAESTRO</div>
-              <div className="r-center">R.U.T. 76.123.456-7</div>
+              <div className="r-center">R.U.T. 76.123.456-0</div>
               <div className="r-center">BOLETA ELECTRONICA N° 48.213</div>
               <div className="r-sep" />
               <div className="r-row"><span>2x PLANCHA YESO</span><span>8.400</span></div>
@@ -279,7 +279,7 @@ export default function LandingPage() {
 
             <div className="result-row">
               <Icon name="check-circle" size={18} style={{ color: 'var(--color-success)' }} />
-              <span className="rr-rut">76.123.456-7 ✓</span>
+              <span className="rr-rut">76.123.456-0 ✓</span>
               <span className="rr-name">Ferretería El Maestro</span>
               <span className="rr-amount">$12.495</span>
               <span className="badge badge-success">Lista</span>
@@ -289,7 +289,7 @@ export default function LandingPage() {
 
         <section className="landing-section" id="como-funciona">
           <p className="landing-eyebrow">Cómo funciona</p>
-          <h2 className="landing-h2">Tres pasos, cero digitación</h2>
+          <h2 className="landing-h2">Carga, revisa y exporta</h2>
           <div className="steps-grid">
             {STEPS.map((s) => (
               <div className="step" key={s.n}>
