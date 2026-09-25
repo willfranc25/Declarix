@@ -1,3 +1,6 @@
+import DocumentActivity from '../components/DocumentActivity';
+import DocumentEditor from '../components/DocumentEditor';
+import DocumentPreview from '../components/DocumentPreview';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
@@ -12,6 +15,8 @@ export default function InvoiceDetailPage() {
   const navigate = useNavigate();
   const { invoices, loadInvoices, updateInvoice, deleteInvoice } = useInvoiceStore();
 
+  const [editing,setEditing] = useState(false);
+  const [mimeType,setMimeType] = useState('');
   const [imageUrl, setImageUrl] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -20,16 +25,12 @@ export default function InvoiceDetailPage() {
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
   useEffect(() => {
-    async function loadImage() {
-      if (!id) return;
-      const storage = getStorageProvider();
-      const blob = await storage.getImage(id);
-      if (blob) {
-        setImageUrl(URL.createObjectURL(blob));
-      }
-    }
-    loadImage();
-    return () => { if (imageUrl) URL.revokeObjectURL(imageUrl); };
+    let current=true, url=null;
+    getStorageProvider().getImage(id).then(blob=>{
+      if(!current||!blob)return;
+      url=URL.createObjectURL(blob);setImageUrl(url);setMimeType(blob.type);
+    }).catch(err=>{if(current)addToast('No se pudo cargar el original: '+err.message,'error');});
+    return()=>{current=false;if(url)URL.revokeObjectURL(url);};
   }, [id]);
 
   const invoice = invoices.find((inv) => inv.id === id);
@@ -38,7 +39,7 @@ export default function InvoiceDetailPage() {
     return (
       <div className="loading-screen animate-fade-in">
         <div className="spinner" />
-        <span>Cargando comprobante...</span>
+        <span>Comprobante no disponible en la empresa seleccionada.</span><button className="btn btn-secondary" onClick={()=>navigate('/invoices')}>Volver a comprobantes</button>
       </div>
     );
   }
@@ -46,7 +47,8 @@ export default function InvoiceDetailPage() {
   const isDeclared = invoice.taxStatus === 'declared';
 
   const handleToggleDeclared = async () => {
-    await updateInvoice(id, { taxStatus: isDeclared ? 'pending' : 'declared' });
+    if (!window.confirm(isDeclared ? '¿Volver a estado revisado?' : '¿Confirmas que este documento ya fue incluido en tu declaración?')) return;
+    try { await updateInvoice(id, { taxStatus: isDeclared ? 'reviewed' : 'declared' }); } catch(err) { addToast(err.message,'error'); }
   };
 
   const handleDelete = async () => {
@@ -89,25 +91,26 @@ export default function InvoiceDetailPage() {
           <h1 className="page-title">{invoice.providerName || 'Comprobante'}</h1>
           <p className="page-subtitle">N° {invoice.documentNumber || 'Sin número'} — {formatDate(invoice.date)}</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-3 items-center"><button className="btn btn-secondary" onClick={()=>setEditing(v=>!v)}>Editar datos</button>
           <span className={`badge badge-${getStatusVariant(invoice.taxStatus)}`} style={{ fontSize: '13px', padding: '4px 10px' }}>
             {getStatusLabel(invoice.taxStatus)}
           </span>
           <button className="btn btn-secondary btn-sm" onClick={handleToggleDeclared}>
             <Icon name={isDeclared ? 'refresh' : 'check-circle'} size={15} />
-            {isDeclared ? 'Marcar pendiente' : 'Marcar declarada'}
+            {isDeclared ? 'Volver a revisado' : 'Marcar declarada'}
           </button>
           <button className="btn btn-danger btn-sm" onClick={() => setShowDeleteModal(true)}><Icon name="trash" /> Eliminar</button>
         </div>
       </div>
 
+      {editing && <DocumentEditor invoice={invoice} onClose={()=>setEditing(false)} />}
       {/* Detail split */}
       <div className="detail-split">
         {/* Image */}
         <div>
           {imageUrl ? (
             <div className="detail-image-wrapper">
-              <img src={imageUrl} alt="Comprobante" />
+              <DocumentPreview src={imageUrl} mimeType={mimeType} title="Comprobante original" />
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
@@ -142,11 +145,12 @@ export default function InvoiceDetailPage() {
         </div>
       </div>
 
+      <DocumentActivity invoice={invoice} />
       {/* Delete Modal */}
       {showDeleteModal && (
         <ConfirmDialog
           title="Confirmar eliminación"
-          message={`¿Eliminar este comprobante de ${invoice.providerName}? Esta acción no se puede deshacer.`}
+          message={`¿Eliminar este comprobante de ${invoice.providerName}? Se conservará el original y el registro de auditoría.`}
           confirmLabel="Eliminar"
           danger
           loading={isDeleting}

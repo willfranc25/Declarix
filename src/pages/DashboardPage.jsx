@@ -1,3 +1,4 @@
+import { signedAmount } from '../utils/documentRules';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
@@ -28,7 +29,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { invoices, loadInvoices, isLoading } = useInvoiceStore();
   // Boletas extraídas esperando revisión (cola persistente)
-  const pendingReview = useUploadQueueStore(
+  const pendingQueue = useUploadQueueStore(
     (s) => s.queue.filter((q) => q.status === 'done').length
   );
 
@@ -94,12 +95,13 @@ export default function DashboardPage() {
   const monthInvoices = useMemo(() => getInvoicesForMonth(invoices, activeYear, activeMonth), [invoices, activeYear, activeMonth]);
 
   const metrics = useMemo(() => ({
-    total: monthInvoices.reduce((s, i) => s + (i.totalAmount || 0), 0),
-    neto: monthInvoices.reduce((s, i) => s + (i.netAmount || 0), 0),
-    iva: monthInvoices.reduce((s, i) => s + (i.ivaAmount || 0), 0),
+    total: monthInvoices.reduce((s, i) => s + (signedAmount(i, 'totalAmount')), 0),
+    neto: monthInvoices.reduce((s, i) => s + (signedAmount(i, 'netAmount')), 0),
+    iva: monthInvoices.reduce((s, i) => s + (signedAmount(i, 'ivaAmount')), 0),
     count: monthInvoices.length,
   }), [monthInvoices]);
 
+  const pendingReview = pendingQueue + monthInvoices.filter(i=>i.taxStatus==='pending').length;
   const categoryData = useMemo(() => generateCategorySummary(monthInvoices), [monthInvoices]);
   const barData = useMemo(() => buildYearMonths(invoices, activeYear), [invoices, activeYear]);
 
@@ -440,9 +442,9 @@ export default function DashboardPage() {
         </div>
         <div className="metric-card">
           <div className="metric-content">
-            <div className="metric-label">IVA acumulado</div>
+            <div className="metric-label">IVA documentado</div>
             <div className="metric-value">{formatCurrency(metrics.iva)}</div>
-            <div className="metric-sub">Crédito del período</div>
+            <div className="metric-sub">Tratamiento tributario por revisar</div>
           </div>
         </div>
         <div className="metric-card">
@@ -472,7 +474,7 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
-            <div className="metric-sub">Boletas extraídas sin guardar</div>
+            <div className="metric-sub">Documentos por revisar o guardar</div>
           </div>
         </div>
       </div>
@@ -604,7 +606,7 @@ export default function DashboardPage() {
                     <td data-label="Fecha" className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>{formatDate(inv.date)}</td>
                     <td data-label="Proveedor" className="truncate" style={{ maxWidth: 200, fontWeight: 500 }}>{inv.providerName}</td>
                     <td data-label="Tipo de gasto" className="table-mobile-hidden" style={{ color: 'var(--color-text-secondary)' }}>{inv.expenseType}</td>
-                    <td data-label="Total" className="text-right text-mono">{formatCurrency(inv.totalAmount || 0)}</td>
+                    <td data-label="Total" className="text-right text-mono">{formatCurrency(signedAmount(inv, 'totalAmount'))}</td>
                     <td data-label="Estado">
                       <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
                         {getStatusLabel(inv.taxStatus)}

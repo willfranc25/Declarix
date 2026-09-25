@@ -1,3 +1,4 @@
+import { signedAmount } from '../utils/documentRules';
 import logger from '../utils/logger';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -114,7 +115,7 @@ function InvoiceRow({
         className="text-right text-mono"
         onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}
       >
-        {formatCurrency(inv.totalAmount || 0)}
+        {formatCurrency(signedAmount(inv, 'totalAmount'))}
       </td>
 
       {/* Estado binario: Pendiente (sin declarar) / Declarada (ya exportada) */}
@@ -198,7 +199,7 @@ function InvoiceRow({
                 <span style={{ color: 'var(--color-text-secondary)' }}>{inv.expenseType}</span>
               </div>
               <div className="table-field" data-label="Total">
-                <span className="text-mono">{formatCurrency(inv.totalAmount || 0)}</span>
+                <span className="text-mono">{formatCurrency(signedAmount(inv, 'totalAmount'))}</span>
               </div>
               <div className="table-field" data-label="Estado">
                 <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
@@ -392,7 +393,7 @@ export default function InvoicesPage() {
       }
       setFilters({ month: m, year: y, months: undefined });
     } else if (preset === 'this_quarter') {
-      let months = [];
+      let months;
       if (currentMonth <= 3) months = [1, 2, 3];
       else if (currentMonth <= 6) months = [4, 5, 6];
       else if (currentMonth <= 9) months = [7, 8, 9];

@@ -1,3 +1,5 @@
+> Esta documentación describe la versión anterior. Para la cuenta de contador, créditos y nueva seguridad, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración nueva requiere despliegue coordinado y no es idempotente.
+
 # Seguridad — Declarix
 
 ## Modelo de aislamiento (estado actual, Fase 1)

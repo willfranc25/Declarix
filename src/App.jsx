@@ -3,10 +3,14 @@ import { Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
+import { CompanyProvider } from './context/CompanyContext';
 import AppLayout from './components/Layout/AppLayout';
 
 // Todas las páginas son lazy: mantiene Recharts (Dashboard) y demás librerías
 // pesadas fuera del bundle inicial que carga la landing pública y el login.
+const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
+const UsagePage = lazy(() => import('./pages/UsagePage'));
+const ReconcilePage = lazy(() => import('./pages/ReconcilePage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const UploadPage = lazy(() => import('./pages/UploadPage'));
 const InvoicesPage = lazy(() => import('./pages/InvoicesPage'));
@@ -74,7 +78,7 @@ function HomeRoute() {
 
   return (
     <AppLayout>
-      <DashboardPage />
+      <PortfolioPage />
     </AppLayout>
   );
 }
@@ -125,7 +129,9 @@ function AppRoutes() {
             <AppLayout>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="dashboard" element={<DashboardPage />} />
+                  <Route path="usage" element={<UsagePage />} />
+                  <Route path="reconcile" element={<ReconcilePage />} />
                   <Route path="upload" element={<UploadPage />} />
                   <Route path="batch-review" element={<BatchReviewPage />} />
                   <Route path="invoices" element={<InvoicesPage />} />
@@ -151,9 +157,9 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <ToastProvider>
+          <CompanyProvider><ToastProvider>
             <AppRoutes />
-          </ToastProvider>
+          </ToastProvider></CompanyProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

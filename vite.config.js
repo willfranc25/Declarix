@@ -38,37 +38,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/rest\/v1\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-api',
-              expiration: { maxEntries: 200, maxAgeSeconds: 24 * 60 * 60 },
-              networkTimeoutSeconds: 10,
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/.*/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'supabase-images',
-              expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/api\.openai\.com\/.*/,
-            handler: 'NetworkOnly',
-            options: { cacheName: 'openai-api' }
-          },
-          {
-            urlPattern: /^https:\/\/generativelanguage\.googleapis\.com\/.*/,
-            handler: 'NetworkOnly',
-            options: { cacheName: 'gemini-api' }
-          }
-        ],
+        // Authenticated records and originals must never be cached across accounts.
+        runtimeCaching: [],
+        navigateFallbackDenylist: [/^\/api\//],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
       },
       devOptions: {

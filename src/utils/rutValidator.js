@@ -15,6 +15,7 @@ export function validateRut(rut) {
   if (!/^\d{7,8}[\dK]$/.test(cleaned)) return false;
 
   const body = cleaned.slice(0, -1);
+  if (Number(body) === 0) return false;
   const dv = cleaned.slice(-1);
   const digits = body.split('').reverse();
   const sequence = [2, 3, 4, 5, 6, 7];

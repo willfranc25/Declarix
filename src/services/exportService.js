@@ -1,90 +1,11 @@
+import { signedAmount } from '../utils/documentRules';
 import { formatDate } from '../utils/formatters';
 import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
 
 // exceljs pesa ~1 MB minificado: se carga bajo demanda al exportar
 // para no inflar el chunk de la página de Reportes.
 
-/**
- * Exporta comprobantes al formato de rendición usando la plantilla de la empresa.
- *
- * Estrategia:
- * 1. Leer la plantilla usando ExcelJS para preservar todo el formato, macros, y logos.
- * 2. Escribir datos SOLO en filas 20-44, columnas A-K
- * 3. NO tocar columnas L, M, N (tienen fórmulas)
- * 4. Generar y descargar el archivo
- *
- * @param {Array} invoices - Comprobantes a exportar
- * @param {ArrayBuffer} templateBuffer - Buffer del archivo template
- * @param {Object} headerData - Datos del encabezado
- */
-export async function exportToRendicion(invoices, templateBuffer, headerData = {}, customMapping = null) {
-  const { default: ExcelJS } = await import('exceljs');
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBuffer);
-
-  // Buscar la hoja llamada "base" (ignorando mayúsculas/minúsculas) o usar la segunda hoja por defecto
-  let targetWs = workbook.worksheets.find(s => s.name.toLowerCase() === 'base') || workbook.worksheets[1] || workbook.worksheets[0];
-
-  // Actualizar campos del encabezado si se proporcionan
-  if (headerData.fechaRendicion) {
-    targetWs.getCell('B12').value = headerData.fechaRendicion;
-  }
-  if (headerData.nombre) {
-    targetWs.getCell('B13').value = headerData.nombre;
-  }
-  if (headerData.rut) {
-    targetWs.getCell('B14').value = headerData.rut;
-  }
-
-  // Mapeo por defecto si no se entrega uno personalizado
-  const mapping = customMapping || {
-    providerName: 'A',
-    providerRut: 'B',
-    documentType: 'C',
-    documentNumber: 'D',
-    date: 'E',
-    detail: 'F',
-    expenseType: 'G',
-    netAmount: 'H',
-    totalBoletaServicios: 'I',
-    totalBoletaHonorarios: 'J',
-    specificTax: 'K'
-  };
-
-  // Escribir datos en filas 21-45 (1-indexed en ExcelJS)
-  const maxRows = 25;
-  const startRow = 21;
-
-  for (let i = 0; i < maxRows; i++) {
-    const rowNum = startRow + i;
-    const inv = invoices[i];
-
-    if (inv) {
-      if (mapping.providerName) targetWs.getCell(`${mapping.providerName}${rowNum}`).value = inv.providerName || '';
-      if (mapping.providerRut) targetWs.getCell(`${mapping.providerRut}${rowNum}`).value = inv.providerRut || '';
-      if (mapping.documentType) targetWs.getCell(`${mapping.documentType}${rowNum}`).value = inv.documentType || '';
-      if (mapping.documentNumber) targetWs.getCell(`${mapping.documentNumber}${rowNum}`).value = String(inv.documentNumber || '');
-      if (mapping.date) targetWs.getCell(`${mapping.date}${rowNum}`).value = formatDate(inv.date) || '';
-      if (mapping.detail) targetWs.getCell(`${mapping.detail}${rowNum}`).value = inv.detail || '';
-      if (mapping.expenseType) targetWs.getCell(`${mapping.expenseType}${rowNum}`).value = inv.expenseType || '';
-      if (mapping.netAmount) targetWs.getCell(`${mapping.netAmount}${rowNum}`).value = Number(inv.netAmount) || 0;
-      if (mapping.totalBoletaServicios) targetWs.getCell(`${mapping.totalBoletaServicios}${rowNum}`).value = Number(inv.totalBoletaServicios) || 0;
-      if (mapping.totalBoletaHonorarios) targetWs.getCell(`${mapping.totalBoletaHonorarios}${rowNum}`).value = Number(inv.totalBoletaHonorarios) || 0;
-      if (mapping.specificTax) targetWs.getCell(`${mapping.specificTax}${rowNum}`).value = Number(inv.specificTax) || 0;
-    } else {
-      // Limpiar celdas sin romper las fórmulas
-      Object.values(mapping).forEach(colLetter => {
-        if (colLetter && typeof colLetter === 'string') {
-          targetWs.getCell(`${colLetter.toUpperCase()}${rowNum}`).value = null;
-        }
-      });
-    }
-  }
-
-  // Generar el archivo final
-  const buffer = await workbook.xlsx.writeBuffer();
-  return buffer;
-}
+export { fillTemplate as exportToRendicion, exportRendicionPackage } from './templateExport';
 
 /**
  * Exporta a un Excel nuevo simple (sin plantilla) con todas las columnas.
@@ -113,12 +34,14 @@ export async function exportToExcel(invoices, options = {}) {
       'Fecha', 'Detalle Compra', 'Tipo de Gasto',
       'Neto', 'Total Boleta Servicios', 'Total Boleta Honorarios',
       'Impuesto Específico', 'IVA', 'Total', 'Estado',
+      'Exento', 'Otros impuestos', 'Retenciones', 'RUT receptor', 'Centro de costo', 'Folio de referencia', 'Notas', 'Estado tributario',
     ],
     invoices.map((inv) => [
       inv.providerName, inv.providerRut, inv.documentType, inv.documentNumber,
       formatDate(inv.date), inv.detail, inv.expenseType,
-      inv.netAmount || 0, inv.totalBoletaServicios || 0, inv.totalBoletaHonorarios || 0,
-      inv.specificTax || 0, inv.ivaAmount || 0, inv.totalAmount || 0, inv.status,
+      signedAmount(inv, 'netAmount'), signedAmount(inv, 'totalBoletaServicios'), signedAmount(inv, 'totalBoletaHonorarios'),
+      signedAmount(inv, 'specificTax'), signedAmount(inv, 'ivaAmount'), signedAmount(inv, 'totalAmount'), inv.status,
+      signedAmount(inv, 'exemptAmount'), signedAmount(inv, 'otherTax'), signedAmount(inv, 'withholdingAmount'), inv.recipientRut, inv.costCenter, inv.referenceNumber, inv.notes, inv.taxStatus,
     ])
   );
 
@@ -152,10 +75,12 @@ export function exportToCSV(invoices) {
     'Nombre Proveedor', 'RUT Proveedor', 'Tipo Documento', 'N° Documento',
     'Fecha', 'Detalle Compra', 'Tipo de Gasto', 'Neto', 'Total Boleta Servicios',
     'Total Boleta Honorarios', 'Impuesto Específico', 'IVA', 'Total', 'Estado',
+    'Exento', 'Otros impuestos', 'Retenciones', 'RUT receptor', 'Centro de costo', 'Folio de referencia', 'Notas', 'Estado tributario',
   ];
 
   const escape = (v) => {
-    const str = v == null ? '' : String(v);
+    let str = v == null ? '' : String(v);
+    if (typeof v === 'string' && /^[\s]*[=+@\-\t\r]/.test(str)) str = "'" + str;
     return str.includes(';') || str.includes('"') || str.includes('\n')
       ? `"${str.replace(/"/g, '""')}"`
       : str;
@@ -167,8 +92,9 @@ export function exportToCSV(invoices) {
       [
         inv.providerName, inv.providerRut, inv.documentType, inv.documentNumber,
         formatDate(inv.date), inv.detail, inv.expenseType,
-        inv.netAmount || 0, inv.totalBoletaServicios || 0, inv.totalBoletaHonorarios || 0,
-        inv.specificTax || 0, inv.ivaAmount || 0, inv.totalAmount || 0, inv.status,
+        signedAmount(inv, 'netAmount'), signedAmount(inv, 'totalBoletaServicios'), signedAmount(inv, 'totalBoletaHonorarios'),
+        signedAmount(inv, 'specificTax'), signedAmount(inv, 'ivaAmount'), signedAmount(inv, 'totalAmount'), inv.status,
+        signedAmount(inv, 'exemptAmount'), signedAmount(inv, 'otherTax'), signedAmount(inv, 'withholdingAmount'), inv.recipientRut, inv.costCenter, inv.referenceNumber, inv.notes, inv.taxStatus,
       ]
         .map(escape)
         .join(';')

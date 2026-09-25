@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
+import { exportRendicionPackage } from './templateExport';
 import { exportToRendicion, exportToExcel, exportToCSV } from '../services/exportService';
 
 const invoices = [
@@ -126,5 +128,40 @@ describe('exportToCSV', () => {
     expect(lines[0]).toContain('Nombre Proveedor;RUT Proveedor');
     // El nombre con ; y comillas queda escapado entre comillas dobles
     expect(lines[2]).toContain('"Copec; Estación ""Centro"""');
+  });
+});
+
+describe('complete export packages',()=>{
+  it.each([25,26,100])('exports all %i IDs without truncation',async(count)=>{
+    const template=await makeTemplate();
+    const docs=Array.from({length:count},(_,i)=>({...invoices[0],id:'id-'+i,documentNumber:String(i+1)}));
+    const result=await exportRendicionPackage(docs,template,{nombre:'Empresa'},null);
+    const zip=await JSZip.loadAsync(result.buffer);
+    const index=JSON.parse(await zip.file('indice.json')!.async('string'));
+    expect(index.parts.flatMap((p:any)=>p.invoiceIds)).toEqual(docs.map(d=>d.id));
+    expect(index.parts).toHaveLength(Math.ceil(count/25));
+    let exported=0;
+    for(const part of index.parts){
+      const wb=new ExcelJS.Workbook();await wb.xlsx.load(await zip.file(part.filename)!.async('arraybuffer'));
+      for(let row=21;row<=45;row++)if(wb.worksheets[0].getCell('A'+row).value)exported++;
+    }
+    expect(exported).toBe(count);
+  });
+  it('refuses the single-sheet function when rows would be dropped',async()=>{
+    await expect(exportToRendicion(Array(26).fill(invoices[0]),await makeTemplate())).rejects.toThrow('25');
+  });
+  it('preserves unrelated binary/XML parts and subtracts credit notes',async()=>{
+    const template=await JSZip.loadAsync(await makeTemplate());
+    template.file('xl/vbaProject.bin',new Uint8Array([1,2,3,4]));
+    template.file('xl/drawings/vmlDrawing1.vml','<xml>unchanged drawing</xml>');
+    const result=await exportToRendicion([{...invoices[0],documentType:'Nota de Crédito'}],await template.generateAsync({type:'arraybuffer'}));
+    const zip=await JSZip.loadAsync(result);
+    expect(await zip.file('xl/vbaProject.bin')!.async('uint8array')).toEqual(new Uint8Array([1,2,3,4]));
+    expect(await zip.file('xl/drawings/vmlDrawing1.vml')!.async('string')).toBe('<xml>unchanged drawing</xml>');
+    const wb=new ExcelJS.Workbook();await wb.xlsx.load(result);expect(wb.worksheets[0].getCell('H21').value).toBe(-1000);
+  });
+  it('protects formulas and neutralizes spreadsheet formula injection in CSV',async()=>{
+    await expect(exportToRendicion(invoices,await makeTemplate(),{},{providerName:'L'})).rejects.toThrow('fórmulas');
+    expect(exportToCSV([{...invoices[0],providerName:'=HYPERLINK("bad")'}])).toContain("'=HYPERLINK");
   });
 });

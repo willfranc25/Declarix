@@ -14,20 +14,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck (tsc)
-        run: bun x tsc --noEmit
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint application and backend
+        run: pnpm lint
+
+      - name: Test database migrations and isolation
+        run: pnpm test:db
+
+      - name: Test server processing
+        run: pnpm test:server
 
       - name: Run tests (vitest)
-        run: bun x vitest run
+        run: pnpm exec vitest run
 
       - name: Build (vite + PWA)
-        run: bun x vite build
+        run: pnpm exec vite build
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
@@ -44,25 +58,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright
-        run: bun x playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Build
-        run: bun x vite build
+        run: pnpm exec vite build
 
       - name: Run E2E tests
-        run: bun x playwright test --project=chromium
+        run: pnpm exec playwright test --project=chromium
 
   deploy-preview:
     name: Deploy Preview (Vercel)
     needs: validate
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

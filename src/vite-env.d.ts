@@ -50,6 +50,7 @@ declare module '../store/invoiceStore' {
     updatedAt: string;
   }
   interface InvoiceStore {
+    reset: () => void;
     invoices: Invoice[];
     filters: Record<string, any>;
     isLoading: boolean;

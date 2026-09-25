@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import { webcrypto } from 'node:crypto';
 import { vi } from 'vitest';
 
 // Mock IndexedDB for tests
@@ -44,7 +45,7 @@ g.ResizeObserver = vi.fn().mockImplementation(() => ({
 Object.defineProperty(g, 'crypto', {
   value: {
     randomUUID: () => 'test-uuid-' + Math.random().toString(36).substr(2, 9),
-    subtle: {},
+    subtle: webcrypto.subtle,
   },
 });
 

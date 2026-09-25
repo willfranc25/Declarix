@@ -24,6 +24,8 @@ if (sentryDsn) {
     .catch((err) => logger.warn('Sentry no disponible:', err));
 }
 
+// Remove caches from earlier releases that stored authenticated responses.
+if ('caches' in window) Promise.all(['supabase-api','supabase-images'].map(name=>caches.delete(name))).catch(()=>{});
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
   import('virtual:pwa-register').then(({ registerSW }) => {

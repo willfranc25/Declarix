@@ -7,17 +7,16 @@ import Icon from '../components/ui/Icon';
  * construida en CSS puro con el vocabulario real del rubro (RUT, IVA 19%).
  */
 
-// Un solo plan, todo incluido. El precio también vive en la tabla `plans`
-// de la BD (id 'pro'); si cambia, actualizar ambos lugares.
+// Processing credits belong to the accountant and are shared across companies.
 const PLAN = {
-  name: 'Suscripción Declarix',
-  price: '14.990',
-  period: 'CLP / mes',
+  name: 'Declarix para contadores',
+  price: 'Por uso',
+  period: 'Paquetes de créditos',
   features: [
-    'Boletas y extracciones con IA ilimitadas',
-    'Usuarios ilimitados (invita a tu contador)',
-    'Exportaciones y respaldos sin restricción',
-    'Historial completo, para siempre',
+    'Créditos compartidos entre tus empresas',
+    'Una cuenta de contador, varias empresas',
+    'Exportaciones y respaldos por empresa',
+    'Historial de revisiones y exportaciones',
     'Soporte directo por correo',
   ],
 };
@@ -25,25 +24,25 @@ const PLAN = {
 const STEPS = [
   {
     n: '01',
-    title: 'Saca la foto',
-    text: 'Desde el celular, varias a la vez desde tu galería. Puedes subir 100 boletas de una sentada: la extracción sigue aunque cambies de página.',
+    title: 'Selecciona empresa y carga',
+    text: 'Carga imágenes, PDF o XML DTE. Los archivos se procesan en segundo plano según el saldo y la capacidad del servicio.',
   },
   {
     n: '02',
     title: 'Revisa por excepción',
-    text: 'La IA extrae proveedor, RUT, montos e IVA, y valida cada campo. Tú corriges solo las boletas que traen problemas — no las 95 que salieron bien.',
+    text: 'La IA extrae proveedor, RUT, montos e IVA, y señala campos incompletos. Revisa los datos antes de incorporarlos a la rendición.',
   },
   {
     n: '03',
     title: 'Exporta la rendición',
-    text: 'Excel con el formato exacto de tu empresa, fórmulas intactas. Listo para entregar al contador o adjuntar a la rendición.',
+    text: 'Prepara la rendición de cada empresa con su plantilla, sus originales y un registro de lo exportado.',
   },
 ];
 
 const FAQS = [
   {
-    q: '¿Reemplaza a mi contador?',
-    a: 'No. Declarix le ahorra a tu contador (y a ti) las horas de digitación y ordenamiento. La revisión y la declaración siguen siendo de ustedes.',
+    q: '¿Quién utiliza Declarix?',
+    a: 'Contadores que trabajan con una o varias empresas. Cada cuenta administra su cartera; la revisión y la declaración tributaria siguen a cargo del profesional.',
   },
   {
     q: '¿Qué documentos entiende?',
@@ -51,11 +50,11 @@ const FAQS = [
   },
   {
     q: '¿Quién puede ver mis datos?',
-    a: 'Solo tu organización. Cada cuenta está aislada a nivel de base de datos (Row Level Security) y las imágenes viven en carpetas privadas por usuario.',
+    a: 'Los documentos se organizan por empresa dentro de tu cuenta de contador y se almacenan de forma privada.',
   },
   {
     q: '¿Cómo se paga?',
-    a: 'Un solo plan, todo incluido. Creas tu cuenta gratis, la pruebas con tus boletas reales, y activas la suscripción escribiéndonos — sin tarjeta por adelantado mientras habilitamos el pago en línea.',
+    a: 'Comienza con créditos de prueba. Los paquetes se activan manualmente después de confirmar el pago y se comparten entre todas tus empresas. La app muestra saldo disponible, reservado y consumido.',
   },
 ];
 
@@ -246,18 +245,17 @@ export default function LandingPage() {
         <header className="landing-hero">
           <div>
             <h1 className="landing-h1">
-              La boleta entra como foto y sale como <span className="marker">rendición lista</span>.
+              Tu cartera ordenada. Cada empresa con su <span className="marker">rendición lista para revisar</span>.
             </h1>
             <p className="landing-sub">
-              Declarix lee tus boletas chilenas con IA — proveedor, RUT, montos e IVA
-              validados — para que revises solo las que traen problemas y exportes
-              el Excel que tu contador espera.
+              Declarix ayuda a contadores a reunir boletas y facturas de sus empresas,
+              extraer los datos, revisar diferencias y preparar la rendición en Excel.
             </p>
             <div className="landing-cta-row">
               <Link to="/login" className="btn btn-primary btn-lg">Crear cuenta gratis</Link>
-              <a href="#precios" className="btn btn-secondary btn-lg">Ver precios</a>
+              <a href="#precios" className="btn btn-secondary btn-lg">Ver cómo funciona el saldo</a>
             </div>
-            <p className="landing-trust">Plan gratis de 30 boletas al mes · Sin tarjeta de crédito</p>
+            <p className="landing-trust">30 créditos iniciales de prueba · Sin tarjeta de crédito</p>
           </div>
 
           <div className="hero-demo" aria-hidden="true">
@@ -305,13 +303,13 @@ export default function LandingPage() {
 
         <section className="landing-section" id="precios">
           <p className="landing-eyebrow">Precio</p>
-          <h2 className="landing-h2">Un plan. Todo incluido. Sin sorpresas.</h2>
+          <h2 className="landing-h2">Un saldo para toda tu cartera.</h2>
           <div className="pricing-grid">
             <div className="plan highlight">
               <div>
                 <div className="plan-name">{PLAN.name}</div>
                 <div className="plan-price">
-                  ${PLAN.price} <small>{PLAN.period}</small>
+                  {PLAN.price} <small>{PLAN.period}</small>
                 </div>
               </div>
               <ul>
@@ -322,16 +320,15 @@ export default function LandingPage() {
               <Link to="/login" className="btn btn-primary w-full">Crear cuenta gratis</Link>
             </div>
             <div className="pricing-aside">
-              <h3>¿Por qué un solo plan?</h3>
+              <h3>Un saldo para toda tu cartera</h3>
               <p>
-                Porque contar boletas para decidir qué plan te conviene es exactamente
-                el tipo de trabajo que Declarix existe para eliminar. Pruébalo gratis
-                con tus boletas reales; cuando te acomode, activa la suscripción
-                escribiéndonos. Sin tarjeta por adelantado.
+                Prueba el flujo con tus primeras empresas. Los créditos de procesamiento
+                se comparten entre ellas y puedes consultar cada consumo.
+                Los paquetes se habilitan al confirmar el pago.
               </p>
             </div>
           </div>
-          <p className="pricing-note">Precio en CLP, IVA incluido. Cancelas cuando quieras.</p>
+          <p className="pricing-note">Consulta las condiciones y el precio del paquete antes de pagar.</p>
         </section>
 
         <section className="landing-section">
@@ -349,7 +346,7 @@ export default function LandingPage() {
 
         <section className="landing-final">
           <h2 className="landing-h2" style={{ marginBottom: 'var(--space-4)' }}>
-            Tu próxima rendición, sin digitar
+            Tu próxima rendición, con menos digitación
           </h2>
           <Link to="/login" className="btn btn-primary btn-lg">Crear cuenta gratis</Link>
         </section>

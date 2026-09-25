@@ -1,3 +1,5 @@
+> Esta documentación describe la versión anterior. Para la cuenta de contador, créditos y nueva seguridad, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración nueva requiere despliegue coordinado y no es idempotente.
+
 # Migraciones de base de datos
 
 Fuente de verdad: `supabase/migrations/` (orden por prefijo de timestamp).

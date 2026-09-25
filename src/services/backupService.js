@@ -2,11 +2,13 @@ import logger from '../utils/logger';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { getStorageProvider } from './storage/StorageProvider';
+import { getWorkspaceGeneration } from './organizationService';
 
 /**
  * Exporta todos los datos (comprobantes + imágenes + settings) a un archivo ZIP
  */
 export async function exportBackup() {
+  const generation=getWorkspaceGeneration();
   const storage = getStorageProvider();
   const zip = new JSZip();
 
@@ -22,46 +24,36 @@ export async function exportBackup() {
     // Nota: la API key de IA NUNCA se incluye en el backup (es una credencial;
     // el ZIP puede compartirse con el contador u otras personas).
     const settings = {};
-    try {
-      const storageProvider = getStorageProvider();
-      const provider = await storageProvider.getSetting('vlm_provider');
-      if (provider) settings.vlm_provider = provider;
-
-      // Mappings de exportación por RUT de empresa (con fallback al
-      // prefijo legacy de versiones anteriores)
-      for (const inv of invoices) {
-        if (inv.providerRut) {
-          const rutClean = inv.providerRut.replace(/[.-]/g, '');
-          const mappingKey = `export_mapping_${rutClean}`;
-          const mapping = (await storageProvider.getSetting(mappingKey))
-            || (await storageProvider.getSetting(`saludent_mapping_${rutClean}`));
-          if (mapping) settings[mappingKey] = mapping;
-        }
-      }
-    } catch (e) {
-      logger.warn('No se pudieron exportar todos los settings:', e);
+    for (const key of ['rendicion_template','rendicion_mapping']) {
+      const value=await storage.getSetting(key);
+      if(value!=null)settings[key]=value;
     }
     zip.file('settings.json', JSON.stringify(settings, null, 2));
 
     // 4. Agregar imágenes (paralelo con límite)
     const imagesFolder = zip.folder('images');
-    let imgCount = 0;
+    let imgCount = 0, totalBytes = 0;
+    const missing = [];
     for (const inv of invoices) {
       try {
         const blob = await storage.getImage(inv.id);
         if (blob) {
+          totalBytes += blob.size;
+          if(totalBytes>200*1024*1024)throw new Error('El respaldo supera 200 MB; usa expedientes por período desde Reportes.');
           const ext = blob.type.split('/')[1] || 'jpeg';
-          imagesFolder.file(`${inv.id}.${ext}`, blob);
+          imagesFolder.file(`${inv.id}.${ext}`, await blob.arrayBuffer());
           imgCount++;
-        }
+        } else missing.push(inv.id);
       } catch (e) {
-        logger.warn(`Error exportando imagen de ${inv.id}:`, e);
+        throw new Error('No se pudo respaldar el original '+inv.documentNumber+': '+e.message, {cause:e});
       }
     }
 
     // 5. Metadata del backup
     const metadata = {
-      version: '1.0',
+      version: '2.0',
+      missingOriginals: missing,
+      companyId: invoices[0]?.organization_id || null,
       exportedAt: new Date().toISOString(),
       app: 'Declarix',
       invoiceCount: invoices.length,
@@ -73,9 +65,10 @@ export async function exportBackup() {
     // 6. Generar y descargar ZIP
     const content = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
     const filename = `declarix-backup-${new Date().toISOString().split('T')[0]}.zip`;
+    if(generation!==getWorkspaceGeneration()) throw new Error('La empresa cambió durante el respaldo. Genera el archivo nuevamente.');
     saveAs(content, filename);
 
-    return { success: true, filename, invoices: invoices.length, images: imgCount };
+    return { success: true, filename, invoices: invoices.length, images: imgCount, missingOriginals: missing.length };
   } catch (error) {
     logger.error('Error en exportBackup:', error);
     return { success: false, error: error.message };

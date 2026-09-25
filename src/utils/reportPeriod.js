@@ -1,3 +1,4 @@
+import { signedAmount } from './documentRules';
 /**
  * Lógica pura del flujo de Reportes: cálculo del período a declarar,
  * filtrado de comprobantes por período + estado, y totales de la selección.
@@ -11,8 +12,9 @@ const pad2 = (n) => String(n).padStart(2, '0');
  * el F29 del mes N se presenta en el mes N+1 (hasta el día 20 por internet).
  */
 export function previousMonth(today = new Date()) {
-  let month = today.getMonth(); // getMonth() es 0-based → ya es el mes anterior en 1-based
-  let year = today.getFullYear();
+  const local = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Santiago',year:'numeric',month:'2-digit'}).formatToParts(today);
+  let month = Number(local.find(p=>p.type==='month').value)-1;
+  let year = Number(local.find(p=>p.type==='year').value);
   if (month === 0) {
     month = 12;
     year -= 1;
@@ -54,6 +56,7 @@ export function filterInvoicesByPeriod(invoices, [start, end], statusChip = 'all
     .filter((inv) => inv.date >= start && inv.date <= end)
     .filter((inv) => {
       if (statusChip === 'pending') return inv.taxStatus !== 'declared';
+      if (statusChip === 'exported') return inv.taxStatus === 'exported';
       if (statusChip === 'declared') return inv.taxStatus === 'declared';
       return true;
     })
@@ -64,9 +67,9 @@ export function filterInvoicesByPeriod(invoices, [start, end], statusChip = 'all
 export function sumInvoiceTotals(rows) {
   return rows.reduce(
     (acc, inv) => ({
-      netAmount: acc.netAmount + (inv.netAmount || 0),
-      ivaAmount: acc.ivaAmount + (inv.ivaAmount || 0),
-      totalAmount: acc.totalAmount + (inv.totalAmount || 0),
+      netAmount: acc.netAmount + (signedAmount(inv, 'netAmount')),
+      ivaAmount: acc.ivaAmount + (signedAmount(inv, 'ivaAmount')),
+      totalAmount: acc.totalAmount + (signedAmount(inv, 'totalAmount')),
     }),
     { netAmount: 0, ivaAmount: 0, totalAmount: 0 }
   );
@@ -81,3 +84,5 @@ export function availableYears(invoices, today = new Date()) {
   });
   return Array.from(years).sort((a, b) => b - a);
 }
+
+export function previousMonthValue() { const {year,month}=previousMonth(); return year+'-'+String(month).padStart(2,'0'); }

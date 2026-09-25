@@ -1,3 +1,5 @@
+> Esta documentación describe la versión anterior. Para la cuenta de contador, créditos y nueva seguridad, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración nueva requiere despliegue coordinado y no es idempotente.
+
 # Modelo de suscripción: plan único
 
 Decisión de producto (2026-07-12): Declarix se vende con **una sola

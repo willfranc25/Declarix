@@ -10,11 +10,17 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit && eslint src --ext .ts,.tsx"
+    "lint": "eslint src server api scripts --quiet",
+    "typecheck": "tsc --noEmit",
+    "test:db": "node scripts/test-database.mjs",
+    "test:server": "node --test server/*.test.mjs",
+    "worker": "node --env-file=.env.worker scripts/worker.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@eslint/js": "10.0.1",
     "@playwright/test": "^1.61.1",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^25.9.2",
@@ -23,7 +29,10 @@
     "@types/recharts": "^1.8.29",
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/ui": "^4.1.8",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "file-saver": "^2.0.5",
+    "globals": "17.12.0",
     "happy-dom": "^20.10.2",
     "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
@@ -37,13 +46,20 @@
   "dependencies": {
     "@sentry/react": "^10.65.0",
     "@supabase/supabase-js": "^2.107.0",
+    "@xmldom/xmldom": "0.9.12",
     "dexie": "^4.4.3",
     "exceljs": "^4.4.0",
+    "fast-xml-parser": "5.11.1",
+    "pdf-lib": "1.17.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
     "uuid": "^14.0.0",
     "zustand": "^5.0.14"
+  },
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.16.0"
   }
 }

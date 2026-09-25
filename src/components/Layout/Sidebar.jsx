@@ -5,11 +5,14 @@ import { getCurrentTheme, toggleTheme } from '../../utils/theme';
 import Icon from '../ui/Icon';
 import useUploadQueueStore from '../../store/uploadQueueStore';
 
-const navItems = [
+const baseItems = [
+  { path: '/dashboard', label: 'Resumen de empresa', shortLabel: 'Resumen', icon: <Icon name="chart" /> },
+  { path: '/reconcile', label: 'Conciliación RCV', shortLabel: 'RCV', icon: <Icon name="document" /> },
+  { path: '/usage', label: 'Saldo y consumo', shortLabel: 'Saldo', icon: <Icon name="document" /> },
   {
     path: '/',
-    label: 'Resumen',
-    shortLabel: 'Resumen',
+    label: 'Mi cartera',
+    shortLabel: 'Empresas',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -18,7 +21,7 @@ const navItems = [
   },
   {
     path: '/upload',
-    label: 'Cargar boleta',
+    label: 'Cargar documentos',
     shortLabel: 'Cargar',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,6 +72,9 @@ const navItems = [
     ),
   },
 ];
+
+const navigationOrder=['/','/dashboard','/upload','/batch-review','/invoices','/reports','/reconcile','/usage','/settings'];
+const navItems=navigationOrder.map(path=>baseItems.find(item=>item.path===path));
 
 export default function Sidebar() {
   const location = useLocation();
@@ -169,7 +175,7 @@ export default function Sidebar() {
             <div className="sidebar-logo-icon" aria-hidden="true">D</div>
             <div className="sidebar-logo-text">
               <h1>Declarix</h1>
-              <p>Gestión de comprobantes</p>
+              <p>Espacio del contador</p>
             </div>
           </div>
         </div>
@@ -219,7 +225,7 @@ export default function Sidebar() {
             </span>
             <span className="sidebar-account-info">
               <span className="sidebar-account-email" style={{ display: 'block' }}>{email.split('@')[0]}</span>
-              <span className="sidebar-account-plan" style={{ display: 'block' }}>Plan todo incluido</span>
+              <span className="sidebar-account-plan" style={{ display: 'block' }}>Cuenta de contador</span>
             </span>
             <Icon name="chevron-down" size={14} className="sidebar-account-chevron" style={{ transform: accountMenuOpen ? 'none' : 'rotate(180deg)' }} />
           </button>
@@ -234,7 +240,7 @@ export default function Sidebar() {
         aria-orientation="horizontal"
       >
         <div className="mobile-nav-items">
-          {navItems.map((item) => (
+          {navItems.filter(item => ['/', '/upload', '/batch-review', '/invoices', '/reports'].includes(item.path)).map((item) => (
             <NavLink
               key={item.path}
               to={item.path}

@@ -72,18 +72,18 @@ describe('getRowErrors', () => {
       netAmount: 1000, ivaAmount: 190, totalAmount: 1190, totalBoletaServicios: 0,
     };
     expect(getRowErrors(factura).amounts).toBeUndefined();
-    expect(getRowErrors({ ...factura, totalAmount: 5000 }).amounts).toBe('Neto + IVA ≠ Total');
+    expect(getRowErrors({ ...factura, totalAmount: 5000 }).amounts).toBe('Neto + exento + impuestos − retenciones ≠ Total');
   });
 
   it('boleta con total 0 se marca', () => {
     const err = getRowErrors({ ...validBoletaData, totalAmount: 0, totalBoletaServicios: 0 });
-    expect(err.totalBoletaServicios).toBeTruthy();
+    expect(err.totalAmount).toBeTruthy();
   });
 
   it('fecha faltante, futura y tipo de gasto faltante', () => {
-    expect(getRowErrors({ ...validBoletaData, date: '' }).date).toBe('Falta fecha');
+    expect(getRowErrors({ ...validBoletaData, date: '' }).date).toBe('Fecha inválida o ausente');
     expect(getRowErrors({ ...validBoletaData, date: '2099-01-01' }).date).toBe('Fecha futura');
-    expect(getRowErrors({ ...validBoletaData, expenseType: '' }).expenseType).toBe('Falta tipo gasto');
+    expect(getRowErrors({ ...validBoletaData, expenseType: '' }).expenseType).toBe('Falta tipo de gasto');
   });
 });
 

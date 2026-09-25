@@ -1,18 +1,10 @@
+import { signedAmount, documentKey } from './documentRules';
 /**
  * Detecta si un comprobante es duplicado comparando proveedor + número + total.
  */
 export function detectDuplicate(existingInvoices, newInvoice) {
-  const { providerName, documentNumber, totalAmount } = newInvoice;
-  if (!providerName || !documentNumber || totalAmount === undefined) return null;
-
-  const normalizedNew = providerName.trim().toLowerCase();
-  const match = existingInvoices.find(
-    (inv) =>
-      inv.providerName.trim().toLowerCase() === normalizedNew &&
-      inv.documentNumber === documentNumber &&
-      inv.totalAmount === totalAmount
-  );
-  return match || null;
+  const key = documentKey(newInvoice);
+  return key ? existingInvoices.find(inv => documentKey(inv) === key) || null : null;
 }
 
 /**
@@ -30,19 +22,19 @@ export function generateMonthlySummary(invoices) {
     const existing = map.get(key);
     if (existing) {
       existing.count += 1;
-      existing.netAmount += inv.netAmount || 0;
-      existing.ivaAmount += inv.ivaAmount || 0;
-      existing.specificTax += inv.specificTax || 0;
-      existing.totalAmount += inv.totalAmount || 0;
+      existing.netAmount += signedAmount(inv, 'netAmount');
+      existing.ivaAmount += signedAmount(inv, 'ivaAmount');
+      existing.specificTax += signedAmount(inv, 'specificTax');
+      existing.totalAmount += signedAmount(inv, 'totalAmount');
     } else {
       map.set(key, {
         year,
         month,
         count: 1,
-        netAmount: inv.netAmount || 0,
-        ivaAmount: inv.ivaAmount || 0,
-        specificTax: inv.specificTax || 0,
-        totalAmount: inv.totalAmount || 0,
+        netAmount: signedAmount(inv, 'netAmount'),
+        ivaAmount: signedAmount(inv, 'ivaAmount'),
+        specificTax: signedAmount(inv, 'specificTax'),
+        totalAmount: signedAmount(inv, 'totalAmount'),
       });
     }
   }
@@ -63,16 +55,16 @@ export function generateCategorySummary(invoices) {
     const existing = map.get(cat);
     if (existing) {
       existing.count += 1;
-      existing.netAmount += inv.netAmount || 0;
-      existing.ivaAmount += inv.ivaAmount || 0;
-      existing.totalAmount += inv.totalAmount || 0;
+      existing.netAmount += signedAmount(inv, 'netAmount');
+      existing.ivaAmount += signedAmount(inv, 'ivaAmount');
+      existing.totalAmount += signedAmount(inv, 'totalAmount');
     } else {
       map.set(cat, {
         category: cat,
         count: 1,
-        netAmount: inv.netAmount || 0,
-        ivaAmount: inv.ivaAmount || 0,
-        totalAmount: inv.totalAmount || 0,
+        netAmount: signedAmount(inv, 'netAmount'),
+        ivaAmount: signedAmount(inv, 'ivaAmount'),
+        totalAmount: signedAmount(inv, 'totalAmount'),
       });
     }
   }
@@ -101,9 +93,9 @@ export function buildYearMonths(invoices, year) {
       year,
       month: m,
       count: list.length,
-      netAmount: list.reduce((s, inv) => s + (inv.netAmount || 0), 0),
-      ivaAmount: list.reduce((s, inv) => s + (inv.ivaAmount || 0), 0),
-      totalAmount: list.reduce((s, inv) => s + (inv.totalAmount || 0), 0),
+      netAmount: list.reduce((s, inv) => s + (signedAmount(inv, 'netAmount')), 0),
+      ivaAmount: list.reduce((s, inv) => s + (signedAmount(inv, 'ivaAmount')), 0),
+      totalAmount: list.reduce((s, inv) => s + (signedAmount(inv, 'totalAmount')), 0),
     };
   });
 }
