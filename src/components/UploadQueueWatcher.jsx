@@ -1,6 +1,7 @@
 import { useCompany } from '../context/CompanyContext';
 import { useEffect, useRef } from 'react';
 import useUploadQueueStore from '../store/uploadQueueStore';
+import { wakeExtractionQueue } from '../services/jobService';
 import { useToast } from './ui/Toast';
 
 /**
@@ -23,7 +24,12 @@ export default function UploadQueueWatcher() {
     const refresh = async () => {
       if (busy) return;
       busy = true;
-      try { await useUploadQueueStore.getState().hydrate(); } finally { busy = false; }
+      try {
+        await useUploadQueueStore.getState().hydrate();
+        if (useUploadQueueStore.getState().queue.some((item) => item.serverStatus === 'queued')) {
+          void wakeExtractionQueue().catch(() => {});
+        }
+      } finally { busy = false; }
     };
     refresh();
     const timer = setInterval(refresh, 5000);
@@ -53,3 +59,4 @@ export default function UploadQueueWatcher() {
 
   return queueError ? <div className="queue-global-error" role="alert" style={{position:"fixed",bottom:80,right:20,zIndex:60,maxWidth:400,padding:16,background:"var(--color-bg-secondary)",border:"1px solid var(--color-danger)",borderRadius:8}}>{queueError}<button aria-label="Cerrar aviso" className="btn btn-ghost" onClick={() => useUploadQueueStore.setState({error:null})}>×</button></div> : null;
 }
+

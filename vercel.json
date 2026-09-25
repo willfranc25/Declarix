@@ -7,7 +7,7 @@
   ],
   "functions": {
     "api/process-jobs.js": {
-      "maxDuration": 120
+      "maxDuration": 60
     },
     "api/documents.js": {
       "maxDuration": 60
@@ -16,7 +16,7 @@
   "crons": [
     {
       "path": "/api/process-jobs",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "headers": [
@@ -51,3 +51,4 @@
     }
   ]
 }
+

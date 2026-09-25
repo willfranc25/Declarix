@@ -280,6 +280,19 @@ declare c private.ai_control; j public.extraction_jobs; begin
  update private.ai_control set next_start=now()+make_interval(secs=>c.min_interval_seconds),reserved_usd=reserved_usd+c.attempt_reservation_usd where id;
  return query update public.extraction_jobs set status='processing',attempts=attempts+1,lease_token=gen_random_uuid(),lease_until=now()+interval '3 minutes',updated_at=now() where id=j.id returning *;
 end $$;
+create function public.claim_extraction(p_user uuid) returns setof public.extraction_jobs language plpgsql security invoker set search_path='' as $$
+declare c private.ai_control; j public.extraction_jobs; begin
+ select * into c from private.ai_control where id for update;
+ if c.budget_day<>current_date then update private.ai_control set budget_day=current_date,spent_today=0 where id; c.spent_today=0; end if;
+ if c.paused or c.next_start>now() or c.spent_today+c.reserved_usd+c.attempt_reservation_usd>c.daily_budget_usd then return; end if;
+ if (select count(*) from public.extraction_jobs where status='processing' and lease_until>now())>=c.max_concurrent then return; end if;
+ select * into j from public.extraction_jobs q where q.user_id=p_user and q.status='queued' and q.available_at<=now() and exists(select 1 from public.accountant_accounts a where a.user_id=q.user_id and a.status<>'suspended') and exists(select 1 from public.organizations o where o.id=q.organization_id and not o.archived)
+ order by coalesce((select d.last_started from private.account_dispatch d where d.user_id=q.user_id),'-infinity'::timestamptz),q.available_at,q.created_at for update skip locked limit 1;
+ if j.id is null then return; end if;
+ insert into private.account_dispatch(user_id,last_started) values(j.user_id,now()) on conflict(user_id) do update set last_started=excluded.last_started;
+ update private.ai_control set next_start=now()+make_interval(secs=>c.min_interval_seconds),reserved_usd=reserved_usd+c.attempt_reservation_usd where id;
+ return query update public.extraction_jobs set status='processing',attempts=attempts+1,lease_token=gen_random_uuid(),lease_until=now()+interval '3 minutes',updated_at=now() where id=j.id returning *;
+end $$;
 create function public.finish_extraction(p_job uuid,p_lease uuid,p_result jsonb,p_error text,p_retry_seconds integer,p_metrics jsonb) returns boolean language plpgsql security invoker set search_path='' as $$
 declare j public.extraction_jobs; c private.ai_control; begin
  select * into c from private.ai_control where id for update;
@@ -320,8 +333,8 @@ declare j public.extraction_jobs; begin
  return j.object_path;
 end $$;
 -- All queue mutations are called only by a backend that has verified the user.
-revoke all on function public.prepare_extraction(uuid,uuid,uuid,text,text,bigint),public.enqueue_extraction(uuid,uuid,text,integer),public.claim_extraction(),public.finish_extraction(uuid,uuid,jsonb,text,integer,jsonb),public.recover_extractions(),public.cancel_extraction(uuid,uuid) from public,anon,authenticated;
-grant execute on function public.prepare_extraction(uuid,uuid,uuid,text,text,bigint),public.enqueue_extraction(uuid,uuid,text,integer),public.claim_extraction(),public.finish_extraction(uuid,uuid,jsonb,text,integer,jsonb),public.recover_extractions(),public.cancel_extraction(uuid,uuid) to service_role;
+revoke all on function public.prepare_extraction(uuid,uuid,uuid,text,text,bigint),public.enqueue_extraction(uuid,uuid,text,integer),public.claim_extraction(),public.claim_extraction(uuid),public.finish_extraction(uuid,uuid,jsonb,text,integer,jsonb),public.recover_extractions(),public.cancel_extraction(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.prepare_extraction(uuid,uuid,uuid,text,text,bigint),public.enqueue_extraction(uuid,uuid,text,integer),public.claim_extraction(),public.claim_extraction(uuid),public.finish_extraction(uuid,uuid,jsonb,text,integer,jsonb),public.recover_extractions(),public.cancel_extraction(uuid,uuid) to service_role;
 grant all on private.ai_control to service_role;
 
 insert into storage.buckets(id,name,public,file_size_limit) values('documents','documents',false,20971520) on conflict(id) do update set public=false,file_size_limit=20971520;
@@ -443,3 +456,4 @@ create trigger retire_saved_job after insert on public.invoices for each row exe
 create trigger retire_dismissed_job after update of review on public.extraction_jobs for each row execute function private.retire_reviewed_job();
 
 commit;
+

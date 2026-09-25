@@ -63,11 +63,15 @@ test("durable worker records an XML result without calling a model", async () =>
     }),
   };
   const result = await runOne(db, {
+    userId: "user",
     fetchImpl: () => {
       throw new Error("Must not call external AI");
     },
   });
   assert.equal(result.status, "ready");
+  assert.deepEqual(calls.find((c) => c[0] === "claim_extraction")[1], {
+    p_user: "user",
+  });
   const finish = calls.find((c) => c[0] === "finish_extraction")[1];
   assert.equal(finish.p_result.documents[0].documentNumber, "10");
   assert.equal(finish.p_metrics.estimatedUsd, 0);
@@ -111,3 +115,4 @@ test("worker releases a failed request through the finish RPC, with retry metada
   assert.ok(finish.p_retry_seconds >= 90);
   assert.equal(finish.p_error, "PROVIDER_429");
 });
+

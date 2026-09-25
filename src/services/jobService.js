@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+let processingQueue;
 export async function documentRequest(action, payload) {
   const {
     data: { session },
@@ -43,6 +44,27 @@ export async function uploadDocument(file, companyId) {
     );
   }
 }
+export function wakeExtractionQueue() {
+  if (processingQueue) return processingQueue;
+  processingQueue = (async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) return;
+    for (let i = 0; i < 20; i++) {
+      const response = await fetch("/api/process-jobs", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + session.access_token },
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      if (!result.worked || result.processed < 25) return;
+    }
+  })().finally(() => {
+    processingQueue = null;
+  });
+  return processingQueue;
+}
 export async function listJobs(companyId) {
   const rows = [];
   for (let from = 0; ; from += 100) {
@@ -67,3 +89,4 @@ export async function patchReview(jobId, index, patch) {
   });
   if (error) throw error;
 }
+

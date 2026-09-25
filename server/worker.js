@@ -62,9 +62,16 @@ export function retrySeconds(status, attempt, retryAfter = "") {
     ) + Math.floor(Math.random() * 10),
   );
 }
-export async function runOne(db, { fetchImpl = fetch } = {}) {
+export async function runOne(
+  db,
+  { fetchImpl = fetch, userId = null, timeoutMs = 65_000 } = {},
+) {
   checked(await db.rpc("recover_extractions"));
-  const jobs = checked(await db.rpc("claim_extraction"));
+  const jobs = checked(
+    userId
+      ? await db.rpc("claim_extraction", { p_user: userId })
+      : await db.rpc("claim_extraction"),
+  );
   const job = jobs?.[0];
   if (!job) return { worked: false };
   const started = Date.now();
@@ -108,7 +115,7 @@ export async function runOne(db, { fetchImpl = fetch } = {}) {
           ":generateContent",
         {
           method: "POST",
-          signal: AbortSignal.timeout(65000),
+          signal: AbortSignal.timeout(timeoutMs),
           headers: {
             "Content-Type": "application/json",
             "x-goog-api-key": process.env.GEMINI_API_KEY,
@@ -248,3 +255,4 @@ export async function cleanupAbandoned(db) {
     checked(await db.rpc("finish_cleanup", { p_job: job.id }));
   }
 }
+
