@@ -32,7 +32,7 @@ export default function CompanyBar() {
           <Link to="/dashboard">Resumen</Link>
           <Link to="/settings">Configuración</Link>
           <Link to="/reconcile">Conciliación RCV</Link>
-          <Link to="/usage">Saldo y consumo</Link>
+          <Link to="/usage">Plan y consumo</Link>
         </nav>
       </details>
       {error && <p role="alert">No se pudo cargar la cartera: {error}</p>}

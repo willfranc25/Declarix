@@ -7,13 +7,13 @@ import Icon from '../components/ui/Icon';
  * construida en CSS puro con el vocabulario real del rubro (RUT, IVA 19%).
  */
 
-// Processing credits belong to the accountant and are shared across companies.
+// The accountant subscription and monthly processing allowance cover the portfolio.
 const PLAN = {
   name: 'Declarix para contadores',
-  price: 'Por uso',
-  period: 'Paquetes de créditos',
+  price: 'Suscripción mensual',
+  period: 'planes según volumen',
   features: [
-    'Créditos compartidos entre tus empresas',
+    'Unidades mensuales compartidas entre tus empresas',
     'Una cuenta de contador, varias empresas',
     'Exportaciones y respaldos por empresa',
     'Historial de revisiones y exportaciones',
@@ -25,7 +25,7 @@ const STEPS = [
   {
     n: '01',
     title: 'Selecciona empresa y carga',
-    text: 'Carga imágenes, PDF o XML DTE. Los archivos se procesan en segundo plano según el saldo y la capacidad del servicio.',
+    text: 'Carga imágenes, PDF o XML DTE. Los archivos se procesan en segundo plano dentro del límite mensual de tu plan.',
   },
   {
     n: '02',
@@ -54,7 +54,7 @@ const FAQS = [
   },
   {
     q: '¿Cómo se paga?',
-    a: 'Comienza con créditos de prueba. Los paquetes se activan manualmente después de confirmar el pago y se comparten entre todas tus empresas. La app muestra saldo disponible, reservado y consumido.',
+    a: 'Cada plan incluye un límite mensual compartido por toda tu cartera. La prueba no requiere pago. El cobro recurrente en línea se habilitará después de validar los planes con contadores piloto.',
   },
 ];
 
@@ -253,9 +253,9 @@ export default function LandingPage() {
             </p>
             <div className="landing-cta-row">
               <Link to="/login" className="btn btn-primary btn-lg">Crear cuenta gratis</Link>
-              <a href="#precios" className="btn btn-secondary btn-lg">Ver cómo funciona el saldo</a>
+              <a href="#precios" className="btn btn-secondary btn-lg">Ver cómo funciona el plan</a>
             </div>
-            <p className="landing-trust">30 créditos iniciales de prueba · Sin tarjeta de crédito</p>
+            <p className="landing-trust">Prueba con 30 unidades incluidas · Sin tarjeta</p>
           </div>
 
           <div className="hero-demo" aria-hidden="true">
@@ -303,7 +303,7 @@ export default function LandingPage() {
 
         <section className="landing-section" id="precios">
           <p className="landing-eyebrow">Precio</p>
-          <h2 className="landing-h2">Un saldo para toda tu cartera.</h2>
+          <h2 className="landing-h2">Un plan para toda tu cartera.</h2>
           <div className="pricing-grid">
             <div className="plan highlight">
               <div>
@@ -320,15 +320,17 @@ export default function LandingPage() {
               <Link to="/login" className="btn btn-primary w-full">Crear cuenta gratis</Link>
             </div>
             <div className="pricing-aside">
-              <h3>Un saldo para toda tu cartera</h3>
+              <h3>Una suscripción para toda tu cartera</h3>
               <p>
-                Prueba el flujo con tus primeras empresas. Los créditos de procesamiento
-                se comparten entre ellas y puedes consultar cada consumo.
-                Los paquetes se habilitan al confirmar el pago.
+                Prueba el flujo con tus primeras empresas. Cada plan tiene un
+                límite mensual compartido por toda tu cartera. Solo se cuentan
+                los documentos procesados correctamente; al llegar al límite,
+                las nuevas extracciones se pausan hasta el próximo período o
+                cambio de plan.
               </p>
             </div>
           </div>
-          <p className="pricing-note">Consulta las condiciones y el precio del paquete antes de pagar.</p>
+          <p className="pricing-note">Los precios se definirán tras un piloto. El cobro recurrente estará disponible al habilitar pagos en línea.</p>
         </section>
 
         <section className="landing-section">

@@ -8,7 +8,7 @@ import useUploadQueueStore from '../../store/uploadQueueStore';
 const baseItems = [
   { path: '/dashboard', label: 'Resumen de empresa', shortLabel: 'Resumen', icon: <Icon name="chart" /> },
   { path: '/reconcile', label: 'Conciliación RCV', shortLabel: 'RCV', icon: <Icon name="document" /> },
-  { path: '/usage', label: 'Saldo y consumo', shortLabel: 'Saldo', icon: <Icon name="document" /> },
+  { path: '/usage', label: 'Plan y consumo', shortLabel: 'Plan', icon: <Icon name="document" /> },
   {
     path: '/',
     label: 'Mi cartera',

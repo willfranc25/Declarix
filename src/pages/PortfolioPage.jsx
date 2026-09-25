@@ -114,9 +114,9 @@ export default function PortfolioPage() {
           <strong>{summary.reduce((n, c) => n + Number(c.pending), 0)}</strong>
         </div>
         <div className="card">
-          <span>Créditos disponibles</span>
-          <strong>{account ? account.credits - account.reserved : "—"}</strong>
-          <Link to="/usage">Ver consumo y saldo</Link>
+          <span>Unidades disponibles este mes</span>
+          <strong>{account ? Math.max(0, account.monthly_limit - account.monthly_used - account.reserved) : "—"}</strong>
+          <Link to="/usage">Ver plan y consumo</Link>
         </div>
       </div>
       {(message || error) && (

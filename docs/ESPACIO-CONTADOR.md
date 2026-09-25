@@ -12,21 +12,13 @@ Esta versión cambia la unidad de cuenta: un contador administra varias empresas
 6. Preparar la rendición mensual, anual o por rango. El ZIP divide la plantilla en grupos de 25 y agrega Excel completo, índice con IDs y huella de plantilla y, opcionalmente, originales. Se preservan otras partes de XLSX/XLSM; las fórmulas se recalculan al abrir en Excel. Revisar las fórmulas de la plantilla para impuestos especiales/exentos/retenciones: el Excel completo contiene los montos documentados.
 7. Exportar registra una instantánea y estado **Exportado**; no marca **Declarado**. Se puede cerrar/reabrir cada mes. La conciliación RCV compara un CSV descargado por el contador; no inicia sesión ni declara ante el SII.
 
-## Saldo y cobro
+## Suscripción y uso
 
-Cada cuenta recibe 30 créditos iniciales, una sola vez. Imagen = 1 crédito; PDF = 1 por página; XML = 1 por DTE. El servidor reserva saldo al encolar, cobra una vez al entregar extracción para revisión y libera la reserva ante fallo definitivo. Corregir y exportar no consumen saldo. La recarga no es una suscripción ilimitada. El precio comercial y la pasarela quedan por definir.
-
-La activación manual significa que el administrador confirma el pago fuera de la app y acredita el paquete usando una referencia única. No significa revisar ni descontar cada documento a mano. Repetir la misma referencia y cantidad es seguro; cambiar su destinatario o cantidad se rechaza.
-
-```sh
-node --env-file=.env.worker scripts/credit-topup.mjs UUID_CONTADOR 500 REFERENCIA_UNICA_DEL_PAGO
-```
-
-Este comando requiere la clave secreta del servidor. No se entrega a contadores ni se implementa como formulario público. Una pasarela futura deberá invocar la misma operación desde un webhook autenticado, tras verificar importe, moneda y estado del pago.
+El modelo es una suscripción mensual por cuenta de contador, compartida por toda su cartera. La prueba inicial incluye 30 unidades por 30 días y hasta 3 empresas. Los niveles configurables de referencia son Inicio (300 unidades/5 empresas), Estudio (2.000/25) y Firma (8.000/100); sus precios se mantienen vacíos hasta medir costos y validar demanda. Una imagen equivale a 1 unidad, cada página PDF a 1 y cada DTE XML a 1. El servidor reserva unidades al encolar y cuenta solo cuando la extracción queda lista; los fallos definitivos liberan la reserva. El cupo no se acumula ni es ilimitado. Al terminar el período o alcanzar el límite, las nuevas extracciones se detienen. La base de datos permite que un backend confiable actualice plan, estado y período después de conciliar un pago. El endpoint de checkout/webhook todavía requiere implementarse y configurar las credenciales de la cuenta de vendedor y la firma de notificaciones de Mercado Pago. El precio mensual se define después de medir una cohorte piloto.
 
 ## Despliegue coordinado
 
-La migración cambia RLS y desactiva el antiguo `/api/extract` (410). No publicar únicamente el frontend ni aplicar la migración sobre producción sin coordinar el cambio. La versión antigua y la nueva no son intercambiables.
+Las migraciones se prueban en Postgres local con PGlite, roles y RLS; esto no reproduce Auth, Storage, red ni eventos reales de Supabase. La migración cambia RLS y desactiva el antiguo `/api/extract` (410). No publicar únicamente el frontend ni aplicar la migración sobre producción sin ensayarla en una rama real y revisar las pertenencias y facturas sin empresa. La versión antigua y la nueva no son intercambiables.
 
 1. Crear un respaldo de base de datos y objetos y ensayar restauración en un proyecto de pruebas. El ZIP de la app es una copia de documentos activos, no un respaldo completo de la base de datos.
 2. En una base vacía, ejecutar primero `supabase/bootstrap.sql`: la tabla original se creó fuera del historial. Después aplicar las migraciones históricas en orden y `20260924180915_accountant_workspace.sql`. En una base existente con el historial aplicado, ejecutar solo la migración nueva. No repetirla: no es idempotente.

@@ -95,10 +95,7 @@ await fail(
     ),
   /permission denied/,
 );
-await fail(
-  () => db.query("select public.topup_credits($1,10,'hack')", [b]),
-  /permission denied/,
-);
+assert.equal((await db.query("select count(*)::int n from pg_proc where proname='topup_credits'")).rows[0].n, 0);
 await fail(
   () =>
     db.query(
@@ -220,7 +217,7 @@ await fail(
       "hash2",
       20,
     ]),
-  /CREDITS_REQUIRED/,
+  /MONTHLY_LIMIT_REACHED/,
 );
 let claimed = (await db.query("select * from public.claim_extraction()")).rows;
 assert.equal(claimed.length, 1);
@@ -247,11 +244,11 @@ await db.query("select public.finish_extraction($1,$2,$3,$4,$5,$6)", [
 ]);
 const account = (
   await db.query(
-    "select credits,reserved from public.accountant_accounts where user_id=$1",
+    "select monthly_used,reserved from public.accountant_accounts where user_id=$1",
     [a],
   )
 ).rows[0];
-assert.deepEqual(account, { credits: 10, reserved: 0 });
+assert.deepEqual(account, { monthly_used: 20, reserved: 0 });
 assert.equal(
   (
     await db.query(
@@ -319,18 +316,10 @@ await fail(
   /cambiar el origen/,
 );
 await admin();
-await db.query("select public.topup_credits($1,100,'payment-1')", [a]);
-await db.query("select public.topup_credits($1,100,'payment-1')", [a]);
-assert.equal(
-  (
-    await db.query(
-      "select credits from public.accountant_accounts where user_id=$1",
-      [a],
-    )
-  ).rows[0].credits,
-  110,
-);
+await db.query("select public.apply_subscription_event($1,'estudio','active','manual','test-subscription',$2,$3)", [a, "2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
+assert.equal((await db.query("select monthly_limit from public.accountant_accounts where user_id=$1", [a])).rows[0].monthly_limit, 2000);
+assert.equal((await db.query("select count(*)::int n from public.billing_webhook_events")).rows[0].n, 0);
 console.log(
-  "PASS: all migrations, two-account RLS, two-company isolation, closed periods, duplicate guards, export snapshots, credit reservation, idempotency, provider pacing and manual top-up.",
+  "PASS: all migrations, two-account RLS, two-company isolation, closed periods, duplicate guards, export snapshots, monthly quota reservation and usage, subscription activation, provider pacing.",
 );
 await db.close();

@@ -31,11 +31,11 @@ export default function UsagePage() {
     };
   }, [user.id]);
   return (
-    <div className="workspace-page">
+      <div className="workspace-page">
       <div>
-        <h1 className="page-title">Saldo y consumo</h1>
+        <h1 className="page-title">Plan y consumo</h1>
         <p className="page-subtitle">
-          Tu saldo se comparte entre todas las empresas de tu cartera.
+          Tu plan mensual se comparte entre todas las empresas de tu cartera.
         </p>
       </div>
       {error && <p role="alert">{error}</p>}
@@ -43,11 +43,19 @@ export default function UsagePage() {
         <>
           <div className="workspace-metrics">
             <div className="card">
-              <span>Créditos disponibles</span>
-              <strong>{data.account.credits - data.account.reserved}</strong>
+              <span>Unidades disponibles este período</span>
+              <strong>{Math.max(0, data.account.monthly_limit - data.account.monthly_used - data.account.reserved)}</strong>
             </div>
             <div className="card">
-              <span>Reservados en procesamiento</span>
+              <span>Incluidas en el plan</span>
+              <strong>{data.account.monthly_limit}</strong>
+            </div>
+            <div className="card">
+              <span>Procesadas este período</span>
+              <strong>{data.account.monthly_used}</strong>
+            </div>
+            <div className="card">
+              <span>En procesamiento</span>
               <strong>{data.account.reserved}</strong>
             </div>
             <div className="card">
@@ -68,19 +76,14 @@ export default function UsagePage() {
             </div>
           </div>
           <div className="card">
-            <h2>Cómo se utiliza tu saldo</h2>
+            <h2>Tu suscripción</h2>
             <p>
-              Una imagen utiliza un crédito; un PDF, un crédito por página; un
-              XML, un crédito por DTE. El saldo se reserva antes de procesar y
-              se descuenta cuando la extracción termina. Si falla
-              definitivamente, la reserva se libera. Corregir datos y exportar
-              no consume créditos.
+              Plan {data.account.plan_code}. Estado: {data.account.subscription_status === "trialing" ? "prueba" : data.account.subscription_status === "active" ? "activa" : data.account.subscription_status === "past_due" ? "pago pendiente" : "requiere atención"}. El período actual termina el {new Date(data.account.period_end).toLocaleDateString("es-CL")}.
             </p>
             <p>
-              La activación de paquetes es manual. Solicita la recarga al
-              administrador del servicio; el saldo aparecerá después de
-              confirmar el pago.
+              Una imagen cuenta como una unidad; cada página de PDF y cada DTE en XML cuentan como una unidad. Se reserva capacidad al iniciar y solo se cuenta un procesamiento exitoso. Los reintentos de una falla y la revisión no cobran unidades adicionales. Al alcanzar el límite, las nuevas extracciones esperan hasta el siguiente período o un cambio de plan.
             </p>
+            <p>La suscripción mensual y sus límites se comparten entre las empresas de tu cartera. El cobro en línea estará disponible al activar la integración de pagos.</p>
           </div>
           <div className="card">
             <h2>Últimos 100 movimientos</h2>
@@ -89,13 +92,13 @@ export default function UsagePage() {
                 <li key={l.id}>
                   <strong>
                     {l.amount > 0 ? "+" : ""}
-                    {l.amount} créditos
+                    {Math.abs(l.amount)} unidades
                   </strong>{" "}
                   ·{" "}
                   {l.kind === "consume"
                     ? "Procesamiento"
                     : l.kind === "purchase"
-                      ? "Recarga"
+                      ? "Ajuste de plan"
                       : "Ajuste"}
                   <br />
                   {companies.find(
