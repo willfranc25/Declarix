@@ -66,9 +66,9 @@ export function getMonthName(month) {
  * (los valores legacy 'reviewed'/'approved' cuentan como pendiente).
  */
 export function getStatusLabel(taxStatus) {
-  return taxStatus === 'declared' ? 'Declarada' : 'Pendiente';
+  return ({declared:'Declarado', exported:'Exportado', reviewed:'Revisado'})[taxStatus] || 'Pendiente';
 }
 
 export function getStatusVariant(taxStatus) {
-  return taxStatus === 'declared' ? 'success' : 'warning';
+  return ({declared:'success', exported:'info', reviewed:'success'})[taxStatus] || 'warning';
 }

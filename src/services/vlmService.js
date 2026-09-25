@@ -8,7 +8,7 @@ import { supabase } from './supabaseClient';
  *
  * La extracción pasa siempre por el backend propio (POST /api/extract): la
  * API key del proveedor (Gemini/OpenAI) vive solo en el servidor, el consumo
- * queda registrado por usuario y los límites del plan se aplican ahí.
+ * queda registrado para control técnico del proveedor y del gasto de IA.
  */
 
 /**

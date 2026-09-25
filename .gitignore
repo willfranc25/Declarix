@@ -17,6 +17,8 @@ dev-dist
 .env
 .env.local
 .env.*.local
+.env.worker
+work/
 service_key.txt
 
 # Supabase temp files

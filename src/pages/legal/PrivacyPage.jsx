@@ -2,7 +2,7 @@ import LegalLayout from './LegalLayout';
 
 export default function PrivacyPage() {
   return (
-    <LegalLayout title="Política de privacidad" updated="11 de julio de 2026">
+    <LegalLayout title="Política de privacidad" updated="25 de septiembre de 2026">
       <p>
         Esta política describe qué datos personales trata Declarix, con qué fin y
         con qué resguardos, conforme a la Ley N° 19.628 y a la Ley N° 21.719 de
@@ -23,14 +23,14 @@ export default function PrivacyPage() {
           extraídos de ellas (RUT y nombre de proveedores, montos, fechas, tipos
           de gasto). Pueden incluir datos de terceros (tus proveedores).
         </li>
-        <li><strong>Uso:</strong> registros técnicos de operaciones (extracciones, exportaciones) asociados a tu organización, usados para aplicar los límites del plan.</li>
+        <li><strong>Uso:</strong> registros técnicos de operaciones (extracciones, exportaciones) asociados a tu cuenta, usados para operar el servicio y resolver errores.</li>
         <li><strong>Errores:</strong> si ocurre una falla, registramos información técnica del error para diagnosticarla.</li>
       </ul>
 
       <h2>3. Finalidades</h2>
       <ul>
         <li>Prestar el servicio: digitalizar, validar, almacenar y exportar tus comprobantes.</li>
-        <li>Operar los límites y la facturación del plan contratado.</li>
+        <li>Operar el servicio, protegerlo contra abusos y resolver problemas técnicos.</li>
         <li>Seguridad, prevención de fraude y soporte.</li>
       </ul>
       <p>No vendemos tus datos ni los usamos para publicidad de terceros.</p>
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>Supabase</strong> (base de datos, autenticación y almacenamiento de imágenes; infraestructura en AWS).</li>
         <li><strong>Vercel</strong> (alojamiento de la aplicación y funciones de servidor).</li>
-        <li><strong>Google (Gemini)</strong>: las imágenes de comprobantes se envían a la API de Google para extraer sus datos. No se usan para entrenar modelos según las condiciones de la API pagada.</li>
+        <li><strong>Google (Gemini)</strong>: las imágenes y PDF se envían a su API para extraer datos. El tratamiento por parte de Google depende de la modalidad contratada y de sus <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">condiciones del servicio</a>. Los XML DTE se interpretan sin enviarlos a Gemini.</li>
         <li><strong>Sentry</strong> (si está habilitado): reportes técnicos de errores.</li>
       </ul>
       <p>
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
 
       <h2>5. Aislamiento y seguridad</h2>
       <ul>
-        <li>Cada organización está aislada a nivel de base de datos (Row Level Security).</li>
+        <li>Cada cuenta de contador tiene acceso a sus empresas; las políticas de base de datos restringen el acceso de otras cuentas.</li>
         <li>Las imágenes se almacenan en carpetas privadas por usuario; no hay URLs públicas.</li>
         <li>Cifrado en tránsito (TLS) y en reposo en la infraestructura de los proveedores.</li>
         <li>Las claves de los proveedores de IA viven solo en el servidor, nunca en tu navegador.</li>
@@ -58,8 +58,9 @@ export default function PrivacyPage() {
 
       <h2>6. Conservación</h2>
       <p>
-        Conservamos tus datos mientras tu cuenta esté activa y según el historial
-        de tu plan. Al eliminar un comprobante se elimina también su imagen. Al
+        Conservamos tus datos mientras tu cuenta esté activa. Eliminar un comprobante
+        de la lista o archivar una empresa conserva su original y auditoría; no equivale
+        a una solicitud de supresión. Puedes solicitar la eliminación definitiva por el canal de contacto. Al
         cerrar tu cuenta, eliminamos o anonimizamos tus datos dentro de 60 días,
         salvo obligación legal de conservación.
       </p>

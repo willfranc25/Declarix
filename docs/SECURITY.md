@@ -1,3 +1,5 @@
+> Parte de estas pruebas describe la arquitectura anterior. Para el uso personal actual y el aislamiento de la cartera, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración de cartera requiere despliegue coordinado y no es idempotente.
+
 # Seguridad — Declarix
 
 ## Modelo de aislamiento (estado actual, Fase 1)
@@ -14,7 +16,7 @@
   ráfaga y mensuales, y registra consumo en `usage_events`.
 - **Organizaciones + RBAC (Fase 2 aplicada)**: las políticas ahora aceptan
   acceso por membresía de organización según rol (owner/admin/contador/
-  colaborador/lector — matriz completa en `docs/PLANES.md`). Las filas legacy
+  colaborador/lector en el esquema histórico). Las filas legacy
   con `organization_id NULL` siguen el modelo por `user_id` directo. Los
   helpers `org_role()`/`is_org_member()` son SECURITY DEFINER para evitar
   recursión de RLS.

@@ -37,6 +37,7 @@ declare module '*components/ui/Toast' {
 }
 
 declare module '*utils/reportPeriod' {
+  export function previousMonthValue(): string;
   export function previousMonth(today?: Date): { month: number; year: number };
   export function computePeriodRange(
     mode: 'month' | 'range' | 'year',
@@ -100,6 +101,10 @@ declare module '*services/exportService' {
   export function downloadFile(content: any, filename: string, mimeType: string): void;
 }
 
+declare module '*templateExport' {
+  export function exportRendicionPackage(invoices:any[],buffer:ArrayBuffer,header?:Record<string,any>,mapping?:Record<string,string>|null,options?:Record<string,any>):Promise<{buffer:ArrayBuffer;count:number;parts:number;templateHash:string}>;
+}
+
 declare module '*store/uploadQueueStore' {
   import { StoreApi, UseBoundStore } from 'zustand';
   export interface QueueItem {
@@ -116,6 +121,8 @@ declare module '*store/uploadQueueStore' {
     tempPreviewUrl: string;
   }
   interface UploadQueueStore {
+    reset: () => void;
+    flushReviews: () => Promise<void>;
     queue: QueueItem[];
     isProcessing: boolean;
     isHydrated: boolean;
@@ -157,6 +164,7 @@ declare module '*store/invoiceStore' {
     updatedAt: string;
   }
   interface InvoiceStore {
+    reset: () => void;
     invoices: Invoice[];
     filters: Record<string, any>;
     isLoading: boolean;
@@ -173,4 +181,18 @@ declare module '*store/invoiceStore' {
   }
   const useInvoiceStore: UseBoundStore<StoreApi<InvoiceStore>>;
   export default useInvoiceStore;
+}
+declare module '*services/organizationService' {
+ export function setActiveOrganization(company: any): void;
+ export function getWorkspaceGeneration(): number;
+}
+declare module '*documentRules' {
+ export function civilDate(value: string): {year:number,month:number,day:number} | null;
+ export function normalizeDocument(value: any): any;
+ export function documentErrors(value: any,today?:string): Record<string,string>;
+ export function signedAmount(value:any,field:string): number;
+ export function documentKey(value:any): string | null;
+}
+declare module '*reconciliation' {
+ export function reconcileRCV(text:string,invoices:any[]): Array<{status:string;[key:string]:any}>;
 }

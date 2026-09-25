@@ -1,3 +1,4 @@
+import { useCompany } from '../context/CompanyContext';
 import logger from '../utils/logger';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +14,7 @@ import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
+import DocumentPreview from '../components/DocumentPreview';
 import { ZoomableImage, ImageLightbox } from '../components/ui/ImageViewer';
 import useUploadQueueStore from '../store/uploadQueueStore';
 
@@ -29,6 +31,8 @@ const COLUMNS = [
 ];
 
 export default function BatchReviewPage() {
+  const {activeCompany} = useCompany();
+  const categories = activeCompany?.categories?.length ? activeCompany.categories : EXPENSE_TYPES;
   const navigate = useNavigate();
   const { addInvoice } = useInvoiceStore();
 
@@ -209,22 +213,24 @@ export default function BatchReviewPage() {
   };
 
   const saveRows = async (rowsToSave) => {
+    try { await useUploadQueueStore.getState().flushReviews(); } catch (err) { addToast(err.message, 'error'); return {successCount:0,savedIds:[],failed:rowsToSave.length}; }
     setIsSaving(true);
     let successCount = 0;
     const savedIds = [];
 
     for (const row of rowsToSave) {
       try {
-        await addInvoice(rowToInvoiceData(row), row.file);
+        if (Object.keys(getRowErrors(row)).length) throw new Error("Corrige los campos antes de guardar.");
+        await addInvoice(rowToInvoiceData(row));
         successCount++;
         savedIds.push(row.id);
       } catch (err) {
-        logger.error('Error al guardar fila:', row, err);
+        logger.error('Error al guardar fila:', err.message);
       }
     }
 
     // Sacar de la cola (y de IndexedDB) los items ya convertidos en comprobantes
-    removeItems(savedIds);
+    await removeItems(savedIds);
     setSelectedIds((prev) => prev.filter((id) => !savedIds.includes(id)));
     setIsSaving(false);
     return { successCount, savedIds, failed: rowsToSave.length - successCount };
@@ -238,7 +244,7 @@ export default function BatchReviewPage() {
 
     const hasErrors = selectedRows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
-      setConfirmAction('save-selected');
+      addToast('Corrige los campos señalados antes de guardar.', 'error');
       return;
     }
     await performSaveSelected();
@@ -247,7 +253,7 @@ export default function BatchReviewPage() {
   const performSaveSelected = async () => {
     const selectedRows = rows.filter((r) => selectedIds.includes(r.id));
     const { successCount, savedIds } = await saveRows(selectedRows);
-    addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
+    addToast(`Se guardaron ${successCount} comprobantes. Las filas no guardadas permanecen en revisión.`, successCount ? 'success' : 'error');
     if (rows.length - savedIds.length === 0 && extractingCount === 0) navigate('/invoices');
   };
 
@@ -258,7 +264,7 @@ export default function BatchReviewPage() {
 
     const hasErrors = rows.some(r => Object.keys(getRowErrors(r)).length > 0);
     if (hasErrors) {
-      setConfirmAction('save-all');
+      addToast('Corrige los campos señalados antes de guardar.', 'error');
       return;
     }
     await performSaveAll();
@@ -266,7 +272,7 @@ export default function BatchReviewPage() {
 
   const performSaveAll = async () => {
     const { successCount, savedIds } = await saveRows(rows);
-    addToast(`Se guardaron ${successCount} comprobantes.`, 'success');
+    addToast(`Se guardaron ${successCount} comprobantes. Las filas no guardadas permanecen en revisión.`, successCount ? 'success' : 'error');
     if (rows.length - savedIds.length === 0 && extractingCount === 0) navigate('/invoices');
   };
 
@@ -297,9 +303,10 @@ export default function BatchReviewPage() {
     if (!row || isSaving) return;
     setIsSaving(true);
     try {
-      await addInvoice(rowToInvoiceData(row), row.file);
+      if (Object.keys(getRowErrors(row)).length) throw new Error("Corrige los campos antes de guardar.");
+        await addInvoice(rowToInvoiceData(row));
       advanceAfter(id);
-      removeItems([id]);
+      await removeItems([id]);
       setSelectedIds(prev => prev.filter(s => s !== id));
       addToast('Comprobante guardado.', 'success');
       if (rows.length - 1 === 0 && extractingCount === 0) navigate('/invoices');
@@ -315,15 +322,15 @@ export default function BatchReviewPage() {
     const row = rows.find(r => r.id === id);
     if (!row) return;
     if (Object.keys(getRowErrors(row)).length > 0) {
-      setConfirmAction('save-one');
+      addToast('Corrige los campos señalados antes de guardar.', 'error');
       return;
     }
     performSaveOne(id);
   };
 
-  const discardOne = (id) => {
+  const discardOne = async (id) => {
     advanceAfter(id);
-    removeItems([id]);
+    await removeItems([id]);
     setSelectedIds(prev => prev.filter(s => s !== id));
     addToast('Boleta descartada.', 'info');
   };
@@ -586,14 +593,14 @@ export default function BatchReviewPage() {
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={() => setLightboxOpen(true)}
-                  disabled={!previewImageUrl}
+                  disabled={!previewImageUrl || !activeRow.mimeType?.startsWith('image/')}
                   title="Ver a pantalla completa"
                 >
                   <Icon name="search" size={14} /> Ampliar
                 </button>
               </div>
               {previewImageUrl ? (
-                <ZoomableImage src={previewImageUrl} alt={`Boleta ${activeIndex + 1}`} />
+                <DocumentPreview src={previewImageUrl} mimeType={activeRow.mimeType} title={activeRow.fileName} />
               ) : (
                 <div className="empty-state" style={{ flex: 1 }}>
                   <div className="empty-state-icon"><Icon name="photo" size={24} /></div>
@@ -605,6 +612,15 @@ export default function BatchReviewPage() {
             {/* Formulario de la boleta activa */}
             <div className="card focus-form-card">
               <div className="focus-form-scroll space-y-4">
+                <details><summary>Otros montos y clasificación</summary>
+                  {['exemptAmount','specificTax','otherTax','withholdingAmount'].map((field,index) => <label key={field} className="form-group">
+                    {['Monto exento','Impuesto específico','Otros impuestos','Retenciones'][index]}
+                    <input className="form-input" type="number" min="0" value={activeRow[field] ?? ''} onChange={e => set(field,e.target.value===''?null:Number(e.target.value))} />
+                  </label>)}
+                  <label className="form-group">Centro de costo<input className="form-input" value={activeRow.costCenter || ''} onChange={e=>set('costCenter',e.target.value)} /></label>
+                  <label className="form-group">Notas<input className="form-input" value={activeRow.notes || ''} onChange={e=>set('notes',e.target.value)} /></label>
+                </details>
+
                 {Object.keys(errors).length > 0 && (
                   <div className="alert alert-danger" style={{ padding: 'var(--space-3)' }}>
                     <Icon name="alert" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -615,7 +631,7 @@ export default function BatchReviewPage() {
                   <div className="alert alert-warning" style={{ padding: 'var(--space-3)' }}>
                     <Icon name="copy" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                     <div className="text-xs">
-                      Posible duplicado: ya existe un comprobante con el mismo RUT, N° de documento y fecha.
+                      Posible duplicado: ya existe un comprobante con el mismo RUT, tipo de documento y folio.
                     </div>
                   </div>
                 )}
@@ -684,7 +700,7 @@ export default function BatchReviewPage() {
                     style={fieldError('expenseType') ? { borderColor: 'var(--color-danger)' } : undefined}
                   >
                     <option value="" disabled>Seleccione...</option>
-                    {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    {categories.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {fieldError('expenseType') && <span className="form-error">{errors.expenseType}</span>}
                 </div>
@@ -695,7 +711,7 @@ export default function BatchReviewPage() {
                     <input
                       type="number"
                       className="form-input text-mono"
-                      value={activeRow.netAmount ?? 0}
+                      value={activeRow.netAmount ?? ''}
                       onChange={(e) => set('netAmount', Number(e.target.value))}
                     />
                   </div>
@@ -704,7 +720,7 @@ export default function BatchReviewPage() {
                     <input
                       type="number"
                       className="form-input text-mono"
-                      value={activeRow.ivaAmount ?? 0}
+                      value={activeRow.ivaAmount ?? ''}
                       onChange={(e) => set('ivaAmount', Number(e.target.value))}
                     />
                   </div>
@@ -713,7 +729,7 @@ export default function BatchReviewPage() {
                     <input
                       type="number"
                       className="form-input text-mono"
-                      value={activeRow.totalAmount ?? 0}
+                      value={activeRow.totalAmount ?? ''}
                       onChange={(e) => set('totalAmount', Number(e.target.value))}
                       style={{ fontWeight: 700, ...(fieldError('amounts') ? { borderColor: 'var(--color-danger)' } : {}) }}
                     />
@@ -970,48 +986,6 @@ export default function BatchReviewPage() {
       <div className="alert alert-info text-xs">
         <strong>Manual de Teclado:</strong> Usa <strong>Tab / Shift+Tab</strong> para moverte horizontalmente, y <strong>↑ / ↓</strong> o la tecla <strong>Enter</strong> para moverte verticalmente. Presiona <strong>Escape</strong> para cancelar tu edición y restaurar el valor anterior. Si hay errores (como un RUT incorrecto), se marcará con una advertencia.
       </div>
-      )}
-
-      {confirmAction === 'save-selected' && (
-        <ConfirmDialog
-          title="Guardar con errores"
-          message="Algunos de los registros seleccionados tienen errores. ¿Deseas guardarlos de todas formas?"
-          confirmLabel="Guardar igualmente"
-          loading={isSaving}
-          onConfirm={async () => {
-            await performSaveSelected();
-            setConfirmAction(null);
-          }}
-          onCancel={() => setConfirmAction(null)}
-        />
-      )}
-
-      {confirmAction === 'save-all' && (
-        <ConfirmDialog
-          title="Guardar con errores"
-          message="Algunos registros en la lista contienen errores. ¿Deseas guardarlos de todas formas?"
-          confirmLabel="Guardar igualmente"
-          loading={isSaving}
-          onConfirm={async () => {
-            await performSaveAll();
-            setConfirmAction(null);
-          }}
-          onCancel={() => setConfirmAction(null)}
-        />
-      )}
-
-      {confirmAction === 'save-one' && activeRow && (
-        <ConfirmDialog
-          title="Guardar con errores"
-          message={`Esta boleta tiene problemas: ${Object.values(getRowErrors(activeRow)).join(' · ')}. ¿Guardarla de todas formas?`}
-          confirmLabel="Guardar igualmente"
-          loading={isSaving}
-          onConfirm={async () => {
-            await performSaveOne(activeRow.id);
-            setConfirmAction(null);
-          }}
-          onCancel={() => setConfirmAction(null)}
-        />
       )}
 
       {confirmAction === 'discard' && (

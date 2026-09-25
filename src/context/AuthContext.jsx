@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import useInvoiceStore from '../store/invoiceStore';
+import useUploadQueueStore from '../store/uploadQueueStore';
 import { clearActiveOrganization } from '../services/organizationService';
 
 const AuthContext = createContext(null);
@@ -65,7 +67,12 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    if ('caches' in window) {
+      await Promise.all(['supabase-api','supabase-images'].map(name=>caches.delete(name)));
+    }
     clearActiveOrganization();
+    useInvoiceStore.getState().reset();
+    useUploadQueueStore.getState().reset();
     if (!supabase) return { error: null };
     const { error } = await supabase.auth.signOut();
     return { error };

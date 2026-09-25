@@ -73,6 +73,9 @@ export const DOCUMENT_TYPES = [
   'Boleta Electrónica',
   'Boleta de Honorarios',
   'Nota de Crédito',
+  'Factura Exenta',
+  'Boleta Exenta',
+  'Nota de Débito',
   'Otro',
 ];
 

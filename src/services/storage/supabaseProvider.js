@@ -1,180 +1,180 @@
-import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../supabaseClient';
-import { getActiveOrganization } from '../organizationService';
-
-// Helper para obtener user_id actual
-async function getCurrentUserId() {
-  if (!supabase) throw new Error('Configuración de Supabase faltante (.env)');
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Usuario no autenticado');
-  return user.id;
+import { v4 as uuidv4 } from "uuid";
+import { supabase } from "../supabaseClient";
+import { requireCompany } from "../organizationService";
+import { normalizeDocument } from "../../utils/documentRules";
+import { findLegacyImagePath } from "./legacyImagePath";
+async function scope() {
+  const company = requireCompany(); // Capture before the first await.
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user || company.accountant_id !== user.id)
+    throw new Error("Sesión o empresa inválida");
+  return { userId: user.id, companyId: company.id };
 }
-
-// Las imágenes viven en una carpeta por usuario: <user_id>/<invoiceId>.<ext>
-// (las políticas de storage exigen que el primer segmento sea auth.uid()).
-async function findImagePath(userId, invoiceId) {
-  const { data: files, error } = await supabase.storage
-    .from('images')
-    .list(userId, { search: invoiceId });
-  if (!error && files && files.length > 0) {
-    return `${userId}/${files[0].name}`;
-  }
-  // Fallback legacy: archivos antiguos guardados en la raíz del bucket
-  const { data: legacyFiles } = await supabase.storage
-    .from('images')
-    .list('', { search: invoiceId });
-  if (legacyFiles && legacyFiles.length > 0) {
-    return legacyFiles[0].name;
-  }
-  return null;
-}
-
+const check = ({ data, error }) => {
+  if (error) throw error;
+  return data;
+};
+const fields = new Set([
+  ...Object.keys(normalizeDocument({})),
+  "taxStatus",
+  "status",
+  "imagePath",
+  "source_job_id",
+  "source_index",
+  "extracted_original",
+]);
+const pick = (data) =>
+  Object.fromEntries(Object.entries(data).filter(([k]) => fields.has(k)));
 const supabaseProvider = {
   async initialize() {
-    if (!supabase) throw new Error('Configuración de Supabase faltante (.env)');
+    if (!supabase) throw new Error("Falta configurar Supabase");
   },
-
   async getAll() {
-    const userId = await getCurrentUserId();
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-    if (error) throw error;
-    return data;
+    const { companyId } = await scope();
+    const rows = [];
+    for (let from = 0; ; from += 500) {
+      const batch = check(
+        await supabase
+          .from("invoices")
+          .select("*")
+          .eq("organization_id", companyId)
+          .eq("deleted", false)
+          .order("date", { ascending: false })
+          .order("id")
+          .range(from, from + 499),
+      );
+      rows.push(...batch);
+      if (batch.length < 500) return rows;
+    }
   },
-
   async getById(id) {
-    const userId = await getCurrentUserId();
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single();
-    if (error) return null;
-    return data;
+    const { companyId } = await scope();
+    return check(
+      await supabase
+        .from("invoices")
+        .select("*")
+        .eq("organization_id", companyId)
+        .eq("id", id)
+        .maybeSingle(),
+    );
   },
-
   async save(invoiceData) {
-    const userId = await getCurrentUserId();
-    const org = await getActiveOrganization();
+    const { userId, companyId } = await scope();
+    // Result identifiers make retries safe even when the response is lost.
+    if (invoiceData.source_job_id != null) {
+      const found = check(
+        await supabase
+          .from("invoices")
+          .select("*")
+          .eq("organization_id", companyId)
+          .eq("source_job_id", invoiceData.source_job_id)
+          .eq("source_index", invoiceData.source_index)
+          .maybeSingle(),
+      );
+      if (found) return found;
+    }
     const now = new Date().toISOString();
     const invoice = {
+      ...pick(invoiceData),
       id: uuidv4(),
       user_id: userId,
-      // Solo se incluye si hay organización (BD podría no tener la columna aún)
-      ...(org ? { organization_id: org.id } : {}),
-      ...invoiceData,
+      organization_id: companyId,
       createdAt: now,
       updatedAt: now,
+      taxStatus: "reviewed",
+      reviewed_at: now,
+      deleted: false,
     };
-    const { data, error } = await supabase
-      .from('invoices')
-      .insert([invoice])
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    return check(
+      await supabase.from("invoices").insert(invoice).select().single(),
+    );
   },
-
   async update(id, updates) {
-    const userId = await getCurrentUserId();
-    const updatedAt = new Date().toISOString();
-    const { data, error } = await supabase
-      .from('invoices')
-      .update({ ...updates, updatedAt })
-      .eq('id', id)
-      .eq('user_id', userId)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    const { companyId } = await scope();
+    const allowed = pick(updates);
+    delete allowed.source_job_id;
+    delete allowed.source_index;
+    delete allowed.extracted_original;
+    delete allowed.imagePath;
+    return check(
+      await supabase
+        .from("invoices")
+        .update({ ...allowed, updatedAt: new Date().toISOString() })
+        .eq("organization_id", companyId)
+        .eq("id", id)
+        .select()
+        .single(),
+    );
   },
-
   async delete(id) {
-    const userId = await getCurrentUserId();
-    const { error } = await supabase
-      .from('invoices')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
-    if (error) throw error;
-
-    const path = await findImagePath(userId, id);
-    if (path) {
-      await supabase.storage.from('images').remove([path]);
-    }
+    const { companyId } = await scope();
+    // Retain originals and the audit trail; this is a soft deletion.
+    check(
+      await supabase
+        .from("invoices")
+        .update({ deleted: true })
+        .eq("organization_id", companyId)
+        .eq("id", id)
+        .select()
+        .single(),
+    );
   },
-
-  async saveImage(invoiceId, blob) {
-    const userId = await getCurrentUserId();
-    const fileExt = blob.type ? blob.type.split('/')[1] : 'jpeg';
-    const path = `${userId}/${invoiceId}.${fileExt}`;
-    const { error } = await supabase.storage.from('images').upload(path, blob, { upsert: true });
-    if (error) throw error;
+  async saveImage() {
+    throw new Error("Carga el original antes de guardar el comprobante.");
   },
-
-  async getImage(invoiceId) {
-    if (!supabase) return null;
-    const userId = await getCurrentUserId();
-    const path = await findImagePath(userId, invoiceId);
-    if (!path) return null;
-
-    const { data, error } = await supabase.storage.from('images').download(path);
-    if (error) return null;
-    return data;
+  async getImage(id) {
+    const invoice = await this.getById(id);
+    if (!invoice) return null;
+    if (invoice.source_job_id && invoice.imagePath)
+      return check(
+        await supabase.storage.from("documents").download(invoice.imagePath),
+      );
+    const userId = invoice.user_id;
+    let path = invoice.imagePath;
+    if (!path) path = await findLegacyImagePath(supabase.storage, userId, id);
+    return path
+      ? check(await supabase.storage.from("images").download(path))
+      : null;
   },
-
-  async deleteImage(invoiceId) {
-    const userId = await getCurrentUserId();
-    const path = await findImagePath(userId, invoiceId);
-    if (path) {
-      await supabase.storage.from('images').remove([path]);
-    }
+  async deleteImage() {
+    throw new Error(
+      "Los originales se conservan para mantener la trazabilidad.",
+    );
   },
-
-  // Settings: clave con prefijo de usuario + columna user_id (exigida por RLS)
   async getSetting(key) {
-    const userId = await getCurrentUserId();
-    const { data, error } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('key', `${userId}:${key}`)
-      .single();
-    if (error) return null;
-    return data.value;
+    const { companyId } = await scope();
+    const row = check(
+      await supabase
+        .from("company_settings")
+        .select("value")
+        .eq("organization_id", companyId)
+        .eq("key", key)
+        .maybeSingle(),
+    );
+    return row?.value ?? null;
   },
-
   async saveSetting(key, value) {
-    const userId = await getCurrentUserId();
-    const { error } = await supabase
-      .from('settings')
-      .upsert({ key: `${userId}:${key}`, value, user_id: userId });
-    if (error) throw error;
+    const { companyId } = await scope();
+    check(
+      await supabase
+        .from("company_settings")
+        .upsert({ organization_id: companyId, key, value }),
+    );
   },
-
   async clearAll() {
-    const userId = await getCurrentUserId();
-    const { error } = await supabase.from('invoices').delete().eq('user_id', userId);
-    if (error) throw error;
-
-    // Borrar también las imágenes del usuario para no dejar huérfanas
-    const { data: files } = await supabase.storage.from('images').list(userId, { limit: 1000 });
-    if (files && files.length > 0) {
-      await supabase.storage.from('images').remove(files.map((f) => `${userId}/${f.name}`));
-    }
+    const { companyId } = await scope();
+    check(
+      await supabase
+        .from("invoices")
+        .update({ deleted: true })
+        .eq("organization_id", companyId),
+    );
   },
-
   async importInvoice(invoice) {
-    const userId = await getCurrentUserId();
-    const org = await getActiveOrganization();
-    const { error } = await supabase
-      .from('invoices')
-      .upsert({ ...(org ? { organization_id: org.id } : {}), ...invoice, user_id: userId });
-    if (error) throw error;
+    return this.save(invoice);
   },
 };
-
 export default supabaseProvider;

@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('../context/CompanyContext',()=>({useCompany:()=>({activeCompany:{id:'company',categories:[]}})}));
+vi.mock('../services/jobService',()=>({patchReview:vi.fn().mockResolvedValue(undefined),listJobs:vi.fn().mockResolvedValue([]),documentRequest:vi.fn(),uploadDocument:vi.fn()}));
 // ── Mocks de persistencia (la lógica real de stores sí se ejercita) ──
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -93,7 +95,9 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     navigateMock.mockReset();
     saved.length = 0;
     useInvoiceStore.setState({ invoices: [] });
-    useUploadQueueStore.setState({ queue: [], isProcessing: false, isHydrated: true });
+    useUploadQueueStore.setState({ queue: [], isProcessing: false, isHydrated: true,
+      removeItems: async (ids) => {useUploadQueueStore.setState(s=>({queue:s.queue.filter(q=>!ids.includes(q.id))}));},
+    });
   });
 
   it('estado vacío invita a cargar boletas', () => {

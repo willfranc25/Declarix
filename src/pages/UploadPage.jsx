@@ -5,10 +5,10 @@ import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
 import { ImageLightbox } from '../components/ui/ImageViewer';
 import { useToast } from '../components/ui/Toast';
-import { validateExtractedData } from '../services/vlmService';
+import {documentErrors} from '../utils/documentRules';
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'application/xml', 'text/xml'];
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 /**
  * Datos efectivos de un item ya procesado (extracción + correcciones de
@@ -21,7 +21,7 @@ function getReviewState(item) {
     return { needsReview: false, reasons: [] };
   }
   const data = { ...item.extractedData, ...(item.review || {}) };
-  const { errors } = validateExtractedData(data);
+  const errors = Object.values(documentErrors(data));
   return { needsReview: errors.length > 0, reasons: errors };
 }
 
@@ -35,6 +35,7 @@ export default function UploadPage() {
   // usuario navegue a otra página. Esta vista solo la observa.
   const queue = useUploadQueueStore((s) => s.queue);
   const isProcessing = useUploadQueueStore((s) => s.isProcessing);
+  const uploadProgress = useUploadQueueStore(s=>s.uploadProgress);
   const addFiles = useUploadQueueStore((s) => s.addFiles);
   const removeItem = useUploadQueueStore((s) => s.removeItem);
   const clearQueue = useUploadQueueStore((s) => s.clearQueue);
@@ -56,8 +57,8 @@ export default function UploadPage() {
 
   // Validar un archivo individual
   const validateFile = (file) => {
-    if (!ALLOWED_TYPES.includes(file.type)) return 'Solo se permiten imágenes JPEG, PNG o WEBP.';
-    if (file.size > MAX_FILE_SIZE) return 'El tamaño máximo es de 10 MB.';
+    if (!ALLOWED_TYPES.includes(file.type) && !/\.xml$/i.test(file.name)) return 'Usa imágenes JPEG, PNG, WEBP, PDF o XML DTE.';
+    if (file.size > MAX_FILE_SIZE) return 'El tamaño máximo es de 20 MB.';
     return null;
   };
 
@@ -76,7 +77,7 @@ export default function UploadPage() {
     }
 
     if (hasInvalidFiles) {
-      const errorMsg = 'Algunos archivos fueron ignorados porque no son imágenes válidas o superan los 10MB.';
+      const errorMsg = 'Se omitieron archivos incompatibles o mayores a 20 MB.';
       setGlobalError(errorMsg);
       addToast(errorMsg, 'error');
     }
@@ -102,6 +103,7 @@ export default function UploadPage() {
 
   // Limpiar cola entera (el store libera las URLs de previsualización)
   const handleClearQueue = () => {
+    if (!window.confirm('¿Descartar los resultados y cancelar las cargas pendientes? Los archivos en procesamiento seguirán en la cola.')) return;
     clearQueue();
     setGlobalError(null);
     addToast('Cola de procesamiento limpia.', 'info');
@@ -130,6 +132,7 @@ export default function UploadPage() {
 
   return (
     <div className="space-y-6 animate-fade-in upload-page-container" style={{ maxWidth: 1000, margin: '0 auto' }}>
+      {uploadProgress&&<p className="alert alert-info" role="status">Subiendo archivos: {uploadProgress.done} de {uploadProgress.total}. Mantén abierta esta ventana y la empresa actual hasta terminar la carga.</p>}
       <style>{`
         .upload-page-container button,
         .upload-page-container .btn {
@@ -172,8 +175,8 @@ export default function UploadPage() {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Cargar boleta</h1>
-          <p className="page-subtitle">Sube una o varias fotos. La IA extrae los datos y los deja listos para revisar.</p>
+          <h1 className="page-title">Cargar documentos</h1>
+          <p className="page-subtitle">Sube fotos, PDF o XML de la empresa seleccionada. Los datos quedarán disponibles para revisión.</p>
         </div>
       </div>
 
@@ -191,6 +194,8 @@ export default function UploadPage() {
       <div>
         <div
           className={`drop-zone ${isDragging ? 'dragging' : ''}`}
+          role="button" tabIndex={0} aria-label="Seleccionar documentos"
+          onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInputRef.current?.click();}}}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
@@ -205,7 +210,7 @@ export default function UploadPage() {
             <strong>Elige archivos</strong> o arrástralos aquí
           </p>
           <p className="drop-zone-hint">
-            JPEG, PNG o WEBP · máx. 10 MB por archivo · puedes seleccionar varios a la vez
+            JPEG, PNG, WEBP, PDF o XML · máx. 20 MB por archivo · puedes seleccionar varios a la vez
           </p>
         </div>
 
@@ -225,7 +230,7 @@ export default function UploadPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,application/pdf,.xml"
           multiple
           onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
           style={{ display: 'none' }}
@@ -308,7 +313,7 @@ export default function UploadPage() {
           {isProcessing && (
             <p className="text-xs text-muted" style={{ margin: 0 }}>
               Extrayendo en segundo plano — puedes navegar a otras páginas o cerrar la ventana:
-              el avance queda guardado en este dispositivo.
+              el avance queda guardado en tu cuenta.
             </p>
           )}
         </div>
@@ -319,7 +324,7 @@ export default function UploadPage() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="flex justify-between items-center" style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
             <h3 className="card-title">Cola de archivos</h3>
-            <span className="text-xs text-muted">Procesamiento secuencial</span>
+            <span className="text-xs text-muted">Procesamiento en segundo plano</span>
           </div>
 
           {queue.map((item, i) => {
@@ -337,7 +342,7 @@ export default function UploadPage() {
               {/* Miniatura (clic para ampliar con zoom) */}
               <button
                 type="button"
-                onClick={() => item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
+                onClick={() => item.mimeType?.startsWith('image/') && item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
                 title="Ver boleta ampliada"
                 style={{
                   width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
@@ -346,7 +351,7 @@ export default function UploadPage() {
                   minWidth: 44, minHeight: 44,
                 }}
               >
-                {item.tempPreviewUrl ? (
+                {item.tempPreviewUrl && item.mimeType?.startsWith('image/') ? (
                   <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>

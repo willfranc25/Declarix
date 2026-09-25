@@ -57,9 +57,9 @@ describe('formatters', () => {
   // cualquier otro valor (incluidos los legacy) cuenta como pendiente.
   describe('getStatusLabel', () => {
     it('declared es Declarada; todo lo demás es Pendiente', () => {
-      expect(getStatusLabel('declared')).toBe('Declarada');
+      expect(getStatusLabel('declared')).toBe('Declarado');
       expect(getStatusLabel('pending')).toBe('Pendiente');
-      expect(getStatusLabel('reviewed')).toBe('Pendiente');
+      expect(getStatusLabel('reviewed')).toBe('Revisado');
       expect(getStatusLabel('approved')).toBe('Pendiente');
       expect(getStatusLabel(undefined as unknown as string)).toBe('Pendiente');
     });
@@ -69,7 +69,7 @@ describe('formatters', () => {
     it('declared es success; todo lo demás warning', () => {
       expect(getStatusVariant('declared')).toBe('success');
       expect(getStatusVariant('pending')).toBe('warning');
-      expect(getStatusVariant('reviewed')).toBe('warning');
+      expect(getStatusVariant('reviewed')).toBe('success');
       expect(getStatusVariant(undefined as unknown as string)).toBe('warning');
     });
   });
