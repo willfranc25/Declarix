@@ -315,11 +315,19 @@ await fail(
     ),
   /cambiar el origen/,
 );
+await asUser(a);
+await db.query("insert into public.organizations(name,plan_id) values('Empresa A3','free')");
+await fail(() => db.query("insert into public.organizations(name,plan_id) values('Empresa A4','free')"), /PLAN_COMPANY_LIMIT/);
 await admin();
+await db.query("update public.accountant_accounts set period_end=now()-interval '1 second' where user_id=$1", [a]);
+const expiredJob = "55555555-5555-4555-8555-555555555555";
+await db.query("select public.prepare_extraction($1,$2,$3,$4,$5,$6)", [a,ca,expiredJob,"expired.png","image/png",100]);
+await fail(() => db.query("select public.enqueue_extraction($1,$2,$3,$4)", [a,expiredJob,"expired-hash",1]), /SUBSCRIPTION_REQUIRED/);
 await db.query("select public.apply_subscription_event($1,'estudio','active','manual','test-subscription',$2,$3)", [a, "2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
 assert.equal((await db.query("select monthly_limit from public.accountant_accounts where user_id=$1", [a])).rows[0].monthly_limit, 2000);
+assert.equal((await db.query("select subscription_status from public.accountant_accounts where user_id=$1", [a])).rows[0].subscription_status, "active");
 assert.equal((await db.query("select count(*)::int n from public.billing_webhook_events")).rows[0].n, 0);
 console.log(
-  "PASS: all migrations, two-account RLS, two-company isolation, closed periods, duplicate guards, export snapshots, monthly quota reservation and usage, subscription activation, provider pacing.",
+  "PASS: all migrations, two-account RLS, two-company isolation, closed periods, duplicate guards, export snapshots, monthly quota reservation and usage, expired trial enforcement, company caps, subscription activation, provider pacing.",
 );
 await db.close();

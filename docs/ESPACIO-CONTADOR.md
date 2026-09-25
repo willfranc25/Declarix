@@ -1,6 +1,6 @@
 # Declarix: cuenta de contador y cartera de empresas
 
-Esta versión cambia la unidad de cuenta: un contador administra varias empresas. No crea una empresa ficticia al registrarse. El saldo y el almacenamiento pertenecen al contador; documentos, categorías, reglas, plantillas, cierres y exportaciones pertenecen a cada empresa.
+Esta versión cambia la unidad de cuenta: un contador administra varias empresas. No crea una empresa ficticia al registrarse. La suscripción y el almacenamiento pertenecen al contador; documentos, categorías, reglas, plantillas, cierres y exportaciones pertenecen a cada empresa.
 
 ## Flujo implementado
 
@@ -14,7 +14,9 @@ Esta versión cambia la unidad de cuenta: un contador administra varias empresas
 
 ## Suscripción y uso
 
-El modelo es una suscripción mensual por cuenta de contador, compartida por toda su cartera. La prueba inicial incluye 30 unidades por 30 días y hasta 3 empresas. Los niveles configurables de referencia son Inicio (300 unidades/5 empresas), Estudio (2.000/25) y Firma (8.000/100); sus precios se mantienen vacíos hasta medir costos y validar demanda. Una imagen equivale a 1 unidad, cada página PDF a 1 y cada DTE XML a 1. El servidor reserva unidades al encolar y cuenta solo cuando la extracción queda lista; los fallos definitivos liberan la reserva. El cupo no se acumula ni es ilimitado. Al terminar el período o alcanzar el límite, las nuevas extracciones se detienen. La base de datos permite que un backend confiable actualice plan, estado y período después de conciliar un pago. El endpoint de checkout/webhook todavía requiere implementarse y configurar las credenciales de la cuenta de vendedor y la firma de notificaciones de Mercado Pago. El precio mensual se define después de medir una cohorte piloto.
+El modelo recomendado es una suscripción mensual por contador con cupo de páginas compartido por su cartera, un límite firme y opción de subir de plan; evita lo impredecible de “ilimitado” sin mostrar al cliente una billetera de créditos. La prueba inicial incluye 30 unidades por 30 días y hasta 3 empresas. Los niveles configurables de referencia son Inicio (300 unidades/5 empresas), Estudio (2.000/25) y Firma (8.000/100); sus precios se mantienen vacíos hasta medir costos y validar demanda. Una imagen equivale a 1 unidad, cada página PDF a 1 y cada DTE XML a 1. El servidor reserva unidades al encolar y cuenta solo cuando la extracción queda lista; los fallos definitivos liberan la reserva. El cupo no se acumula ni es ilimitado. Al terminar el período o alcanzar el límite, las nuevas extracciones se detienen. La base de datos permite que un backend confiable actualice plan, estado y período después de conciliar un pago. El endpoint de checkout/webhook todavía requiere implementarse y configurar las credenciales de la cuenta de vendedor y la firma de notificaciones de Mercado Pago.
+
+No fijar precios mirando solo el costo de Gemini. Medir por 4–6 semanas por plan: consumo real de Gemini, almacenamiento y tráfico, comisión del medio de pago, costo de worker, soporte y tasa de reproceso. Como regla de partida, intenta que IA + almacenamiento + comisión variable representen como máximo 10–15% del precio; esto es un objetivo de margen para probar, no un precio validado. Analiza mediana y percentil 95 de uso por contador. Mantén un piloto de 10–20 estudios contables y después ajusta las unidades y precio de cada nivel. Si añades exceso, activa primero un umbral configurable y exige consentimiento explícito para seguir cobrando.
 
 ## Despliegue coordinado
 
@@ -36,7 +38,7 @@ Los procesadores comparten este control en Postgres, con bloqueo de filas, lease
 
 Los archivos nuevos tienen cuota inicial de 500 MB por cuenta. Los originales se conservan para trazabilidad; archivar una empresa o eliminar un comprobante no libera ese espacio. Las cargas abandonadas se cancelan y sus objetos se limpian después de vencer el token de carga. La retención de documentos guardados y las ampliaciones de almacenamiento deben acordarse antes de vender paquetes grandes. El almacenamiento histórico no está incluido en ese contador.
 
-Tarifas configurables mediante `GEMINI_INPUT_USD_PER_MILLION` y `GEMINI_OUTPUT_USD_PER_MILLION`; verificar precios actuales antes de operar. Valores iniciales para Gemini 2.5 Flash: 0,30 y 2,50. El registro de intentos conserva modelo, tokens de entrada/salida/razonamiento, tiempo y costo estimado.
+Tarifas configurables mediante `GEMINI_INPUT_USD_PER_MILLION` y `GEMINI_OUTPUT_USD_PER_MILLION`; verificar precios antes de operar. Google hoy lista Gemini 3.1 Flash-Lite a USD 0,25 por millón de tokens de entrada (texto/imagen/video) y USD 1,50 por millón de salida; admite PDF, imagen y respuestas estructuradas. Es una alternativa razonable para comparar con el modelo actual en un conjunto autorizado de boletas/facturas antes de adoptarlo; no cambies el modelo de producción sin medir exactitud de RUT, folio, fecha, impuestos y total. Para información contable sensible, usa facturación de API pagada: Google indica que el contenido del nivel gratuito puede usarse para mejorar productos y que en pago no se utiliza para ese fin. El registro de intentos conserva modelo, tokens de entrada/salida/razonamiento, tiempo y costo estimado.
 
 ## Verificación incluida
 
@@ -48,4 +50,4 @@ Quedan fuera de esta entrega la pasarela automática (requiere proveedor/cuenta 
 
 Antes de ofrecer grandes volúmenes: retención y precios de almacenamiento, paginación/filtrado de comprobantes completamente en servidor, métricas de tiempo de revisión/primera exportación y un ensayo de carga concurrente en staging. La lista actual pagina la descarga para evitar el corte de 1.000 filas, pero mantiene los documentos de la empresa en memoria del navegador.
 
-Referencias: [cuotas Gemini](https://ai.google.dev/gemini-api/docs/rate-limits), [facturación](https://ai.google.dev/gemini-api/docs/billing), [precios](https://ai.google.dev/gemini-api/docs/pricing), [condiciones](https://ai.google.dev/gemini-api/terms).
+Referencias: [cuotas Gemini](https://ai.google.dev/gemini-api/docs/rate-limits), [facturación](https://ai.google.dev/gemini-api/docs/billing), [modelos](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite), [precios y uso del contenido](https://ai.google.dev/gemini-api/docs/pricing), [suscripciones Mercado Pago Chile](https://www.mercadopago.cl/developers/es/docs/subscriptions/overview), [webhooks Mercado Pago](https://www.mercadopago.cl/developers/es/docs/subscriptions/additional-content/your-integrations/notifications/webhooks), [condiciones Gemini](https://ai.google.dev/gemini-api/terms).
