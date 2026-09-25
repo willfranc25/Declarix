@@ -130,11 +130,11 @@ describe('extractInvoiceData — backend propio (único camino)', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
-      json: async () => ({ error: 'Alcanzaste el límite mensual de extracciones con IA de tu plan.' }),
+      json: async () => ({ error: 'El proveedor de IA está temporalmente ocupado.' }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(extractInvoiceData(makeImageFile())).rejects.toThrow(/límite mensual/);
+    await expect(extractInvoiceData(makeImageFile())).rejects.toThrow(/temporalmente ocupado/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

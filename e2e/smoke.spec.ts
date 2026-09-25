@@ -8,12 +8,12 @@ import { test, expect } from '@playwright/test';
 
 test('la raíz muestra la landing pública sin sesión', async ({ page }) => {
   await page.goto('/');
-  // No redirige: es la página de venta
+  // No redirige: es la página pública de uso personal
   await expect(page).not.toHaveURL(/\/login/);
   await expect(page.locator('.landing-h1')).toContainText('rendición');
-  // Accountant-wide monthly plan, without unlimited processing claims.
-  await expect(page.locator('#precios .plan')).toHaveCount(1);
-  await expect(page.locator('#precios')).toContainText('Suscripción mensual');
+  await expect(page.locator('.landing-trust')).toContainText('uso personal');
+  await expect(page.locator('.landing')).toContainText('no tiene planes ni cobros por suscripción');
+  await expect(page.locator('#precios')).toHaveCount(0);
   // CTA lleva al login
   await page.getByRole('link', { name: 'Crear cuenta gratis' }).first().click();
   await expect(page).toHaveURL(/\/login/);

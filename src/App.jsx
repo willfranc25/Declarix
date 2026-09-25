@@ -9,7 +9,6 @@ import AppLayout from './components/Layout/AppLayout';
 // Todas las páginas son lazy: mantiene Recharts (Dashboard) y demás librerías
 // pesadas fuera del bundle inicial que carga la landing pública y el login.
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
-const UsagePage = lazy(() => import('./pages/UsagePage'));
 const ReconcilePage = lazy(() => import('./pages/ReconcilePage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const UploadPage = lazy(() => import('./pages/UploadPage'));
@@ -130,7 +129,6 @@ function AppRoutes() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="dashboard" element={<DashboardPage />} />
-                  <Route path="usage" element={<UsagePage />} />
                   <Route path="reconcile" element={<ReconcilePage />} />
                   <Route path="upload" element={<UploadPage />} />
                   <Route path="batch-review" element={<BatchReviewPage />} />

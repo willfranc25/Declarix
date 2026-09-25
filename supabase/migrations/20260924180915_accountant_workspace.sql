@@ -6,9 +6,8 @@ grant usage on schema private to authenticated, service_role;
 
 create table public.accountant_accounts (
  user_id uuid primary key references auth.users(id) on delete cascade,
- status text not null default 'trial' check(status in ('trial','active','suspended')),
- credits integer not null default 30 check(credits >= 0),
- reserved integer not null default 0 check(reserved >= 0 and reserved <= credits),
+ status text not null default 'active' check(status in ('active','suspended')),
+ reserved integer not null default 0 check(reserved >= 0),
  storage_bytes bigint not null default 0 check(storage_bytes >= 0),
  storage_limit_bytes bigint not null default 524288000,
  created_at timestamptz not null default now()
@@ -208,7 +207,7 @@ create table public.extraction_jobs (
  id uuid primary key, user_id uuid not null references auth.users(id), organization_id uuid not null references public.organizations(id),
  object_path text not null unique, filename text not null, mime_type text not null, file_bytes bigint not null check(file_bytes between 1 and 20971520),
  content_hash text, status text not null default 'uploading' check(status in ('uploading','queued','processing','ready','failed','cancelled','saved')),
- pages integer not null default 1, credits_reserved integer not null default 0, attempts integer not null default 0,
+ pages integer not null default 1, pages_reserved integer not null default 0, attempts integer not null default 0,
  result jsonb, review jsonb not null default '{}', error_code text, error_message text,
  available_at timestamptz not null default now(), lease_until timestamptz, lease_token uuid,
  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
@@ -235,16 +234,6 @@ alter table public.extraction_attempts enable row level security;
 create policy attempts_read on public.extraction_attempts for select to authenticated using(user_id=(select auth.uid()));
 grant select on public.extraction_attempts to authenticated;
 grant all on public.extraction_attempts to service_role;
-create table public.credit_ledger (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id), job_id uuid references public.extraction_jobs(id),
- amount integer not null, kind text not null check(kind in ('purchase','consume','adjustment')), reference text unique,
- created_at timestamptz not null default now(), unique(job_id,kind)
-);
-alter table public.credit_ledger enable row level security;
-create policy ledger_read on public.credit_ledger for select to authenticated using(user_id=(select auth.uid()));
-grant select on public.credit_ledger to authenticated;
-grant all on public.credit_ledger to service_role;
-
 -- Global pacing and conservative estimated budget reservation, controlled only by service_role.
 create table private.ai_control(id boolean primary key default true check(id), paused boolean not null default false,
  next_start timestamptz not null default now(), max_concurrent integer not null default 2, min_interval_seconds integer not null default 7,
@@ -272,9 +261,10 @@ declare a public.accountant_accounts; j public.extraction_jobs; begin
  select * into j from public.extraction_jobs where id=p_job and user_id=p_user for update;
  if j.id is null then raise exception 'JOB_NOT_FOUND'; end if;
  if j.status<>'uploading' then return j; end if;
- if a.status='suspended' or p_pages not between 1 and 100 or a.credits-a.reserved<p_pages then raise exception 'CREDITS_REQUIRED'; end if;
+ if a.status='suspended' then raise exception 'ACCOUNT_DISABLED'; end if;
+ if p_pages not between 1 and 100 then raise exception 'INVALID_PAGE_COUNT'; end if;
  update public.accountant_accounts set reserved=reserved+p_pages where user_id=p_user;
- update public.extraction_jobs set status='queued',content_hash=p_hash,pages=p_pages,credits_reserved=p_pages,updated_at=now() where id=j.id returning * into j;
+ update public.extraction_jobs set status='queued',content_hash=p_hash,pages=p_pages,pages_reserved=p_pages,updated_at=now() where id=j.id returning * into j;
  return j;
 end $$;
 create function public.claim_extraction() returns setof public.extraction_jobs language plpgsql security invoker set search_path='' as $$
@@ -302,14 +292,13 @@ declare j public.extraction_jobs; c private.ai_control; begin
  values(j.id,j.user_id,j.organization_id,coalesce(p_metrics->>'model','unknown'),coalesce((p_metrics->>'promptTokens')::int,0),coalesce((p_metrics->>'outputTokens')::int,0),coalesce((p_metrics->>'thinkingTokens')::int,0),coalesce((p_metrics->>'estimatedUsd')::numeric,0),coalesce((p_metrics->>'durationMs')::int,0),case when p_result is not null then 'success' else coalesce(p_error,'unknown') end);
  update private.ai_control set reserved_usd=greatest(0,reserved_usd-c.attempt_reservation_usd),spent_today=spent_today+coalesce((p_metrics->>'estimatedUsd')::numeric,c.attempt_reservation_usd) where id;
  if p_result is not null then
-  update public.accountant_accounts set reserved=reserved-j.credits_reserved,credits=credits-j.credits_reserved where user_id=j.user_id;
-  insert into public.credit_ledger(user_id,job_id,amount,kind,reference) values(j.user_id,j.id,-j.credits_reserved,'consume',j.id::text) on conflict do nothing;
-  update public.extraction_jobs set status='ready',result=p_result,credits_reserved=0,lease_until=null,error_code=null,error_message=null,updated_at=now() where id=j.id;
+  update public.accountant_accounts set reserved=reserved-j.pages_reserved where user_id=j.user_id;
+  update public.extraction_jobs set status='ready',result=p_result,pages_reserved=0,lease_until=null,error_code=null,error_message=null,updated_at=now() where id=j.id;
  elsif p_retry_seconds is not null and j.attempts<4 then
   update public.extraction_jobs set status='queued',available_at=now()+make_interval(secs=>greatest(1,p_retry_seconds)),lease_until=null,error_code=p_error,updated_at=now() where id=j.id;
  else
-  update public.accountant_accounts set reserved=reserved-j.credits_reserved where user_id=j.user_id;
-  update public.extraction_jobs set status='failed',credits_reserved=0,lease_until=null,error_code=p_error,error_message='No se pudo procesar. Puedes reintentar o cargar un archivo más legible.',updated_at=now() where id=j.id;
+  update public.accountant_accounts set reserved=reserved-j.pages_reserved where user_id=j.user_id;
+  update public.extraction_jobs set status='failed',pages_reserved=0,lease_until=null,error_code=p_error,error_message='No se pudo procesar. Puedes reintentar o cargar un archivo más legible.',updated_at=now() where id=j.id;
  end if;
  return true;
 end $$;
@@ -326,8 +315,8 @@ declare j public.extraction_jobs; begin
  if j.id is null then raise exception 'JOB_NOT_FOUND'; end if;
  if j.status='processing' then raise exception 'JOB_PROCESSING'; end if;
  if j.status in ('cancelled','saved','ready') then raise exception 'JOB_NOT_CANCELLABLE'; end if;
- update public.accountant_accounts set reserved=reserved-j.credits_reserved where user_id=p_user;
- update public.extraction_jobs set status='cancelled',credits_reserved=0,updated_at=now() where id=j.id;
+ update public.accountant_accounts set reserved=reserved-j.pages_reserved where user_id=p_user;
+ update public.extraction_jobs set status='cancelled',pages_reserved=0,updated_at=now() where id=j.id;
  return j.object_path;
 end $$;
 -- All queue mutations are called only by a backend that has verified the user.
@@ -368,25 +357,12 @@ declare j public.extraction_jobs; a public.accountant_accounts; begin
  select * into j from public.extraction_jobs where id=p_job and user_id=p_user for update;
  if j.id is null or j.status<>'failed' or j.attempts>=8 then raise exception 'JOB_NOT_FOUND'; end if;
  if not exists(select 1 from public.organizations where id=j.organization_id and accountant_id=p_user and not archived) then raise exception 'COMPANY_FORBIDDEN'; end if;
- if a.status='suspended' or a.credits-a.reserved<j.pages then raise exception 'CREDITS_REQUIRED'; end if;
+ if a.status='suspended' then raise exception 'ACCOUNT_DISABLED'; end if;
  update public.accountant_accounts set reserved=reserved+j.pages where user_id=p_user;
- update public.extraction_jobs set status='queued',credits_reserved=pages,available_at=now(),error_code=null,error_message=null,updated_at=now() where id=j.id;
+ update public.extraction_jobs set status='queued',pages_reserved=pages,available_at=now(),error_code=null,error_message=null,updated_at=now() where id=j.id;
 end $$;
-create function public.topup_credits(p_user uuid,p_amount integer,p_reference text) returns boolean language plpgsql security invoker set search_path='' as $$
-begin
- if p_amount<=0 or p_amount>1000000 or length(btrim(p_reference))<3 then raise exception 'Invalid credit adjustment'; end if;
- perform user_id from public.accountant_accounts where user_id=p_user for update;
- if not found then raise exception 'Account not found'; end if;
- if exists(select 1 from public.credit_ledger where reference=p_reference) then
-  if exists(select 1 from public.credit_ledger where reference=p_reference and user_id=p_user and amount=p_amount and kind='purchase') then return false; end if;
-  raise exception 'Reference already used for another operation';
- end if;
- insert into public.credit_ledger(user_id,amount,kind,reference) values(p_user,p_amount,'purchase',p_reference);
- update public.accountant_accounts set credits=credits+p_amount,status='active' where user_id=p_user;
- return true;
-end $$;
-revoke all on function public.retry_extraction(uuid,uuid),public.topup_credits(uuid,integer,text) from public,anon,authenticated;
-grant execute on function public.retry_extraction(uuid,uuid),public.topup_credits(uuid,integer,text) to service_role;
+revoke all on function public.retry_extraction(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.retry_extraction(uuid,uuid) to service_role;
 
 alter table public.extraction_jobs add column cleaned_at timestamptz;
 create function public.finish_cleanup(p_job uuid) returns void language plpgsql security invoker set search_path='' as $$

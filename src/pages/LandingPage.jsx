@@ -7,25 +7,11 @@ import Icon from '../components/ui/Icon';
  * construida en CSS puro con el vocabulario real del rubro (RUT, IVA 19%).
  */
 
-// The accountant subscription and monthly processing allowance cover the portfolio.
-const PLAN = {
-  name: 'Declarix para contadores',
-  price: 'Suscripción mensual',
-  period: 'planes según volumen',
-  features: [
-    'Unidades mensuales compartidas entre tus empresas',
-    'Una cuenta de contador, varias empresas',
-    'Exportaciones y respaldos por empresa',
-    'Historial de revisiones y exportaciones',
-    'Soporte directo por correo',
-  ],
-};
-
 const STEPS = [
   {
     n: '01',
     title: 'Selecciona empresa y carga',
-    text: 'Carga imágenes, PDF o XML DTE. Los archivos se procesan en segundo plano dentro del límite mensual de tu plan.',
+    text: 'Carga imágenes, PDF o XML DTE. Los archivos se procesan en segundo plano para que puedas continuar con tu trabajo.',
   },
   {
     n: '02',
@@ -53,8 +39,8 @@ const FAQS = [
     a: 'Los documentos se organizan por empresa dentro de tu cuenta de contador y se almacenan de forma privada.',
   },
   {
-    q: '¿Cómo se paga?',
-    a: 'Cada plan incluye un límite mensual compartido por toda tu cartera. La prueba no requiere pago. El cobro recurrente en línea se habilitará después de validar los planes con contadores piloto.',
+    q: '¿Tiene costo o suscripción?',
+    a: 'La versión actual está pensada para uso personal y no tiene planes ni cobros por suscripción. Un modelo de suscripción podrá evaluarse más adelante.',
   },
 ];
 
@@ -237,7 +223,6 @@ export default function LandingPage() {
           </div>
           <div className="landing-nav-links">
             <a href="#como-funciona">Cómo funciona</a>
-            <a href="#precios">Precios</a>
             <Link to="/login" className="btn btn-primary">Entrar</Link>
           </div>
         </nav>
@@ -248,14 +233,13 @@ export default function LandingPage() {
               Tu cartera ordenada. Cada empresa con su <span className="marker">rendición lista para revisar</span>.
             </h1>
             <p className="landing-sub">
-              Declarix ayuda a contadores a reunir boletas y facturas de sus empresas,
+              Declarix te ayuda a reunir boletas y facturas de tu empresa,
               extraer los datos, revisar diferencias y preparar la rendición en Excel.
             </p>
             <div className="landing-cta-row">
               <Link to="/login" className="btn btn-primary btn-lg">Crear cuenta gratis</Link>
-              <a href="#precios" className="btn btn-secondary btn-lg">Ver cómo funciona el plan</a>
             </div>
-            <p className="landing-trust">Prueba con 30 unidades incluidas · Sin tarjeta</p>
+            <p className="landing-trust">Para uso personal · Sin suscripción</p>
           </div>
 
           <div className="hero-demo" aria-hidden="true">
@@ -299,38 +283,6 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-        </section>
-
-        <section className="landing-section" id="precios">
-          <p className="landing-eyebrow">Precio</p>
-          <h2 className="landing-h2">Un plan para toda tu cartera.</h2>
-          <div className="pricing-grid">
-            <div className="plan highlight">
-              <div>
-                <div className="plan-name">{PLAN.name}</div>
-                <div className="plan-price">
-                  {PLAN.price} <small>{PLAN.period}</small>
-                </div>
-              </div>
-              <ul>
-                {PLAN.features.map((f) => (
-                  <li key={f}><Icon name="check" size={14} />{f}</li>
-                ))}
-              </ul>
-              <Link to="/login" className="btn btn-primary w-full">Crear cuenta gratis</Link>
-            </div>
-            <div className="pricing-aside">
-              <h3>Una suscripción para toda tu cartera</h3>
-              <p>
-                Prueba el flujo con tus primeras empresas. Cada plan tiene un
-                límite mensual compartido por toda tu cartera. Solo se cuentan
-                los documentos procesados correctamente; al llegar al límite,
-                las nuevas extracciones se pausan hasta el próximo período o
-                cambio de plan.
-              </p>
-            </div>
-          </div>
-          <p className="pricing-note">Los precios se definirán tras un piloto. El cobro recurrente estará disponible al habilitar pagos en línea.</p>
         </section>
 
         <section className="landing-section">

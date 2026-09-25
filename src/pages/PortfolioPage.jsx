@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useCompany } from "../context/CompanyContext";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../services/supabaseClient";
@@ -14,20 +14,11 @@ export default function PortfolioPage() {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [account, setAccount] = useState(null);
   const [summary, setSummary] = useState([]);
   useEffect(() => {
     let current = true;
-    Promise.all([
-      supabase
-        .from("accountant_accounts")
-        .select("*")
-        .eq("user_id", user.id)
-        .single(),
-      supabase.rpc("portfolio_summary", { p_period: todayChile().slice(0, 7) }),
-    ]).then(([a, s]) => {
+    supabase.rpc("portfolio_summary", { p_period: todayChile().slice(0, 7) }).then((s) => {
       if (current) {
-        setAccount(a.data);
         setSummary(s.data || []);
       }
     });
@@ -112,11 +103,6 @@ export default function PortfolioPage() {
         <div className="card">
           <span>Por revisar este mes</span>
           <strong>{summary.reduce((n, c) => n + Number(c.pending), 0)}</strong>
-        </div>
-        <div className="card">
-          <span>Unidades disponibles este mes</span>
-          <strong>{account ? Math.max(0, account.monthly_limit - account.monthly_used - account.reserved) : "—"}</strong>
-          <Link to="/usage">Ver plan y consumo</Link>
         </div>
       </div>
       {(message || error) && (

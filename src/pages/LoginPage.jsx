@@ -195,7 +195,7 @@ export default function LoginPage() {
         <div className="login-form-panel">
           <div className="login-card">
             <h1 className="login-title">{isLogin ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h1>
-            <p className="login-subtitle">{isLogin ? 'Ingresa tus datos para continuar.' : 'Un solo plan, todo incluido.'}</p>
+            <p className="login-subtitle">{isLogin ? 'Ingresa tus datos para continuar.' : 'Crea tu cuenta para organizar tus documentos.'}</p>
 
             {error && (
               <div style={{

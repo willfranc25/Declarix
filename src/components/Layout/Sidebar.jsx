@@ -8,7 +8,6 @@ import useUploadQueueStore from '../../store/uploadQueueStore';
 const baseItems = [
   { path: '/dashboard', label: 'Resumen de empresa', shortLabel: 'Resumen', icon: <Icon name="chart" /> },
   { path: '/reconcile', label: 'Conciliación RCV', shortLabel: 'RCV', icon: <Icon name="document" /> },
-  { path: '/usage', label: 'Plan y consumo', shortLabel: 'Plan', icon: <Icon name="document" /> },
   {
     path: '/',
     label: 'Mi cartera',
@@ -73,7 +72,7 @@ const baseItems = [
   },
 ];
 
-const navigationOrder=['/','/dashboard','/upload','/batch-review','/invoices','/reports','/reconcile','/usage','/settings'];
+const navigationOrder=['/','/dashboard','/upload','/batch-review','/invoices','/reports','/reconcile','/settings'];
 const navItems=navigationOrder.map(path=>baseItems.find(item=>item.path===path));
 
 export default function Sidebar() {

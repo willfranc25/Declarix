@@ -1,6 +1,6 @@
 # Declarix: cuenta de contador y cartera de empresas
 
-Esta versión cambia la unidad de cuenta: un contador administra varias empresas. No crea una empresa ficticia al registrarse. La suscripción y el almacenamiento pertenecen al contador; documentos, categorías, reglas, plantillas, cierres y exportaciones pertenecen a cada empresa.
+La versión actual está pensada para uso personal: una cuenta administra una o varias empresas, sin planes, pagos ni límites mensuales de procesamiento. El almacenamiento pertenece a la cuenta; documentos, categorías, reglas, plantillas, cierres y exportaciones pertenecen a cada empresa.
 
 ## Flujo implementado
 
@@ -12,11 +12,9 @@ Esta versión cambia la unidad de cuenta: un contador administra varias empresas
 6. Preparar la rendición mensual, anual o por rango. El ZIP divide la plantilla en grupos de 25 y agrega Excel completo, índice con IDs y huella de plantilla y, opcionalmente, originales. Se preservan otras partes de XLSX/XLSM; las fórmulas se recalculan al abrir en Excel. Revisar las fórmulas de la plantilla para impuestos especiales/exentos/retenciones: el Excel completo contiene los montos documentados.
 7. Exportar registra una instantánea y estado **Exportado**; no marca **Declarado**. Se puede cerrar/reabrir cada mes. La conciliación RCV compara un CSV descargado por el contador; no inicia sesión ni declara ante el SII.
 
-## Suscripción y uso
+## Suscripciones (idea futura, no activa)
 
-El modelo recomendado es una suscripción mensual por contador con cupo de páginas compartido por su cartera, un límite firme y opción de subir de plan; evita lo impredecible de “ilimitado” sin mostrar al cliente una billetera de créditos. La prueba inicial incluye 30 unidades por 30 días y hasta 3 empresas. Los niveles configurables de referencia son Inicio (300 unidades/5 empresas), Estudio (2.000/25) y Firma (8.000/100); sus precios se mantienen vacíos hasta medir costos y validar demanda. Una imagen equivale a 1 unidad, cada página PDF a 1 y cada DTE XML a 1. El servidor reserva unidades al encolar y cuenta solo cuando la extracción queda lista; los fallos definitivos liberan la reserva. El cupo no se acumula ni es ilimitado. Al terminar el período o alcanzar el límite, las nuevas extracciones se detienen. La base de datos permite que un backend confiable actualice plan, estado y período después de conciliar un pago. El endpoint de checkout/webhook todavía requiere implementarse y configurar las credenciales de la cuenta de vendedor y la firma de notificaciones de Mercado Pago.
-
-No fijar precios mirando solo el costo de Gemini. Medir por 4–6 semanas por plan: consumo real de Gemini, almacenamiento y tráfico, comisión del medio de pago, costo de worker, soporte y tasa de reproceso. Como regla de partida, intenta que IA + almacenamiento + comisión variable representen como máximo 10–15% del precio; esto es un objetivo de margen para probar, no un precio validado. Analiza mediana y percentil 95 de uso por contador. Mantén un piloto de 10–20 estudios contables y después ajusta las unidades y precio de cada nivel. Si añades exceso, activa primero un umbral configurable y exige consentimiento explícito para seguir cobrando.
+La aplicación no implementa actualmente suscripciones, pagos, planes comerciales ni cupos mensuales. Para un eventual lanzamiento a contadores, se puede evaluar una suscripción mensual por cuenta con capacidad de procesamiento incluida y límites operacionales transparentes. Antes de fijar precio conviene medir durante un piloto el costo de IA, almacenamiento, tráfico, worker, soporte y reprocesos, además del uso mediano y de alto percentil. No se han definido niveles, precios, pasarela de pago ni fechas; nada de ese modelo está activo en esta versión.
 
 ## Despliegue coordinado
 

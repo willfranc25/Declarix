@@ -32,10 +32,7 @@ const messages = {
   ACCOUNT_DISABLED: "La cuenta no está habilitada.",
   STORAGE_LIMIT: "No hay espacio disponible para este archivo.",
   UPLOAD_LIMIT: "Finaliza o cancela las cargas pendientes.",
-  CREDITS_REQUIRED: "El plan no tiene unidades disponibles para esta carga.",
-  MONTHLY_LIMIT_REACHED: "Alcanzaste el límite mensual del plan. Cambia de plan o espera el próximo período.",
-  SUBSCRIPTION_REQUIRED: "La prueba terminó. Activa una suscripción para procesar más documentos.",
-  PLAN_COMPANY_LIMIT: "Llegaste al máximo de empresas incluidas en tu plan.",
+  INVALID_PAGE_COUNT: "El archivo contiene una cantidad de páginas no válida.",
   JOB_PROCESSING: "El archivo está en procesamiento.",
   INVALID_FILE:
     "Archivo inválido. Usa JPEG, PNG, WEBP, PDF sin contraseña o XML DTE; máximo 20 MB y 20 páginas.",

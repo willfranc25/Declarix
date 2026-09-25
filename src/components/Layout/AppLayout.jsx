@@ -7,7 +7,7 @@ import '../../styles/workspace.css';
 export default function AppLayout({ children }) {
   const { activeCompany, loading } = useCompany();
   const { pathname } = useLocation();
-  const companyNeeded = !['/', '/usage', '/reset-password'].includes(pathname);
+  const companyNeeded = !['/', '/reset-password'].includes(pathname);
   return <div className="app-layout"><Sidebar /><UploadQueueWatcher />
     <main className="app-main"><CompanyBar />
       {loading ? <p role="status">Cargando cartera…</p> : companyNeeded && !activeCompany

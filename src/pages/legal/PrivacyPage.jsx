@@ -23,14 +23,14 @@ export default function PrivacyPage() {
           extraídos de ellas (RUT y nombre de proveedores, montos, fechas, tipos
           de gasto). Pueden incluir datos de terceros (tus proveedores).
         </li>
-        <li><strong>Uso:</strong> registros técnicos de operaciones (extracciones, exportaciones) asociados a tu organización, usados para aplicar los límites del plan.</li>
+        <li><strong>Uso:</strong> registros técnicos de operaciones (extracciones, exportaciones) asociados a tu cuenta, usados para operar el servicio y resolver errores.</li>
         <li><strong>Errores:</strong> si ocurre una falla, registramos información técnica del error para diagnosticarla.</li>
       </ul>
 
       <h2>3. Finalidades</h2>
       <ul>
         <li>Prestar el servicio: digitalizar, validar, almacenar y exportar tus comprobantes.</li>
-        <li>Operar los límites y la facturación del plan contratado.</li>
+        <li>Operar el servicio, protegerlo contra abusos y resolver problemas técnicos.</li>
         <li>Seguridad, prevención de fraude y soporte.</li>
       </ul>
       <p>No vendemos tus datos ni los usamos para publicidad de terceros.</p>

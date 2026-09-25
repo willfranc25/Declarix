@@ -1,4 +1,4 @@
-> Esta documentación describe la versión anterior. Para la cuenta de contador, créditos y nueva seguridad, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración nueva requiere despliegue coordinado y no es idempotente.
+> Las migraciones listadas abajo conservan el historial de la arquitectura anterior. Para el esquema actual de uso personal y cartera, consulta [ESPACIO-CONTADOR.md](ESPACIO-CONTADOR.md). La migración nueva requiere despliegue coordinado y no es idempotente.
 
 # Migraciones de base de datos
 
@@ -18,7 +18,7 @@ con sintaxis SQL inválida en las políticas de UPDATE/DELETE de `invoices`.
    colaborador/lector); organización personal automática por usuario nuevo
    (trigger sobre `auth.users`) con backfill para usuarios existentes;
    `organization_id` en las tablas de datos; RLS por membresía y rol; límite
-   de usuarios por plan. Ver `docs/PLANES.md`.
+   de usuarios por plan (comportamiento histórico previo a la migración de cartera).
 
 Ambas son idempotentes (`IF NOT EXISTS` / `DROP POLICY IF EXISTS`): se pueden
 re-ejecutar sin efectos secundarios. Ejecutar con `supabase db push` (CLI) o

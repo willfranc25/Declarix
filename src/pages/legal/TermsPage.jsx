@@ -29,12 +29,12 @@ export default function TermsPage() {
         <li>Puedes cerrar tu cuenta en cualquier momento escribiendo a soporte.</li>
       </ul>
 
-      <h2>3. Planes y pagos</h2>
+      <h2>3. Uso y pagos</h2>
       <p>
-        El plan Gratis tiene límites de uso publicados en la página de precios.
-        Los planes de pago se contratan por contacto directo y se facturan en
-        pesos chilenos. Los límites de cada plan pueden ajustarse con aviso
-        previo razonable; nunca reduciremos retroactivamente lo ya contratado.
+        La versión actual está destinada al uso personal y no ofrece planes ni
+        suscripciones pagadas. Esta condición puede cambiar en el futuro; si se
+        habilitan pagos o suscripciones, sus condiciones se informarán antes de
+        que debas contratar o pagar.
       </p>
 
       <h2>4. Contenido y datos</h2>
