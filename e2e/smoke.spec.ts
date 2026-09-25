@@ -11,9 +11,9 @@ test('la raíz muestra la landing pública sin sesión', async ({ page }) => {
   // No redirige: es la página de venta
   await expect(page).not.toHaveURL(/\/login/);
   await expect(page.locator('.landing-h1')).toContainText('rendición');
-  // Account-wide document credits, without unlimited processing claims.
+  // Accountant-wide monthly plan, without unlimited processing claims.
   await expect(page.locator('#precios .plan')).toHaveCount(1);
-  await expect(page.locator('#precios')).toContainText('Paquetes de créditos');
+  await expect(page.locator('#precios')).toContainText('Suscripción mensual');
   // CTA lleva al login
   await page.getByRole('link', { name: 'Crear cuenta gratis' }).first().click();
   await expect(page).toHaveURL(/\/login/);
@@ -26,11 +26,14 @@ test('las páginas legales son públicas', async ({ page }) => {
   await expect(page.locator('h1')).toContainText('privacidad');
 });
 
-test('la página de login muestra la marca y el formulario', async ({ page }) => {
+test('la página de login muestra la marca y el formulario', async ({ page }, testInfo) => {
   await page.goto('/login');
 
   await expect(page).toHaveTitle(/Declarix/);
-  await expect(page.getByText('Declarix').first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
+  // En móvil el panel de marca se oculta para dejar espacio al formulario.
+  if (testInfo.project.name !== 'mobile')
+    await expect(page.locator('.login-brand-logo')).toContainText('Declarix');
   await expect(page.locator('input[type="email"]').first()).toBeVisible();
   await expect(page.locator('input[type="password"]').first()).toBeVisible();
   await expect(page.locator('button[type="submit"]').first()).toBeVisible();
