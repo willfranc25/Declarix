@@ -7,7 +7,7 @@ import indexedDBProvider from './indexedDBProvider';
  * Futuro: Supabase remoto cuando haya credenciales configuradas.
  *
  * Ambos proveedores implementan la misma interfaz:
- *   initialize(), getAll(), getById(), save(), update(), delete(),
+ *   initialize(), getAll(), getById(), save(), saveWithImage(), update(), delete(),
  *   saveImage(), getImage(), deleteImage(),
  *   getSetting(), saveSetting(), clearAll(), importInvoice()
  */

@@ -142,20 +142,30 @@ export async function importBackup(zipFile, options = { overwrite: true, importI
 
     // 4. Importar imágenes
     if (options.importImages) {
-      const imagesFolder = content.folder('images');
-      if (imagesFolder) {
-        for (const [filename, file] of Object.entries(imagesFolder.files)) {
-          try {
-            const blob = await file.async('blob');
-            const invoiceId = filename.replace(/\.[^.]+$/, '');
-            await storage.saveImage(invoiceId, blob);
-            results.images++;
-          } catch (e) {
-            results.errors.push(`Imagen ${filename}: ${e.message}`);
+      const invoiceIds = new Set(
+        content.files['invoices.json']
+          ? JSON.parse(await content.files['invoices.json'].async('text')).map((invoice) => String(invoice.id))
+          : [],
+      );
+      for (const [archivePath, file] of Object.entries(content.files)) {
+        if (file.dir || !archivePath.startsWith('images/')) continue;
+        try {
+          const filename = archivePath.slice('images/'.length).split('/').pop();
+          const invoiceId = filename.replace(/\.[^.]+$/, '');
+          if (!invoiceId || !invoiceIds.has(invoiceId)) {
+            results.errors.push(`Imagen ${filename}: no corresponde a un comprobante del respaldo.`);
+            continue;
           }
+          const extension = filename.split('.').pop()?.toLowerCase();
+          const mimeType = ({ jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' })[extension] || 'application/octet-stream';
+          const blob = new Blob([await file.async('uint8array')], { type: mimeType });
+          await storage.saveImage(invoiceId, blob);
+          results.images++;
+        } catch (e) {
+          results.errors.push(`Imagen ${archivePath}: ${e.message}`);
         }
-        logger.debug(`Importadas ${results.images} imágenes`);
       }
+      logger.debug(`Importadas ${results.images} imágenes`);
     }
 
     return { success: true, ...results };
@@ -175,11 +185,13 @@ export async function validateBackupFile(zipFile) {
     const hasInvoices = !!content.files['invoices.json'];
     const hasMetadata = !!content.files['metadata.json'];
     const invoiceCount = hasInvoices ? JSON.parse(await content.files['invoices.json'].async('text')).length : 0;
+    const imageCount = Object.entries(content.files).filter(([path, file]) => path.startsWith('images/') && !file.dir).length;
 
     return {
       valid: hasInvoices,
       hasMetadata,
       invoiceCount,
+      imageCount,
       files: Object.keys(content.files).length
     };
   } catch (error) {

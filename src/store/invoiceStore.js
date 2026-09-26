@@ -35,12 +35,14 @@ const useInvoiceStore = create((set, get) => ({
     try {
       const storage = getStorageProvider();
       if (Object.keys(documentErrors(invoiceData)).length) throw new Error(Object.values(documentErrors(invoiceData)).join(" · "));
-      if (imageFile && !invoiceData.source_job_id) throw new Error("Carga el original antes de guardar.");
-      const newInvoice = await storage.save(invoiceData);
+      if (imageFile && !invoiceData.source_job_id && !storage.saveWithImage && !storage.saveImage)
+        throw new Error("Este almacenamiento no permite guardar el original con el comprobante.");
+      const newInvoice = imageFile && !invoiceData.source_job_id && storage.saveWithImage
+        ? await storage.saveWithImage(invoiceData, imageFile)
+        : await storage.save(invoiceData);
 
-      if (imageFile && !invoiceData.source_job_id) {
+      if (imageFile && !invoiceData.source_job_id && !storage.saveWithImage)
         await storage.saveImage(newInvoice.id, imageFile);
-      }
 
       if (generation === getWorkspaceGeneration()) set((state) => ({
         invoices: [newInvoice, ...state.invoices].sort((a, b) =>

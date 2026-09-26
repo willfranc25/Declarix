@@ -43,6 +43,22 @@ const indexedDBProvider = {
     return invoice;
   },
 
+  /** Guarda el comprobante y su original en una misma transacción local. */
+  async saveWithImage(invoiceData, blob) {
+    const now = new Date().toISOString();
+    const invoice = {
+      id: uuidv4(),
+      ...invoiceData,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.transaction('rw', db.invoices, db.images, async () => {
+      await db.invoices.add(invoice);
+      await db.images.put({ id: invoice.id, blob });
+    });
+    return invoice;
+  },
+
   /**
    * Actualiza un comprobante existente.
    */

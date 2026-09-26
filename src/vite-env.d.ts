@@ -94,6 +94,7 @@ declare module '../services/storage/StorageProvider' {
     getAll: () => Promise<any[]>;
     getById: (id: string) => Promise<any | null>;
     save: (data: any) => Promise<any>;
+    saveWithImage: (data: any, blob: Blob) => Promise<any>;
     update: (id: string, updates: any) => Promise<any>;
     delete: (id: string) => Promise<void>;
     saveImage: (id: string, blob: Blob) => Promise<void>;
