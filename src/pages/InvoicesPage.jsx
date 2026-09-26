@@ -9,6 +9,26 @@ import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 
+function getActivePreset(filters) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  let previousMonth = month - 1;
+  let previousYear = year;
+  if (previousMonth === 0) {
+    previousMonth = 12;
+    previousYear -= 1;
+  }
+  const quarterStart = Math.floor((month - 1) / 3) * 3 + 1;
+  const quarterMonths = [quarterStart, quarterStart + 1, quarterStart + 2];
+
+  if (filters.month === month && filters.year === year && !filters.months) return 'this_month';
+  if (filters.month === previousMonth && filters.year === previousYear && !filters.months) return 'prev_month';
+  if (filters.year === year && !filters.month && filters.months?.join(',') === quarterMonths.join(',')) return 'this_quarter';
+  if (filters.year === year && !filters.month && !filters.months) return 'tax_year';
+  return null;
+}
+
 // Subcomponent for each invoice row, supporting swipe actions on mobile
 function InvoiceRow({
   inv,
@@ -247,6 +267,7 @@ function InvoiceRow({
 export default function InvoicesPage() {
   const navigate = useNavigate();
   const {
+    invoices,
     loadInvoices,
     deleteInvoice,
     updateTaxStatus,
@@ -260,12 +281,35 @@ export default function InvoicesPage() {
   } = useInvoiceStore();
 
   const filteredInvoices = getFilteredInvoices();
+  const activePreset = getActivePreset(filters);
+  const hasActiveFilters = Object.values(filters).some((value) =>
+    Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== '',
+  );
+  const activeFilterLabels = [];
+  if (filters.month !== undefined) {
+    activeFilterLabels.push(
+      `${new Intl.DateTimeFormat('es-CL', { month: 'long' }).format(new Date(2000, filters.month - 1, 1))}${filters.year ? ` ${filters.year}` : ''}`,
+    );
+  } else if (filters.months?.length) {
+    const quarterStart = Math.floor((new Date().getMonth()) / 3) * 3 + 1;
+    const currentQuarterMonths = [quarterStart, quarterStart + 1, quarterStart + 2];
+    activeFilterLabels.push(
+      filters.months.join(',') === currentQuarterMonths.join(',') && filters.year === new Date().getFullYear()
+        ? `Trimestre actual ${filters.year}`
+        : `Meses ${filters.months.join(', ')}${filters.year ? ` de ${filters.year}` : ''}`,
+    );
+  } else if (filters.year !== undefined) {
+    activeFilterLabels.push(`Año ${filters.year}`);
+  }
+  if (filters.providerSearch) activeFilterLabels.push(`Proveedor: ${filters.providerSearch}`);
+  if (filters.expenseType) activeFilterLabels.push(`Gasto: ${filters.expenseType}`);
+  if (filters.documentType) activeFilterLabels.push(`Documento: ${filters.documentType}`);
+  if (filters.taxStatus) activeFilterLabels.push(filters.taxStatus === 'declared' ? 'Declaradas' : 'Pendientes');
 
   const [deleteId, setDeleteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const [activePreset, setActivePreset] = useState(null);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -376,11 +420,9 @@ export default function InvoicesPage() {
 
     // Repetir clic en un chip activo lo desactiva (quita el filtro de fecha)
     if (activePreset === preset) {
-      setActivePreset(null);
       setFilters({ month: undefined, months: undefined, year: undefined });
       return;
     }
-    setActivePreset(preset);
 
     if (preset === 'this_month') {
       setFilters({ month: currentMonth, year: currentYear, months: undefined });
@@ -447,7 +489,14 @@ export default function InvoicesPage() {
       <div className="page-header flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="page-title">Comprobantes</h1>
-          <p className="page-subtitle">{filteredInvoices.length} comprobantes encontrados</p>
+          <p className="page-subtitle">
+            {filteredInvoices.length === invoices.length
+              ? `${invoices.length} comprobantes`
+              : `${filteredInvoices.length} de ${invoices.length} comprobantes`}
+            {hasActiveFilters && (
+              <> · {activeFilterLabels.join(' · ') || 'Filtros activos'} <button className="btn btn-ghost btn-sm" onClick={() => clearFilters()} style={{ padding: '0 4px', textDecoration: 'underline' }}>Mostrar todos</button></>
+            )}
+          </p>
         </div>
         <button 
           className="btn btn-primary" 
@@ -561,7 +610,7 @@ export default function InvoicesPage() {
                 alignItems: 'center',
                 justifyContent: 'center'
               } : {}}
-              onClick={() => { clearFilters(); setActivePreset(null); }}
+              onClick={() => clearFilters()}
             >
               Limpiar
             </button>
