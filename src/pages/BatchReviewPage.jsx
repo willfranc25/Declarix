@@ -22,7 +22,7 @@ const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
   { key: 'providerRut', label: 'RUT', type: 'text' },
   { key: 'documentType', label: 'Tipo Doc', type: 'select', options: DOCUMENT_TYPES },
-  { key: 'documentNumber', label: 'N° Doc', type: 'text' },
+  { key: 'documentNumber', label: 'Folio / operación', type: 'text' },
   { key: 'date', label: 'Fecha', type: 'date' },
   { key: 'expenseType', label: 'Tipo Gasto', type: 'select', options: EXPENSE_TYPES },
   { key: 'netAmount', label: 'Neto', type: 'number' },
@@ -631,7 +631,7 @@ export default function BatchReviewPage() {
                   <div className="alert alert-warning" style={{ padding: 'var(--space-3)' }}>
                     <Icon name="copy" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                     <div className="text-xs">
-                      Posible duplicado: ya existe un comprobante con el mismo RUT, tipo de documento y folio.
+                      Posible duplicado: ya existe un comprobante con el mismo RUT, tipo de documento e identificador.
                     </div>
                   </div>
                 )}
@@ -658,7 +658,7 @@ export default function BatchReviewPage() {
                     {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
                   </div>
                   <div className="form-group">
-                    <label className="form-label">N° documento</label>
+                    <label className="form-label">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° operación del voucher' : 'Folio / N° documento'}</label>
                     <input
                       className="form-input text-mono"
                       value={activeRow.documentNumber ?? ''}

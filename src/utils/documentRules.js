@@ -4,6 +4,7 @@ export function normalizeDocumentType(value) {
   if (typeof value !== "string") return null;
   const plain = value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (!plain) return null;
+  if (/comprobante.*pago|voucher|valido como boleta/.test(plain)) return "Comprobante de pago electrónico";
   if (/nota de credito/.test(plain)) return "Nota de Crédito";
   if (/nota de debito/.test(plain)) return "Nota de Débito";
   if (/boleta.*honorario/.test(plain)) return "Boleta de Honorarios";
@@ -71,7 +72,8 @@ export function documentErrors(doc, today = todayChile()) {
       ? "El RUT leído no coincide con su dígito verificador. Compáralo con la foto."
       : "Falta RUT";
   if (!String(doc.documentNumber || "").trim())
-    errors.documentNumber = "Falta folio";
+    errors.documentNumber = normalizeDocumentType(doc.documentType) === "Comprobante de pago electrónico"
+      ? "Falta número de operación del voucher" : "Falta folio";
   if (!civilDate(doc.date)) errors.date = "Fecha inválida o ausente";
   else if (doc.date > today) errors.date = "Fecha futura";
   if (!doc.documentType) errors.documentType = "Falta tipo de documento";

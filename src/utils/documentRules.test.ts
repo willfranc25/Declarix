@@ -8,6 +8,12 @@ describe('document correctness',()=>{
  it('balances exempt amounts, taxes and retentions',()=>{expect(documentErrors(valid,'2026-09-24')).toEqual({});expect(documentErrors({...valid,otherTax:0},'2026-09-24').amounts).toBeTruthy();});
  it('subtracts credit notes without mutating original positive amounts',()=>{expect(signedAmount({...valid,documentType:'Nota de Crédito'},'totalAmount')).toBe(-1390);expect(valid.totalAmount).toBe(1390);});
  it('deduplicates by issuer, type and normalized folio',()=>{expect(documentKey(valid)).toBe(documentKey({...valid,providerRut:'76.123.456-0',documentNumber:'0001',documentType:'Factura Electrónica'}));expect(documentKey(valid)).not.toBe(documentKey({...valid,documentType:'Nota de Crédito'}));});
+ it('uses a separate voucher type and requires its operation identifier',()=>{
+  const voucher={...valid,documentType:'Comprobante de pago electrónico',documentNumber:null};
+  expect(documentErrors(voucher,'2026-09-24').documentNumber).toMatch(/operación/);
+  expect(documentErrors({...voucher,documentNumber:'177217075749'},'2026-09-24')).toEqual({});
+  expect(documentKey({...voucher,documentNumber:'177217075749'})).not.toBe(documentKey({...valid,documentNumber:'177217075749'}));
+ });
  it('compares RCV without silently importing or changing records',()=>{
   const result=reconcileRCV('RUT Proveedor;Tipo Doc;Folio;Monto Total\n76123456-0;33;1;1.390\n76123456-0;33;2;100',[valid]);
   expect(result.map(r=>r.status)).toEqual(['coincide','solo_rcv']);expect(valid.totalAmount).toBe(1390);
