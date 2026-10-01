@@ -2,9 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument } from "pdf-lib";
 import { inspectDocument, parseDTE } from "./documentInput.js";
-import { retrySeconds, runOne } from "./worker.js";
+import { retrySeconds, runOne, validFieldLocations } from "./worker.js";
 const xml =
   "<DTE><Documento><Encabezado><IdDoc><TipoDTE>33</TipoDTE><Folio>10</Folio><FchEmis>2026-01-01</FchEmis></IdDoc><Emisor><RUTEmisor>76123456-0</RUTEmisor><RznSoc>Empresa</RznSoc></Emisor><Totales><MntNeto>1000</MntNeto><IVA>190</IVA><MntTotal>1190</MntTotal></Totales></Encabezado></Documento></DTE>";
+test("field positions keep only bounded boxes for supported receipt fields", () => {
+  assert.deepEqual(validFieldLocations({
+    documentNumber: { x: 100, y: 200, width: 180, height: 30 },
+    totalAmount: { x: 900, y: 950, width: 200, height: 60 },
+    unknown: { x: 1, y: 1, width: 1, height: 1 },
+  }), { documentNumber: { x: 100, y: 200, width: 180, height: 30 } });
+});
 test("XML extracts deterministic DTE data and rejects external entities", () => {
   assert.equal(parseDTE(xml)[0].totalAmount, 1190);
   assert.throws(

@@ -18,6 +18,15 @@ export async function documentRequest(action, payload) {
     throw new Error(data.error || "No se pudo completar la carga.");
   return data;
 }
+export async function fetchDocumentPreview(jobId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Inicia sesión nuevamente.");
+  const response = await fetch(`/api/document-preview?jobId=${encodeURIComponent(jobId)}`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!response.ok) throw new Error("No se pudo cargar la vista previa.");
+  return response.blob();
+}
 export async function uploadDocument(file, companyId) {
   const mimeType =
     file.type || (/\.xml$/i.test(file.name) ? "application/xml" : "");
@@ -70,7 +79,7 @@ export async function listJobs(companyId) {
   for (let from = 0; ; from += 100) {
     const { data, error } = await supabase
       .from("extraction_jobs")
-      .select("*")
+      .select("id,filename,file_bytes,mime_type,status,result,review,object_path,error_message,error_code,created_at,updated_at")
       .eq("organization_id", companyId)
       .not("status", "in", "(cancelled,saved)")
       .order("created_at", { ascending: false })
@@ -79,6 +88,18 @@ export async function listJobs(companyId) {
     if (error) throw error;
     rows.push(...data);
     if (data.length < 100) return rows;
+  }
+}
+export async function listInvoiceKeys(companyId) {
+  const rows = [];
+  for (let from = 0; ; from += 500) {
+    const { data, error } = await supabase.from("invoices")
+      .select("providerRut,documentNumber,documentType")
+      .eq("organization_id", companyId).eq("deleted", false)
+      .range(from, from + 499);
+    if (error) throw error;
+    rows.push(...data);
+    if (data.length < 500) return rows;
   }
 }
 export async function patchReview(jobId, index, patch) {

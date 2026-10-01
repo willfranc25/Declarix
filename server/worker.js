@@ -21,6 +21,23 @@ const stringFields = [
   "referenceNumber",
   "costCenter",
 ];
+const locationFields = new Set([
+  "providerName", "providerRut", "documentNumber", "documentType", "date",
+  "expenseType", "netAmount", "ivaAmount", "totalAmount",
+]);
+export function validFieldLocations(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const locations = {};
+  for (const [field, box] of Object.entries(value)) {
+    if (!locationFields.has(field) || !box || typeof box !== "object") continue;
+    const { x, y, width, height } = box;
+    if (![x, y, width, height].every(Number.isFinite) ||
+        x < 0 || y < 0 || width <= 0 || height <= 0 ||
+        x + width > 1000 || y + height > 1000) continue;
+    locations[field] = { x, y, width, height };
+  }
+  return locations;
+}
 export function retrySeconds(status, attempt, retryAfter = "") {
   if (![408, 429, 500, 502, 503, 504].includes(status)) return null;
   const explicit = Number(retryAfter);
@@ -112,7 +129,7 @@ export async function runOne(
         categories.join(", ") +
         ". Responde únicamente con JSON válido, sin Markdown. La raíz debe ser un objeto con un arreglo documents. Cada documento debe usar estas claves exactas cuando correspondan: " +
         [...stringFields, ...AMOUNT_FIELDS, "documentCode"].join(", ") +
-        ". Usa null para cualquier dato que no puedas leer.";
+        ". Usa null para cualquier dato que no puedas leer. Si es una imagen, agrega opcionalmente fieldLocations: un objeto cuyas claves sean providerName, providerRut, documentNumber, documentType, date, expenseType, netAmount, ivaAmount, totalAmount y cuyos valores sean {x,y,width,height}, la caja aproximada del texto que justifica cada dato. Coordenadas enteras de 0 a 1000 sobre la imagen original, con origen arriba a la izquierda; no inventes cajas de campos no visibles. Para expenseType puedes señalar el texto del detalle que motivó la clasificación.";
       const messages = (text, attachments = [filePart]) => [{
         role: "user",
         content: [{ type: "text", text }, ...attachments],
@@ -180,7 +197,10 @@ export async function runOne(
         )
       )
         throw new Error("INVALID_RESPONSE");
-      result = { documents: result.documents.map((raw) => normalizeElectronicFolio(normalizeDocument(raw))) };
+      result = { documents: result.documents.map((raw) => ({
+        ...normalizeElectronicFolio(normalizeDocument(raw)),
+        ...(job.mime_type.startsWith("image/") ? { fieldLocations: validFieldLocations(raw.fieldLocations) } : {}),
+      })) };
       // Independently check printed folios on photos, including plausible
       // first reads: a single wrong digit otherwise passes every validation.
       const doc = result.documents[0];

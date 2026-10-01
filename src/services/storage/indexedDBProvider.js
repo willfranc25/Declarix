@@ -20,6 +20,23 @@ const indexedDBProvider = {
   async getAll() {
     return db.invoices.orderBy('date').reverse().toArray();
   },
+  async getPage({ page = 1, pageSize = 25, filters = {} } = {}) {
+    const all = await this.getAll();
+    const rows = all.filter((inv) => {
+      if (filters.year && Number(String(inv.date).slice(0, 4)) !== filters.year) return false;
+      const month = Number(String(inv.date).slice(5, 7));
+      if (filters.month && month !== filters.month) return false;
+      if (filters.months?.length && !filters.months.includes(month)) return false;
+      if (filters.providerSearch && !String(inv.providerName || '').toLowerCase().includes(filters.providerSearch.trim().toLowerCase())) return false;
+      if (filters.expenseType && inv.expenseType !== filters.expenseType) return false;
+      if (filters.documentType && inv.documentType !== filters.documentType) return false;
+      if (filters.taxStatus === 'declared' && inv.taxStatus !== 'declared') return false;
+      if (filters.taxStatus === 'pending' && inv.taxStatus === 'declared') return false;
+      return true;
+    });
+    const start = (page - 1) * pageSize;
+    return { rows: rows.slice(start, start + pageSize).map((row) => ({ ...row, uploadedAt: row.createdAt })), total: rows.length };
+  },
 
   /**
    * Obtiene un comprobante por ID.

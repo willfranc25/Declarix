@@ -13,7 +13,7 @@ import { useToast } from '../components/ui/Toast';
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { invoices, loadInvoices, updateInvoice, deleteInvoice } = useInvoiceStore();
+  const { invoices, loadInvoice, updateInvoice, deleteInvoice } = useInvoiceStore();
 
   const [editing,setEditing] = useState(false);
   const [mimeType,setMimeType] = useState('');
@@ -22,7 +22,7 @@ export default function InvoiceDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const { addToast } = useToast();
 
-  useEffect(() => { loadInvoices(); }, [loadInvoices]);
+  useEffect(() => { loadInvoice(id).catch((err) => addToast(err.message, 'error')); }, [id, loadInvoice]);
 
   useEffect(() => {
     let current=true, url=null;

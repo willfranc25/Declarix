@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import useInvoiceStore from '../store/invoiceStore';
 import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
 import { ImageLightbox } from '../components/ui/ImageViewer';
@@ -25,11 +24,43 @@ function getReviewState(item) {
   return { needsReview: errors.length > 0, reasons: errors };
 }
 
+function QueueThumbnail({ item, onOpen }) {
+  const buttonRef = useRef(null);
+  useEffect(() => {
+    if (item.status !== 'done' || !item.mimeType?.startsWith('image/') || item.tempPreviewUrl) return undefined;
+    const button = buttonRef.current;
+    const load = () => { void useUploadQueueStore.getState().ensurePreview(item.jobId).catch(() => {}); };
+    if (!button || !window.IntersectionObserver) { load(); return undefined; }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) { load(); observer.disconnect(); }
+    }, { rootMargin: '120px' });
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [item.jobId, item.mimeType, item.status, item.tempPreviewUrl]);
+  const open = async () => {
+    if (!item.mimeType?.startsWith('image/') || item.status !== 'done') return;
+    try {
+      const src = item.tempPreviewUrl || await useUploadQueueStore.getState().ensurePreview(item.jobId);
+      if (!src) return;
+      onOpen({ src, title: item.name, jobId: item.jobId });
+      const original = await useUploadQueueStore.getState().ensureOriginal(item.jobId);
+      onOpen((current) => current?.jobId === item.jobId ? { ...current, src: original } : current);
+    } catch { /* La revisión conserva el original aunque falle esta vista previa. */ }
+  };
+  return <button ref={buttonRef} type="button" onClick={open} title="Ver boleta ampliada"
+    style={{ width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+      background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
+      padding: 0, cursor: item.status === 'done' ? 'zoom-in' : 'default', minWidth: 44, minHeight: 44 }}>
+    {item.tempPreviewUrl && item.mimeType?.startsWith('image/')
+      ? <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}><Icon name="document" size={20} /></div>}
+  </button>;
+}
+
 export default function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const { invoices, loadInvoices } = useInvoiceStore();
 
   // La cola vive en un store global: la extracción continúa aunque el
   // usuario navegue a otra página. Esta vista solo la observa.
@@ -48,12 +79,6 @@ export default function UploadPage() {
   const [preview, setPreview] = useState(null);
 
   const { addToast } = useToast();
-
-  // Cargar comprobantes existentes para la detección de duplicados
-  useEffect(() => {
-    if (invoices.length === 0) loadInvoices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Validar un archivo individual
   const validateFile = (file) => {
@@ -343,25 +368,7 @@ export default function UploadPage() {
               }}
             >
               {/* Miniatura (clic para ampliar con zoom) */}
-              <button
-                type="button"
-                onClick={() => item.mimeType?.startsWith('image/') && item.tempPreviewUrl && setPreview({ src: item.tempPreviewUrl, title: item.name })}
-                title="Ver boleta ampliada"
-                style={{
-                  width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
-                  background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
-                  padding: 0, cursor: item.tempPreviewUrl ? 'zoom-in' : 'default',
-                  minWidth: 44, minHeight: 44,
-                }}
-              >
-                {item.tempPreviewUrl && item.mimeType?.startsWith('image/') ? (
-                  <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}>
-                    <Icon name="document" size={20} />
-                  </div>
-                )}
-              </button>
+              <QueueThumbnail item={item} onOpen={setPreview} />
 
               {/* Detalles */}
               <div style={{ flex: 1, minWidth: 200 }}>

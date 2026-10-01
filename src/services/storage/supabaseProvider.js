@@ -29,6 +29,11 @@ const fields = new Set([
 ]);
 const pick = (data) =>
   Object.fromEntries(Object.entries(data).filter(([k]) => fields.has(k)));
+const summaryColumns = [
+  "id", "user_id", "organization_id", ...Object.keys(normalizeDocument({})),
+  "createdAt", "updatedAt", "version", "deleted", "imagePath", "lastModifiedBy",
+  "source_job_id", "source_index", "reviewed_at", "exported_at", "declared_at",
+].filter((value, index, all) => all.indexOf(value) === index).join(",");
 const imageExtension = (blob) => ({
   "image/jpeg": "jpeg",
   "image/jpg": "jpg",
@@ -40,14 +45,14 @@ const supabaseProvider = {
   async initialize() {
     if (!supabase) throw new Error("Falta configurar Supabase");
   },
-  async getAll() {
+  async getAll({ includeOriginal = false } = {}) {
     const { companyId } = await scope();
     const rows = [];
     for (let from = 0; ; from += 500) {
       const batch = check(
         await supabase
           .from("invoices")
-          .select("*")
+          .select(includeOriginal ? "*" : summaryColumns)
           .eq("organization_id", companyId)
           .eq("deleted", false)
           .order("date", { ascending: false })
@@ -57,6 +62,58 @@ const supabaseProvider = {
       rows.push(...batch);
       if (batch.length < 500) return rows;
     }
+  },
+  async getPage({ page = 1, pageSize = 25, filters = {} } = {}) {
+    const { companyId } = await scope();
+    const size = Math.min(100, Math.max(1, Math.floor(Number(pageSize) || 25)));
+    const number = Math.max(1, Math.floor(Number(page) || 1));
+    let query = supabase.from("invoices")
+      .select('id,providerName,date,documentType,expenseType,totalAmount,taxStatus,createdAt,source_job_id', { count: "exact" })
+      .eq("organization_id", companyId).eq("deleted", false);
+    if (filters.providerSearch?.trim()) {
+      const term = filters.providerSearch.replace(/[%,()*_]/g, " ").trim();
+      if (term) query = query.ilike("providerName", `%${term}%`);
+    }
+    if (filters.expenseType) query = query.eq("expenseType", filters.expenseType);
+    if (filters.documentType) query = query.eq("documentType", filters.documentType);
+    if (filters.taxStatus === "declared") query = query.eq("taxStatus", "declared");
+    if (filters.taxStatus === "pending") query = query.or('taxStatus.neq.declared,taxStatus.is.null');
+    if (filters.year && filters.month) {
+      const month = String(filters.month).padStart(2, "0");
+      const next = new Date(Date.UTC(Number(filters.year), Number(filters.month), 1)).toISOString().slice(0, 10);
+      query = query.gte("date", `${filters.year}-${month}-01`)
+        .lt("date", next);
+    } else if (filters.year && filters.months?.length) {
+      const months = [...filters.months].sort((a, b) => a - b);
+      if (months.every((month, index) => index === 0 || month === months[index - 1] + 1)) {
+        const next = new Date(Date.UTC(Number(filters.year), Number(months.at(-1)), 1)).toISOString().slice(0, 10);
+        query = query.gte("date", `${filters.year}-${String(months[0]).padStart(2, "0")}-01`).lt("date", next);
+      } else {
+        const monthFilters = months.map((month) => {
+          const next = new Date(Date.UTC(Number(filters.year), Number(month), 1)).toISOString().slice(0, 10);
+          return `and(date.gte.${filters.year}-${String(month).padStart(2, "0")}-01,date.lt.${next})`;
+        });
+        query = query.or(monthFilters.join(","));
+      }
+    } else if (filters.year) {
+      query = query.gte("date", `${filters.year}-01-01`).lt("date", `${Number(filters.year) + 1}-01-01`);
+    } else if (filters.month) {
+      query = query.like("date", `____-${String(filters.month).padStart(2, "0")}-%`);
+    }
+    const { data, error, count } = await query.order("date", { ascending: false })
+      .order("id").range((number - 1) * size, number * size - 1);
+    if (error) throw error;
+    const jobIds = [...new Set(data.map((row) => row.source_job_id).filter(Boolean))];
+    let uploadDates = new Map();
+    if (jobIds.length) {
+      const jobs = check(await supabase.from("extraction_jobs")
+        .select("id,created_at").eq("organization_id", companyId).in("id", jobIds));
+      uploadDates = new Map(jobs.map((job) => [job.id, job.created_at]));
+    }
+    return {
+      rows: data.map((row) => ({ ...row, uploadedAt: uploadDates.get(row.source_job_id) || row.createdAt })),
+      total: count || 0,
+    };
   },
   async getById(id) {
     const { companyId } = await scope();

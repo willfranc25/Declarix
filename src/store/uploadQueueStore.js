@@ -5,15 +5,19 @@ import {
 } from "../services/organizationService";
 import {
   listJobs,
+  listInvoiceKeys,
   uploadDocument,
   patchReview,
   documentRequest,
+  fetchDocumentPreview,
 } from "../services/jobService";
 import { supabase } from "../services/supabaseClient";
 import { documentKey, normalizeDocumentType } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
 let epoch = 0;
 const previews = new Map();
+const originals = new Map();
+const previewRequests = new Map();
 const pendingReviews = new Map();
 const useUploadQueueStore = create((set, get) => ({
   queue: [],
@@ -24,7 +28,10 @@ const useUploadQueueStore = create((set, get) => ({
   uploadProgress: null,
   reset() {
     epoch++;
+    for (const entry of previews.values()) if (entry.objectUrl) URL.revokeObjectURL(entry.url);
     previews.clear();
+    originals.clear();
+    previewRequests.clear();
     pendingReviews.clear();
     set({
       queue: [],
@@ -35,12 +42,74 @@ const useUploadQueueStore = create((set, get) => ({
       uploadProgress: null,
     });
   },
+  async ensureOriginal(jobId) {
+    const item = get().queue.find((row) => row.jobId === jobId);
+    if (!item) return null;
+    const cached = originals.get(jobId);
+    if (cached?.expires > Date.now()) return cached.url;
+    const version = epoch;
+    const signed = await supabase.storage.from("documents").createSignedUrl(item.objectPath, 3600);
+    if (signed.error) throw signed.error;
+    if (version !== epoch) return null;
+    originals.set(jobId, { url: signed.data.signedUrl, expires: Date.now() + 3_300_000 });
+    return signed.data.signedUrl;
+  },
+  async ensurePreview(jobId) {
+    const cached = previews.get(jobId);
+    if (cached && (cached.objectUrl || cached.expires > Date.now())) {
+      previews.delete(jobId);
+      previews.set(jobId, cached);
+      return cached.url;
+    }
+    if (previewRequests.has(jobId)) return previewRequests.get(jobId);
+    const item = get().queue.find((row) => row.jobId === jobId);
+    if (!item) return null;
+    const version = epoch;
+    const request = (async () => {
+      let url, objectUrl = false;
+      if (item.mimeType?.startsWith("image/")) {
+        try {
+          const blob = await fetchDocumentPreview(jobId);
+          url = URL.createObjectURL(blob);
+          objectUrl = true;
+          // Decode before displaying or prefetching the next document.
+          const img = new Image();
+          img.src = url;
+          if (img.decode) await img.decode().catch(() => {});
+        } catch {
+          url = await get().ensureOriginal(jobId);
+        }
+      } else {
+        url = await get().ensureOriginal(jobId);
+      }
+      if (!url) return null;
+      if (version !== epoch) {
+        if (objectUrl) URL.revokeObjectURL(url);
+        return null;
+      }
+      previews.set(jobId, { url, objectUrl, expires: Date.now() + 3_300_000 });
+      const evicted = [];
+      while (previews.size > 24) {
+        const oldestId = previews.keys().next().value;
+        const old = previews.get(oldestId);
+        if (old.objectUrl) URL.revokeObjectURL(old.url);
+        previews.delete(oldestId);
+        evicted.push(oldestId);
+      }
+      set((state) => ({ queue: state.queue.map((row) =>
+        row.jobId === jobId ? { ...row, tempPreviewUrl: url }
+          : evicted.includes(row.jobId) ? { ...row, tempPreviewUrl: null } : row) }));
+      return url;
+    })().finally(() => previewRequests.delete(jobId));
+    previewRequests.set(jobId, request);
+    return request;
+  },
   async hydrate() {
     const company = requireCompany(),
       version = epoch,
       generation = getWorkspaceGeneration();
     try {
-      const jobs = await listJobs(company.id);
+      const [jobs, savedInvoices] = await Promise.all([listJobs(company.id), listInvoiceKeys(company.id)]);
       const sourceRows = [];
       // Sources include soft-deleted invoices: a saved result should never reappear.
       const readyIds = jobs
@@ -61,27 +130,19 @@ const useUploadQueueStore = create((set, get) => ({
         sourceRows.map((s) => s.source_job_id + ":" + s.source_index),
       );
       const invoiceKeys = new Set(
-        useInvoiceStore.getState().invoices.map(documentKey).filter(Boolean),
+        [...savedInvoices, ...useInvoiceStore.getState().invoices].map(documentKey).filter(Boolean),
       );
       const queue = [];
       for (const j of jobs) {
         const cached = previews.get(j.id);
-        let url = cached?.expires > Date.now() ? cached.url : null;
-        if (!url && j.status === "ready") {
-          const signed = await supabase.storage
-            .from("documents")
-            .createSignedUrl(j.object_path, 3600);
-          if (!signed.error) {
-            url = signed.data.signedUrl;
-            previews.set(j.id, { url, expires: Date.now() + 3300_000 });
-          }
-        }
+        const url = cached && (cached.objectUrl || cached.expires > Date.now()) ? cached.url : null;
         const base = {
           jobId: j.id,
           name: j.filename,
           size: Number(j.file_bytes),
           mimeType: j.mime_type,
           tempPreviewUrl: url,
+          objectPath: j.object_path,
           file: null,
           serverStatus: j.status,
         };
@@ -126,6 +187,7 @@ const useUploadQueueStore = create((set, get) => ({
           });
       }
       if (version !== epoch || generation !== getWorkspaceGeneration()) return;
+      if (get().isHydrated && !get().error && JSON.stringify(get().queue) === JSON.stringify(queue)) return;
       const wasProcessing = get().isProcessing;
       const processing = queue.some((q) =>
         ["pending", "processing", "waiting"].includes(q.status),

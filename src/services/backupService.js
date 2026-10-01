@@ -14,7 +14,7 @@ export async function exportBackup() {
 
   try {
     // 1. Obtener todos los comprobantes
-    const invoices = await storage.getAll();
+    const invoices = await storage.getAll({ includeOriginal: true });
     logger.debug(`Exportando ${invoices.length} comprobantes...`);
 
     // 2. Agregar JSON de comprobantes

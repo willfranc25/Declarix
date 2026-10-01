@@ -1,6 +1,6 @@
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn()}));
-vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request}));
+vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:vi.fn(),uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request}));
 vi.mock('../services/supabaseClient',()=>({supabase:{from:()=>({select:()=>({eq:()=>({in:()=>({range:async()=>({data:[],error:null})})})})}),storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'https://example.test/preview'}})})}}}));
 import store from '../store/uploadQueueStore';
 import {setActiveOrganization} from '../services/organizationService';
@@ -11,6 +11,7 @@ describe('durable company queue',()=>{
  it('retains unknown fields and provenance for manual review',async()=>{
   mocks.jobs.mockResolvedValue([ready]);await store.getState().hydrate();
   expect(store.getState().queue[0].extractedData).toMatchObject({date:null,totalAmount:null,source_job_id:'job',source_index:0,imagePath:'user/a/job'});
+  expect(store.getState().queue[0].tempPreviewUrl).toBeNull();
  });
  it('does not leak a delayed result into a different company',async()=>{
   let release:any;mocks.jobs.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));

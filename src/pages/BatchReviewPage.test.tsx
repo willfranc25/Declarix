@@ -122,6 +122,29 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     expect(screen.getByText('1 con errores')).toBeInTheDocument();
   });
 
+  it('abre el original al ampliar un campo y conserva la posición extraída', async () => {
+    const user = userEvent.setup();
+    const original = vi.fn().mockResolvedValue('blob:original');
+    useUploadQueueStore.setState({
+      ensurePreview: vi.fn().mockResolvedValue('blob:a'),
+      ensureOriginal: original,
+      queue: [doneItem('a', {
+        jobId: 'job-a', mimeType: 'image/jpeg',
+        extractedData: {
+          ...doneItem('a').extractedData,
+          source_job_id: 'job-a',
+          fieldLocations: { documentNumber: { x: 200, y: 100, width: 100, height: 30 } },
+        },
+      })] as any,
+    });
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Ampliar Folio / N° documento en la foto' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(original).toHaveBeenCalledWith('job-a'));
+    await waitFor(() => expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', 'blob:original'));
+    expect(screen.getByText('400%')).toBeInTheDocument();
+  });
+
   it('"Guardar y seguir" guarda el comprobante, lo saca de la cola y avanza', async () => {
     const user = userEvent.setup();
     useUploadQueueStore.setState({
