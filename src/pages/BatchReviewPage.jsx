@@ -663,7 +663,14 @@ export default function BatchReviewPage() {
                       className="form-input text-mono"
                       value={activeRow.documentNumber ?? ''}
                       onChange={(e) => set('documentNumber', e.target.value)}
+                      style={fieldError('documentNumber') ? { borderColor: 'var(--color-danger)' } : undefined}
                     />
+                    {fieldError('documentNumber') && <span className="form-error">{errors.documentNumber}</span>}
+                    {activeRow.documentType === 'Comprobante de pago electrónico' && activeRow.referenceNumber && (
+                      <span className="text-muted text-xs">
+                        Referencia detectada: {activeRow.referenceNumber}. Úsala solo si en la foto dice «Operación» o «Transacción»; el código de aprobación no sirve.
+                      </span>
+                    )}
                   </div>
                 </div>
 
