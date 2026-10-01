@@ -22,7 +22,7 @@ const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
   { key: 'providerRut', label: 'RUT', type: 'text' },
   { key: 'documentType', label: 'Tipo Doc', type: 'select', options: DOCUMENT_TYPES },
-  { key: 'documentNumber', label: 'Folio / operación', type: 'text' },
+  { key: 'documentNumber', label: 'Folio / comprobante', type: 'text' },
   { key: 'date', label: 'Fecha', type: 'date' },
   { key: 'expenseType', label: 'Tipo Gasto', type: 'select', options: EXPENSE_TYPES },
   { key: 'netAmount', label: 'Neto', type: 'number' },
@@ -658,7 +658,7 @@ export default function BatchReviewPage() {
                     {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
                   </div>
                   <div className="form-group">
-                    <label className="form-label">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° operación del voucher' : 'Folio / N° documento'}</label>
+                    <label className="form-label">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° comprobante / operación' : 'Folio / N° documento'}</label>
                     <input
                       className="form-input text-mono"
                       value={activeRow.documentNumber ?? ''}
@@ -666,11 +666,6 @@ export default function BatchReviewPage() {
                       style={fieldError('documentNumber') ? { borderColor: 'var(--color-danger)' } : undefined}
                     />
                     {fieldError('documentNumber') && <span className="form-error">{errors.documentNumber}</span>}
-                    {activeRow.documentType === 'Comprobante de pago electrónico' && activeRow.referenceNumber && (
-                      <span className="text-muted text-xs">
-                        Referencia detectada: {activeRow.referenceNumber}. Úsala solo si en la foto dice «Operación» o «Transacción»; el código de aprobación no sirve.
-                      </span>
-                    )}
                   </div>
                 </div>
 

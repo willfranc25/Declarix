@@ -73,7 +73,7 @@ export function documentErrors(doc, today = todayChile()) {
       : "Falta RUT";
   if (!String(doc.documentNumber || "").trim())
     errors.documentNumber = normalizeDocumentType(doc.documentType) === "Comprobante de pago electrónico"
-      ? "Falta número de operación del voucher" : "Falta folio";
+      ? "Falta número de comprobante u operación del voucher" : "Falta folio";
   if (!civilDate(doc.date)) errors.date = "Fecha inválida o ausente";
   else if (doc.date > today) errors.date = "Fecha futura";
   if (!doc.documentType) errors.documentType = "Falta tipo de documento";
