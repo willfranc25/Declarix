@@ -71,7 +71,9 @@ export function documentErrors(doc, today = todayChile()) {
     errors.providerRut = doc.providerRut
       ? "El RUT leído no coincide con su dígito verificador. Compáralo con la foto."
       : "Falta RUT";
-  if (!String(doc.documentNumber || "").trim())
+  if (doc.folioReview)
+    errors.documentNumber = "Confirma el folio comparándolo con la foto";
+  else if (!String(doc.documentNumber || "").trim())
     errors.documentNumber = normalizeDocumentType(doc.documentType) === "Comprobante de pago electrónico"
       ? "Falta número de comprobante u operación del voucher" : "Falta folio";
   if (!civilDate(doc.date)) errors.date = "Fecha inválida o ausente";

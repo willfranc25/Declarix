@@ -1,13 +1,13 @@
 import { checked } from "./admin.js";
 import { parseDTE } from "./documentInput.js";
-import { imageForModel } from "./modelImage.js";
+import { folioVerificationImages, imageForModel } from "./modelImage.js";
 import {
   normalizeDocument,
   AMOUNT_FIELDS,
 } from "../src/utils/documentRules.js";
 import { EXPENSE_TYPES } from "../src/data/expenseTypes.js";
 import { validateRut } from "../src/utils/rutValidator.js";
-import { applyFocusedReading, FOCUSED_PROMPT, normalizeElectronicFolio } from "./focusedReading.js";
+import { applyFocusedReading, FOCUSED_PROMPT, normalizeElectronicFolio, reconcileFolioReading, unverifiedFolio } from "./focusedReading.js";
 const stringFields = [
   "providerName",
   "providerRut",
@@ -113,9 +113,9 @@ export async function runOne(
         ". Responde únicamente con JSON válido, sin Markdown. La raíz debe ser un objeto con un arreglo documents. Cada documento debe usar estas claves exactas cuando correspondan: " +
         [...stringFields, ...AMOUNT_FIELDS, "documentCode"].join(", ") +
         ". Usa null para cualquier dato que no puedas leer.";
-      const messages = (text) => [{
+      const messages = (text, attachments = [filePart]) => [{
         role: "user",
-        content: [{ type: "text", text }, filePart],
+        content: [{ type: "text", text }, ...attachments],
       }];
       const send = (payload) => fetchImpl(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -181,14 +181,25 @@ export async function runOne(
       )
         throw new Error("INVALID_RESPONSE");
       result = { documents: result.documents.map((raw) => normalizeElectronicFolio(normalizeDocument(raw))) };
-      // Spend a second vision call only on a single document with a missing
-      // folio or an OCR RUT error. Keep the first extraction if this fails.
+      // Independently check printed folios on photos, including plausible
+      // first reads: a single wrong digit otherwise passes every validation.
       const doc = result.documents[0];
-      if (result.documents.length === 1 &&
-          (!doc.documentNumber || !validateRut(doc.providerRut || "")) &&
-          Date.now() - started < timeoutMs - 18_000) {
+      const verifyFolio = result.documents.length === 1 &&
+        job.mime_type.startsWith("image/") && !!doc.documentNumber &&
+        /^(?:boleta|factura|nota de)/i.test(doc.documentType || "");
+      const needsFocused = result.documents.length === 1 &&
+        (!doc.documentNumber || !validateRut(doc.providerRut || "") || verifyFolio);
+      if (needsFocused && Date.now() - started < timeoutMs - 18_000) {
         try {
-          const focused = await send({ model, messages: messages(FOCUSED_PROMPT) });
+          let attachments = [filePart];
+          if (job.mime_type.startsWith("image/")) {
+            try {
+              attachments = [filePart, ...await folioVerificationImages(bytes, job.mime_type)];
+            } catch {
+              // The stored original remains available if enhancement fails.
+            }
+          }
+          const focused = await send({ model, messages: messages(FOCUSED_PROMPT, attachments) });
           if (focused.ok) {
             const focusedBody = await focused.json();
             const usage = focusedBody.usage || {};
@@ -204,13 +215,18 @@ export async function runOne(
             const content = focusedBody.choices?.[0]?.message?.content;
             if (focusedBody.choices?.[0]?.finish_reason === "stop" && typeof content === "string") {
               const reading = JSON.parse(content.trim().replace(/^```(?:json)?\s*|\s*```$/g, ""));
-              result.documents[0] = applyFocusedReading(doc, reading);
-            }
-          } else logProviderRejection(job.id, focused.status, await focused.text());
+              result.documents[0] = verifyFolio
+                ? reconcileFolioReading(doc, reading)
+                : applyFocusedReading(doc, reading);
+            } else if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
+          } else {
+            logProviderRejection(job.id, focused.status, await focused.text());
+            if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
+          }
         } catch {
-          // A focused reread is optional; the first result stays reviewable.
+          if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
         }
-      }
+      } else if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
     }
     result.documents = result.documents.map((doc) => {
       const key = (doc.providerRut || "")

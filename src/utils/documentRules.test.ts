@@ -14,6 +14,11 @@ describe('document correctness',()=>{
   expect(documentErrors({...voucher,documentNumber:'177217075749'},'2026-09-24')).toEqual({});
   expect(documentKey({...voucher,documentNumber:'177217075749'})).not.toBe(documentKey({...valid,documentNumber:'177217075749'}));
  });
+ it('blocks bulk saving when independent folio readings disagree',()=>{
+  const disputed={...valid,documentNumber:null,folioReview:{first:'3485367',second:'3485867',reason:'mismatch'}};
+  expect(documentErrors(disputed,'2026-09-24').documentNumber).toMatch(/Confirma el folio/);
+  expect(documentErrors({...disputed,documentNumber:'3485867',folioReview:null},'2026-09-24')).toEqual({});
+ });
  it('compares RCV without silently importing or changing records',()=>{
   const result=reconcileRCV('RUT Proveedor;Tipo Doc;Folio;Monto Total\n76123456-0;33;1;1.390\n76123456-0;33;2;100',[valid]);
   expect(result.map(r=>r.status)).toEqual(['coincide','solo_rcv']);expect(valid.totalAmount).toBe(1390);

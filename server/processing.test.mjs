@@ -150,7 +150,7 @@ test("provider validation rejects do not spend the daily processing budget", asy
   }
 });
 
-test("the proven minimal request extracts a JSON response in one provider call", async () => {
+test("a plausible photo folio receives an independent second reading", async () => {
   const calls = [];
   const db = {
     rpc: async (name, args) => {
@@ -175,16 +175,19 @@ test("the proven minimal request extracts a JSON response in one provider call",
       const request = JSON.parse(options.body);
       assert.equal(request.response_format, undefined);
       assert.equal(request.reasoning, undefined);
-      assert.match(request.messages[0].content[0].text, /documents/);
+      if (requests === 1) assert.match(request.messages[0].content[0].text, /documents/);
+      else assert.match(request.messages[0].content[0].text, /Relee de forma independiente/);
       return Response.json({
-        choices: [{ finish_reason: "stop", message: { content: '```json\n{"documents":[{"providerName":"Empresa","providerRut":"76123456-0","documentType":"factura","documentNumber":"10","date":"2026-01-01","totalAmount":1190}]}\n```' } }],
+        choices: [{ finish_reason: "stop", message: { content: requests === 1
+          ? '```json\n{"documents":[{"providerName":"Empresa","providerRut":"76123456-0","documentType":"factura","documentNumber":"10","date":"2026-01-01","totalAmount":1190}]}\n```'
+          : '{"documentNumber":"10","folioEvidence":"Factura N° 10"}' } }],
         usage: { prompt_tokens: 100, completion_tokens: 30, cost: 0.0001 },
       });
     } });
     assert.equal(result.status, "ready");
-    assert.equal(requests, 1);
+    assert.equal(requests, 2);
     const finish = calls.find((c) => c[0] === "finish_extraction")[1];
-    assert.equal(finish.p_metrics.estimatedUsd, 0.0001);
+    assert.equal(finish.p_metrics.estimatedUsd, 0.0002);
     assert.equal(finish.p_result.documents[0].totalAmount, 1190);
   } finally {
     delete process.env.OPENROUTER_API_KEY;
@@ -230,6 +233,45 @@ test("worker rereads a questionable RUT and missing folio without replacing othe
   }
 });
 
+test("worker does not silently accept a 3/8 folio disagreement", async () => {
+  const calls = [];
+  const db = {
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      return { data: name === "claim_extraction" ? [{
+        id: "job", organization_id: "company", mime_type: "image/jpeg",
+        object_path: "path", lease_token: "lease", attempts: 1,
+      }] : true, error: null };
+    },
+    storage: { from: () => ({ download: async () => ({ data: new Blob(["image"]), error: null }) }) },
+    from: () => ({ select: () => ({ eq: () => ({
+      single: async () => ({ data: { provider_rules: {} }, error: null }),
+    }) }) }),
+  };
+  process.env.OPENROUTER_API_KEY = "test-key";
+  let requests = 0;
+  try {
+    await runOne(db, { fetchImpl: async () => {
+      requests++;
+      return Response.json({
+        choices: [{ finish_reason: "stop", message: { content: requests === 1
+          ? JSON.stringify({ documents: [{ providerName: "COPEC", providerRut: "76464286-4",
+            documentType: "Boleta Electrónica", documentNumber: "3485367",
+            date: "2026-09-21", totalAmount: 40205 }] })
+          : JSON.stringify({ documentNumber: "3485867", folioEvidence: "Boleta Electrónica 3485867" }) } }],
+        usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 },
+      });
+    } });
+    assert.equal(requests, 2);
+    const doc = calls.find((c) => c[0] === "finish_extraction")[1].p_result.documents[0];
+    assert.equal(doc.documentNumber, null);
+    assert.deepEqual(doc.folioReview, { first: "3485367", second: "3485867", reason: "mismatch" });
+    assert.equal(doc.totalAmount, 40205);
+  } finally {
+    delete process.env.OPENROUTER_API_KEY;
+  }
+});
+
 for (const mimeType of ["image/png", "application/pdf"]) {
   test(`worker sends ${mimeType} through OpenRouter and records billed cost`, async () => {
     const calls = [];
@@ -250,8 +292,10 @@ for (const mimeType of ["image/png", "application/pdf"]) {
       }) }) }),
     };
     process.env.OPENROUTER_API_KEY = "test-key";
+    let requests = 0;
     try {
       const result = await runOne(db, { fetchImpl: async (url, options) => {
+        requests++;
         assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
         assert.equal(options.headers.Authorization, "Bearer test-key");
         const request = JSON.parse(options.body);
@@ -259,7 +303,8 @@ for (const mimeType of ["image/png", "application/pdf"]) {
         assert.equal(request.response_format, undefined);
         assert.equal(request.provider, undefined);
         assert.equal(request.reasoning, undefined);
-        assert.match(request.messages[0].content[0].text, /documents/);
+        if (requests === 1) assert.match(request.messages[0].content[0].text, /documents/);
+        else assert.match(request.messages[0].content[0].text, /Relee de forma independiente/);
         const attachment = request.messages[0].content[1];
         if (mimeType === "application/pdf") {
           assert.equal(attachment.type, "file");
@@ -269,11 +314,13 @@ for (const mimeType of ["image/png", "application/pdf"]) {
           assert.match(attachment.image_url.url, /^data:image\/png;base64,/);
         }
         return Response.json({
-          choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ documents: [{
-            providerName: "Empresa", providerRut: "76123456-0", documentType: "factura",
-            documentNumber: "10", date: "2026-01-01", netAmount: 1000,
-            ivaAmount: 190, totalAmount: 1190,
-          }] }) } }],
+          choices: [{ finish_reason: "stop", message: { content: requests === 1
+            ? JSON.stringify({ documents: [{
+              providerName: "Empresa", providerRut: "76123456-0", documentType: "factura",
+              documentNumber: "10", date: "2026-01-01", netAmount: 1000,
+              ivaAmount: 190, totalAmount: 1190,
+            }] })
+            : JSON.stringify({ documentNumber: "10", folioEvidence: "Factura N° 10" }) } }],
           usage: { prompt_tokens: 1000, completion_tokens: 200, cost: 0.0007,
             completion_tokens_details: { reasoning_tokens: 10 } },
         });
@@ -281,8 +328,8 @@ for (const mimeType of ["image/png", "application/pdf"]) {
       assert.equal(result.status, "ready");
       const finish = calls.find((c) => c[0] === "finish_extraction")[1];
       assert.equal(finish.p_metrics.model, "google/gemini-3.1-flash-lite");
-      assert.equal(finish.p_metrics.estimatedUsd, 0.0007);
-      assert.equal(finish.p_metrics.thinkingTokens, 10);
+      assert.equal(finish.p_metrics.estimatedUsd, mimeType === "image/png" ? 0.0014 : 0.0007);
+      assert.equal(finish.p_metrics.thinkingTokens, mimeType === "image/png" ? 20 : 10);
       assert.equal(finish.p_result.documents[0].totalAmount, 1190);
     } finally {
       delete process.env.OPENROUTER_API_KEY;

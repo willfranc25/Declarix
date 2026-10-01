@@ -129,6 +129,7 @@ export default function BatchReviewPage() {
     if (!row) return;
 
     const patch = { [key]: value };
+    if (key === 'documentNumber') patch.folioReview = null;
     // Si cambia Neto o IVA, recalcular Total para Facturas/NC automáticamente
     const nextType = key === 'documentType' ? value : row.documentType;
     const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(nextType);
@@ -665,7 +666,21 @@ export default function BatchReviewPage() {
                       onChange={(e) => set('documentNumber', e.target.value)}
                       style={fieldError('documentNumber') ? { borderColor: 'var(--color-danger)' } : undefined}
                     />
-                    {fieldError('documentNumber') && <span className="form-error">{errors.documentNumber}</span>}
+                    {fieldError('documentNumber') && !activeRow.folioReview && <span className="form-error">{errors.documentNumber}</span>}
+                    {activeRow.folioReview && (
+                      <div className="form-error" role="alert">
+                        {activeRow.folioReview.reason === 'mismatch'
+                          ? `Las lecturas discrepan: ${activeRow.folioReview.first} y ${activeRow.folioReview.second}. Escribe el número que aparece en la foto.`
+                          : activeRow.folioReview.reason === 'inconclusive'
+                            ? `La segunda lectura no pudo confirmar ${activeRow.folioReview.first}. Escribe el número que aparece en la foto.`
+                            : `No se pudo comprobar automáticamente ${activeRow.folioReview.first}. Compáralo con la foto antes de confirmar.`}
+                        {activeRow.folioReview.reason === 'unavailable' && (
+                          <button type="button" className="btn btn-secondary btn-sm ml-2" onClick={() => updateReview(activeRow.id, { folioReview: null })}>
+                            Confirmar tras revisar
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
