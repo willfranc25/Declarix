@@ -26,6 +26,8 @@ for (const file of (
 ).sort()) {
   // Hosted infrastructure extensions (pg_cron/pg_net/Vault) cannot run in PGlite.
   if (file === "20261001030946_continuous_extraction.sql") continue;
+  if (file === "20261001050604_faster_extraction_dispatch.sql") continue;
+  if (file === "20261001050811_gate_background_dispatch.sql") continue;
   const sql = (
     await readFile(
       new URL("../supabase/migrations/" + file, import.meta.url),
