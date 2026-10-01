@@ -1,6 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
 import { adminClient } from "../server/admin.js";
 import { runOne, cleanupAbandoned } from "../server/worker.js";
+import { schedulerAuthorized } from "../server/schedulerAuth.js";
 export const config = { maxDuration: 60 };
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -27,17 +27,11 @@ export default async function handler(req, res) {
     }
   }
   if (req.method !== "GET") return res.status(405).end();
-  const expected = "Bearer " + (process.env.CRON_SECRET || "");
-  const given = req.headers.authorization || "";
-  if (
-    !process.env.CRON_SECRET ||
-    Buffer.byteLength(given) !== Buffer.byteLength(expected) ||
-    !timingSafeEqual(Buffer.from(given), Buffer.from(expected))
-  )
+  if (!(await schedulerAuthorized(req.headers, db, process.env.CRON_SECRET)))
     return res.status(401).end();
   try {
     await cleanupAbandoned(db);
-    return res.status(200).json(await runOne(db));
+    return res.status(200).json(await runOne(db, { timeoutMs: 40_000 }));
   } catch {
     return res.status(503).json({ error: "WORKER_UNAVAILABLE" });
   }
