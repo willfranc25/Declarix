@@ -24,6 +24,8 @@ await db.exec(`create policy "Permitir todo en storage" on storage.objects for a
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
+  // Hosted infrastructure extensions (pg_cron/pg_net/Vault) cannot run in PGlite.
+  if (file === "20261001030000_continuous_extraction.sql") continue;
   const sql = (
     await readFile(
       new URL("../supabase/migrations/" + file, import.meta.url),
