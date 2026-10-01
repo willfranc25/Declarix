@@ -2,32 +2,41 @@ import { validateRut } from "../src/utils/rutValidator.js";
 import { normalizeDocumentType } from "../src/utils/documentRules.js";
 
 // A payment operation, terminal or authorization is not an SII folio.
+function printedFolio(number) {
+  if (typeof number !== "string") return false;
+  const value = number.trim();
+  return /^\d{1,20}$/.test(value) &&
+    value.replace(/^0+/, "").length > 0 &&
+    value.replace(/^0+/, "").length <= 10;
+}
+
+function plainEvidence(evidence) {
+  return evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 export function supportedFolio(number, evidence) {
-  if (typeof number !== "string" || typeof evidence !== "string") return false;
-  const folio = number.trim().replace(/^0+(?=\d)/, "");
-  const quote = evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (!/^\d{1,10}$/.test(folio)) return false;
-  if (!new RegExp(`(?:^|\\D)0*${folio}(?:\\D|$)`).test(quote)) return false;
+  if (!printedFolio(number) || typeof evidence !== "string") return false;
+  const folio = number.trim().replace(/^0+/, "");
+  const quote = plainEvidence(evidence);
   if (/operacion|transaccion|autorizacion|aprobacion|terminal|tarjeta|caja|pedido|orden|serie/.test(quote)) return false;
-  return /folio|(?:boleta|factura|nota de credito|nota de debito)(?:\s+(?:electronica|exenta|de honorarios))?\s*(?:n[°ºo.]?\s*)?0*\d/i.test(quote)
-    || /(?:n[°ºo.]?|numero)\s*(?:de\s*)?(?:documento|boleta|factura)\s*[:#-]?\s*0*\d/i.test(quote);
+  const label = /(?:\bfolio\b|\b(?:boleta|bol\.|factura|nota de credito|nota de debito)(?:\s+(?:electronica|exenta|de honorarios))?\b|\b(?:n[°ºo.]?|numero)\s*(?:de\s*)?(?:documento|boleta|factura)\b)/;
+  return new RegExp(`${label.source}\\s*(?:n[°ºo.]?\\s*)?[:#-]?\\s*0*${folio}(?!\\d)`).test(quote);
 }
 
 export function supportedOperation(number, evidence) {
   if (typeof number !== "string" || typeof evidence !== "string") return false;
   const value = number.trim();
-  const quote = evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const quote = plainEvidence(evidence);
   return /^\d{3,20}$/.test(value) &&
-    new RegExp(`(?:^|\\D)${value}(?:\\D|$)`).test(quote) &&
-    /operacion|transaccion/.test(quote) &&
-    !/autorizacion|aprobacion|terminal|comprobante|serie/.test(quote);
+    new RegExp(`\\b(?:(?:operacion|transaccion|comprobante)\\s*(?:n[°ºo.]?\\s*)?|(?:n[°ºo.]?|numero)\\s*(?:de\\s*)?(?:operacion|transaccion|comprobante))[:#-]?\\s*${value}(?!\\d)`).test(quote) &&
+    !/folio|boleta electronica|factura electronica/.test(quote);
 }
 
 export function normalizeElectronicFolio(document) {
   if (!/^(?:boleta|factura|nota de)/i.test(document.documentType || "") ||
       !document.documentNumber) return document;
   const value = String(document.documentNumber).trim();
-  return { ...document, documentNumber: /^\d{1,10}$/.test(value) ? value : null };
+  return { ...document, documentNumber: printedFolio(value) ? value : null };
 }
 
 export function applyFocusedReading(document, reading) {
@@ -46,7 +55,7 @@ export function applyFocusedReading(document, reading) {
     if (supportedOperation(reading.operationNumber, reading.operationEvidence)) {
       next.documentNumber = reading.operationNumber.trim();
       next.referenceNumber = reading.operationNumber.trim();
-      next.notes = [next.notes, "N° de operación del voucher; no es folio tributario."]
+      next.notes = [next.notes, "Identificador del voucher; no es folio de boleta electrónica."]
         .filter(Boolean).join(" ");
     }
   } else if (/\b(?:boleta|factura|nota de cr[eé]dito|nota de d[eé]bito)\b/i.test(label)) {
@@ -58,8 +67,8 @@ export function applyFocusedReading(document, reading) {
 
 export const FOCUSED_PROMPT = `Relee cuidadosamente este comprobante chileno, considerando que puede estar de lado o inclinado. Responde solo JSON: {"providerRut":string|null,"documentNumber":string|null,"folioEvidence":string|null,"typeEvidence":string|null,"operationNumber":string|null,"operationEvidence":string|null}.
 providerRut: copia el RUT del emisor tal como está impreso (no el del cliente). Verifica mentalmente el dígito verificador módulo 11; si la lectura no coincide, vuelve a mirar los dígitos. No cambies uno solo para forzar un RUT válido; usa null si no se distingue.
-documentNumber: busca el folio autorizado de la boleta/factura. Puede verse como «Folio 123», «N° documento 123», «Boleta Electrónica 123», «Factura Electrónica N° 123» o rótulos equivalentes. Copia sus dígitos, sin inventar ni confundirlos con RUT, fechas, serie, número de operación/transacción, terminal, caja, aprobación o autorización de tarjeta. En vouchers «Válido como Boleta» puede no haber folio: usa null si no aparece explícito.
+documentNumber: busca el folio de la boleta/factura. Puede verse como «Folio 123», «N° documento 123», «Boleta Electrónica 123», «Bol. Electronica: 001322303900», «Factura Electrónica N° 123» o rótulos equivalentes. Copia TODOS los dígitos impresos, incluidos los ceros iniciales; el número impreso puede superar 10 caracteres por esos ceros. No lo confundas con RUT, fechas, serie, número de operación/transacción, terminal, caja, aprobación o autorización de tarjeta. En vouchers «Válido como Boleta» sin boleta electrónica separada, usa null aquí.
 folioEvidence: transcribe literalmente la línea o rótulo que vincula ese número con el documento tributario, o null.
 typeEvidence: transcribe literalmente el rótulo del tipo de documento tributario, o null. Si hay una boleta electrónica explícita Y un voucher de pago en la misma foto, prioriza «Boleta Electrónica». Nunca deduzcas «Factura» por haber IVA desglosado.
-operationNumber: solo si el papel es un voucher «Válido como Boleta» sin boleta electrónica separada, copia el número de operación o transacción claramente rotulado. Nunca uses el número de aprobación/autorización, terminal, serie o comprobante. Si no lo puedes distinguir, usa null.
-operationEvidence: transcribe literalmente el rótulo y el número de operación/transacción, o null.`;
+operationNumber: solo si el papel es un voucher «Válido como Boleta» sin boleta electrónica separada, copia el número rotulado «Comprobante», «Operación» o «Transacción». Prioriza «Comprobante» cuando aparezca; no es un folio de boleta electrónica. Nunca uses el número de aprobación/autorización, terminal o serie. Si no lo puedes distinguir, usa null.
+operationEvidence: transcribe literalmente el rótulo y el número elegido, o null.`;
