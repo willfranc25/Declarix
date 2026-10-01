@@ -243,6 +243,12 @@ await db.query("select public.finish_extraction($1,$2,$3,$4,$5,$6)", [
 ]);
 const account = (await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0];
 assert.deepEqual(account, { reserved: 20 }, "Successful extraction releases the reservation without consuming a quota");
+assert.equal((await db.query("select private.queue_ready_reinspection($1) queued", [job])).rows[0].queued, true);
+assert.equal((await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0].reserved, 40);
+assert.equal((await db.query("select private.queue_ready_reinspection($1) queued", [job])).rows[0].queued, false);
+assert.equal((await db.query("select private.restore_ready_reinspection($1) restored", [job])).rows[0].restored, true);
+assert.equal((await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0].reserved, 20);
+assert.equal((await db.query("select status from public.extraction_jobs where id=$1", [job])).rows[0].status, "ready");
 await asUser(a);
 await fail(
   () =>
