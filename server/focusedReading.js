@@ -65,7 +65,31 @@ export function applyFocusedReading(document, reading) {
   return next;
 }
 
-export const FOCUSED_PROMPT = `Relee cuidadosamente este comprobante chileno, considerando que puede estar de lado o inclinado. Responde solo JSON: {"providerRut":string|null,"documentNumber":string|null,"folioEvidence":string|null,"typeEvidence":string|null,"operationNumber":string|null,"operationEvidence":string|null}.
+export function reconcileFolioReading(document, reading) {
+  const next = applyFocusedReading(document, reading);
+  if (!document.documentNumber || !/^(?:boleta|factura|nota de)/i.test(document.documentType || ""))
+    return next;
+  const first = String(document.documentNumber).trim();
+  const second = supportedFolio(reading?.documentNumber, reading?.folioEvidence)
+    ? reading.documentNumber.trim() : null;
+  if (second && first.replace(/^0+(?=\d)/, "") === second.replace(/^0+(?=\d)/, ""))
+    return next;
+  return {
+    ...next,
+    documentNumber: null,
+    folioReview: { first, second, reason: second ? "mismatch" : "inconclusive" },
+  };
+}
+
+export function unverifiedFolio(document) {
+  if (!document.documentNumber || !/^(?:boleta|factura|nota de)/i.test(document.documentType || ""))
+    return document;
+  return { ...document, folioReview: {
+    first: String(document.documentNumber), second: null, reason: "unavailable",
+  } };
+}
+
+export const FOCUSED_PROMPT = `Relee de forma independiente este comprobante chileno. Si recibes varias imágenes, son distintas orientaciones o mejoras de la MISMA foto: elige la más legible; no cuentes varios documentos. Comprueba uno por uno los dígitos del folio, especialmente 3/8, 0/6 y 1/7. Si no se distingue un dígito, usa null; no completes por contexto. Responde solo JSON: {"providerRut":string|null,"documentNumber":string|null,"folioEvidence":string|null,"typeEvidence":string|null,"operationNumber":string|null,"operationEvidence":string|null}.
 providerRut: copia el RUT del emisor tal como está impreso (no el del cliente). Verifica mentalmente el dígito verificador módulo 11; si la lectura no coincide, vuelve a mirar los dígitos. No cambies uno solo para forzar un RUT válido; usa null si no se distingue.
 documentNumber: busca el folio de la boleta/factura. Puede verse como «Folio 123», «N° documento 123», «Boleta Electrónica 123», «Bol. Electronica: 001322303900», «Factura Electrónica N° 123» o rótulos equivalentes. Copia TODOS los dígitos impresos, incluidos los ceros iniciales; el número impreso puede superar 10 caracteres por esos ceros. No lo confundas con RUT, fechas, serie, número de operación/transacción, terminal, caja, aprobación o autorización de tarjeta. En vouchers «Válido como Boleta» sin boleta electrónica separada, usa null aquí.
 folioEvidence: transcribe literalmente la línea o rótulo que vincula ese número con el documento tributario, o null.

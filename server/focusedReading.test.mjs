@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFocusedReading, normalizeElectronicFolio, supportedFolio, supportedOperation } from "./focusedReading.js";
+import { applyFocusedReading, normalizeElectronicFolio, reconcileFolioReading, supportedFolio, supportedOperation, unverifiedFolio } from "./focusedReading.js";
 import { normalizeDocumentType } from "../src/utils/documentRules.js";
 
 test("folio requires a document label, not a payment operation", () => {
@@ -39,6 +39,22 @@ test("electronic folios preserve printed leading zeros but allow at most ten sig
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "001322303900" }).documentNumber, "001322303900");
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "12345678901" }).documentNumber, null);
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "Operación 451627" }).documentNumber, null);
+});
+
+test("a disagreeing second read blocks the folio until a person checks the photo", () => {
+  const first = { documentType: "Boleta Electrónica", documentNumber: "3485367", providerRut: "76464286-4" };
+  const reading = { documentNumber: "3485867", folioEvidence: "Boleta Electrónica 3485867" };
+  const checked = reconcileFolioReading(first, reading);
+  assert.equal(checked.documentNumber, null);
+  assert.deepEqual(checked.folioReview, { first: "3485367", second: "3485867", reason: "mismatch" });
+  assert.equal(first.documentNumber, "3485367");
+  const same = reconcileFolioReading({ ...first, documentNumber: "001322303900" }, {
+    documentNumber: "1322303900", folioEvidence: "Bol. Electronica: 001322303900",
+  });
+  assert.equal(same.documentNumber, "001322303900");
+  const missing = reconcileFolioReading(first, { documentNumber: "3485867", folioEvidence: "Transacción 3485867" });
+  assert.equal(missing.folioReview.reason, "inconclusive");
+  assert.equal(unverifiedFolio(first).folioReview.reason, "unavailable");
 });
 
 test("a voucher can use an explicitly labelled operation without calling it a folio", () => {
