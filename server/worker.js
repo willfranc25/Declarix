@@ -1,5 +1,6 @@
 import { checked } from "./admin.js";
 import { parseDTE } from "./documentInput.js";
+import { imageForModel } from "./modelImage.js";
 import {
   normalizeDocument,
   AMOUNT_FIELDS,
@@ -55,6 +56,25 @@ export function retrySeconds(status, attempt, retryAfter = "") {
     ) + Math.floor(Math.random() * 10),
   );
 }
+function logProviderRejection(jobId, status, raw) {
+  if (status !== 400 && status !== 413) return;
+  let detail = raw;
+  try {
+    const error = JSON.parse(raw)?.error;
+    detail = [error?.message, error?.metadata?.raw].filter(Boolean).join(" — ");
+  } catch {
+    // Plain text responses (such as a 413 from an upstream proxy) are useful too.
+  }
+  console.error("[extraction] OpenRouter rejected request", {
+    jobId,
+    status,
+    detail: String(detail)
+      .replace(/data:[^\s"']+;base64,[A-Za-z0-9+/=]+/g, "[image redacted]")
+      .replace(/[A-Za-z0-9+/=]{200,}/g, "[payload redacted]")
+      .replace(/\b\d{1,2}\.?\d{3}\.?\d{3}-?[0-9kK]\b/g, "[RUT redacted]")
+      .slice(0, 1200),
+  });
+}
 export async function runOne(
   db,
   { fetchImpl = fetch, userId = null, timeoutMs = 65_000 } = {},
@@ -97,12 +117,13 @@ export async function runOne(
       result = { documents: parseDTE(bytes.toString("utf8")) };
     else {
       const model = "google/gemini-3.1-flash-lite";
-      metrics = { model }; // Unknown cost is conservatively booked by the database.
+      metrics = { model, estimatedUsd: 0 };
       if (!process.env.OPENROUTER_API_KEY)
         throw Object.assign(new Error("PROVIDER_NOT_CONFIGURED"), {
           status: 503,
         });
-      const dataUrl = `data:${job.mime_type};base64,${bytes.toString("base64")}`;
+      const modelInput = await imageForModel(bytes, job.mime_type);
+      const dataUrl = `data:${modelInput.mimeType};base64,${modelInput.bytes.toString("base64")}`;
       const filePart =
         job.mime_type === "application/pdf"
           ? {
@@ -110,6 +131,8 @@ export async function runOne(
               file: { filename: "document.pdf", file_data: dataUrl },
             }
           : { type: "image_url", image_url: { url: dataUrl } };
+      // A request that reached the provider may be billed even if the response is lost.
+      delete metrics.estimatedUsd;
       const response = await fetchImpl(
         "https://openrouter.ai/api/v1/chat/completions",
         {
@@ -151,11 +174,18 @@ export async function runOne(
           }),
         },
       );
-      if (!response.ok)
+      if (!response.ok) {
+        const raw = await response.text();
+        logProviderRejection(job.id, response.status, raw);
+        // Validation and payload-size rejections happen before inference.
+        if (response.status >= 400 && response.status < 500 &&
+            response.status !== 408 && response.status !== 429)
+          metrics.estimatedUsd = 0;
         throw Object.assign(new Error("PROVIDER_" + response.status), {
           status: response.status,
           retryAfter: response.headers.get("retry-after"),
         });
+      }
       const body = await response.json();
       const u = body.usage || {};
       metrics = {
@@ -212,7 +242,7 @@ export async function runOne(
     errorCode =
       err.name === "TimeoutError"
         ? "PROVIDER_TIMEOUT"
-        : /^PROVIDER_|INVALID_RESPONSE|INCOMPLETE_RESPONSE|INVALID_FILE/.test(
+        : /^PROVIDER_|INVALID_RESPONSE|INCOMPLETE_RESPONSE|INVALID_FILE|IMAGE_TOO_LARGE/.test(
               err.message,
             )
           ? err.message

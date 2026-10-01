@@ -158,22 +158,26 @@ const useUploadQueueStore = create((set, get) => ({
       version = epoch;
     set({ uploadProgress: { done: 0, total: files.length } });
     let added = 0;
-    for (const file of files) {
-      if (version !== epoch) break;
-      try {
-        await uploadDocument(file, company.id);
-        added++;
-      } catch (err) {
-        if (version === epoch) set({ error: err.message });
+    let nextFile = 0;
+    const uploadNext = async () => {
+      while (version === epoch && nextFile < files.length) {
+        const file = files[nextFile++];
+        try {
+          await uploadDocument(file, company.id);
+          added++;
+        } catch (err) {
+          if (version === epoch) set({ error: err.message });
+        }
+        if (version === epoch)
+          set((state) => ({
+            uploadProgress: {
+              done: state.uploadProgress.done + 1,
+              total: files.length,
+            },
+          }));
       }
-      if (version === epoch)
-        set((state) => ({
-          uploadProgress: {
-            done: state.uploadProgress.done + 1,
-            total: files.length,
-          },
-        }));
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, files.length) }, uploadNext));
     if (version === epoch) {
       set({ uploadProgress: null });
       await get().hydrate();

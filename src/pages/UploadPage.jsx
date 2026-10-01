@@ -126,6 +126,7 @@ export default function UploadPage() {
   const processedFiles = queue.filter(item => item.status === 'done' || item.status === 'error').length;
   const successfulFiles = queue.filter(item => item.status === 'done').length;
   const failedFiles = queue.filter(item => item.status === 'error').length;
+  const waitingFiles = totalFiles - processedFiles;
   // Boletas listas pero con datos incompletos que conviene revisar antes de guardar
   const needsReviewFiles = queue.filter(item => getReviewState(item).needsReview).length;
   const globalProgress = totalFiles > 0 ? Math.round((processedFiles / totalFiles) * 100) : 0;
@@ -256,7 +257,9 @@ export default function UploadPage() {
                 {isProcessing && <span className="spinner" style={{ width: 14, height: 14 }} />}
               </h3>
               <p className="text-xs text-muted" style={{ marginTop: 2 }}>
-                {processedFiles} de {totalFiles} archivos procesados · {successfulFiles} exitosos
+                {processedFiles} de {totalFiles} finalizados · {successfulFiles} listos
+                {failedFiles > 0 && <> · {failedFiles} con error</>}
+                {waitingFiles > 0 && <> · {waitingFiles} en cola</>}
                 {needsReviewFiles > 0 && (
                   <> · <span style={{ color: 'var(--color-warning)', fontWeight: 600 }}>{needsReviewFiles} para revisar</span></>
                 )}
@@ -398,7 +401,7 @@ export default function UploadPage() {
 
               {/* Badge de estado */}
               {item.status === 'pending' && <span className="badge badge-warning" style={{ flexShrink: 0 }}>Pendiente</span>}
-              {item.status === 'waiting' && <span className="badge badge-warning animate-pulse" style={{ flexShrink: 0 }}>Esperando cuota…</span>}
+              {item.status === 'waiting' && <span className="badge badge-warning" style={{ flexShrink: 0 }}>En cola</span>}
               {item.status === 'processing' && <span className="badge badge-info animate-pulse" style={{ flexShrink: 0 }}>Procesando…</span>}
               {item.status === 'done' && (
                 review.needsReview
