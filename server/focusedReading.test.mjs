@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFocusedReading, normalizeElectronicFolio, supportedFolio } from "./focusedReading.js";
+import { applyFocusedReading, normalizeElectronicFolio, supportedFolio, supportedOperation } from "./focusedReading.js";
 import { normalizeDocumentType } from "../src/utils/documentRules.js";
 
 test("folio requires a document label, not a payment operation", () => {
@@ -29,10 +29,30 @@ test("document types from the model are canonicalized for the review selector", 
   assert.equal(normalizeDocumentType("boleta electrónica"), "Boleta Electrónica");
   assert.equal(normalizeDocumentType("FACTURA ELECTRONICA"), "Factura Electrónica");
   assert.equal(normalizeDocumentType("Boleta no afecta o exenta electrónica"), "Boleta Exenta");
+  assert.equal(normalizeDocumentType("Válido como Boleta"), "Comprobante de pago electrónico");
 });
 
 test("electronic folios are numeric and at most ten digits", () => {
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "313.201.234" }).documentNumber, null);
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "001322303900" }).documentNumber, null);
   assert.equal(normalizeElectronicFolio({ documentType: "Boleta Electrónica", documentNumber: "Operación 451627" }).documentNumber, null);
+});
+
+test("a voucher can use an explicitly labelled operation without calling it a folio", () => {
+  assert.equal(supportedOperation("177217075749", "Operación #177217075749"), true);
+  assert.equal(supportedOperation("155379", "Aprobación 155379"), false);
+  assert.equal(supportedOperation("001203", "Comprobante 001203"), false);
+  const voucher = applyFocusedReading({ providerRut: "77.217.995-2", documentType: "Boleta", documentNumber: null, notes: null }, {
+    typeEvidence: "VÁLIDO COMO BOLETA", operationNumber: "177217075749",
+    operationEvidence: "Operación #177217075749",
+  });
+  assert.equal(voucher.documentType, "Comprobante de pago electrónico");
+  assert.equal(voucher.documentNumber, "177217075749");
+  assert.match(voucher.notes, /no es folio tributario/);
+  const uncertain = applyFocusedReading({ documentType: "Boleta", documentNumber: null }, {
+    typeEvidence: "VÁLIDO COMO BOLETA", operationNumber: "155379",
+    operationEvidence: "Aprobación 155379",
+  });
+  assert.equal(uncertain.documentType, "Comprobante de pago electrónico");
+  assert.equal(uncertain.documentNumber, null);
 });
