@@ -103,16 +103,76 @@ test("worker releases a failed request through the finish RPC, with retry metada
       }),
     }),
   };
-  process.env.GEMINI_API_KEY = "test-key";
+  process.env.OPENROUTER_API_KEY = "test-key";
   const result = await runOne(db, {
     fetchImpl: async () =>
       new Response("", { status: 429, headers: { "retry-after": "90" } }),
   });
-  delete process.env.GEMINI_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
   assert.equal(result.status, "queued");
   const finish = calls.find((c) => c[0] === "finish_extraction")[1];
   assert.equal(finish.p_result, null);
   assert.ok(finish.p_retry_seconds >= 90);
   assert.equal(finish.p_error, "PROVIDER_429");
 });
+
+for (const mimeType of ["image/png", "application/pdf"]) {
+  test(`worker sends ${mimeType} through OpenRouter and records billed cost`, async () => {
+    const calls = [];
+    const job = {
+      id: "job", organization_id: "company", mime_type: mimeType,
+      object_path: "path", lease_token: "lease", attempts: 1,
+    };
+    const db = {
+      rpc: async (name, args) => {
+        calls.push([name, args]);
+        return { data: name === "claim_extraction" ? [job] : true, error: null };
+      },
+      storage: { from: () => ({
+        download: async () => ({ data: new Blob(["fixture"]), error: null }),
+      }) },
+      from: () => ({ select: () => ({ eq: () => ({
+        single: async () => ({ data: { provider_rules: {} }, error: null }),
+      }) }) }),
+    };
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      const result = await runOne(db, { fetchImpl: async (url, options) => {
+        assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+        assert.equal(options.headers.Authorization, "Bearer test-key");
+        const request = JSON.parse(options.body);
+        assert.equal(request.model, "google/gemini-3.1-flash-lite");
+        assert.equal(request.response_format.type, "json_schema");
+        assert.equal(request.response_format.json_schema.strict, true);
+        assert.equal(request.provider.require_parameters, true);
+        assert.deepEqual(request.usage, { include: true });
+        const attachment = request.messages[0].content[1];
+        if (mimeType === "application/pdf") {
+          assert.equal(attachment.type, "file");
+          assert.match(attachment.file.file_data, /^data:application\/pdf;base64,/);
+        } else {
+          assert.equal(attachment.type, "image_url");
+          assert.match(attachment.image_url.url, /^data:image\/png;base64,/);
+        }
+        return Response.json({
+          choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ documents: [{
+            providerName: "Empresa", providerRut: "76123456-0", documentType: "factura",
+            documentNumber: "10", date: "2026-01-01", netAmount: 1000,
+            ivaAmount: 190, totalAmount: 1190,
+          }] }) } }],
+          usage: { prompt_tokens: 1000, completion_tokens: 200, cost: 0.0007,
+            completion_tokens_details: { reasoning_tokens: 10 } },
+        });
+      } });
+      assert.equal(result.status, "ready");
+      const finish = calls.find((c) => c[0] === "finish_extraction")[1];
+      assert.equal(finish.p_metrics.model, "google/gemini-3.1-flash-lite");
+      assert.equal(finish.p_metrics.estimatedUsd, 0.0007);
+      assert.equal(finish.p_metrics.thinkingTokens, 10);
+      assert.equal(finish.p_result.documents[0].totalAmount, 1190);
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+  });
+}
 
