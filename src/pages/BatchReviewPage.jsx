@@ -60,6 +60,9 @@ export default function BatchReviewPage() {
   // 'focus' = una boleta a la vez con imagen grande; 'table' = planilla
   const [viewMode, setViewMode] = useState('focus');
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [zoomFocus, setZoomFocus] = useState(null);
+  const lightboxJobRef = useRef(null);
   const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
@@ -99,6 +102,36 @@ export default function BatchReviewPage() {
   const activeIndex = Math.max(0, visibleRows.findIndex(r => r.id === activeRowId));
   const activeRow = visibleRows[activeIndex] || visibleRows[0] || null;
   const previewImageUrl = activeRow?.tempPreviewUrl || null;
+  const activeJobId = activeRow?.source_job_id;
+  const previousJobId = visibleRows[activeIndex - 1]?.source_job_id;
+  const nextJobId = visibleRows[activeIndex + 1]?.source_job_id;
+  useEffect(() => {
+    for (const jobId of new Set([activeJobId, previousJobId, nextJobId].filter(Boolean))) {
+      void useUploadQueueStore.getState().ensurePreview(jobId).catch(() => {});
+    }
+  }, [activeJobId, previousJobId, nextJobId]);
+
+  const openZoom = (field = null) => {
+    if (!activeRow || !previewImageUrl || !(/^(image\/|application\/pdf$)/.test(activeRow.mimeType || ''))) return;
+    const box = activeRow.fieldLocations?.[field];
+    setZoomFocus(box
+      ? { x: (box.x + box.width / 2) / 1000, y: (box.y + box.height / 2) / 1000,
+          scale: Math.min(5, Math.max(2.5, 400 / Math.max(box.width, box.height))) }
+      : { x: 0.5, y: 0.5, scale: 2.5 });
+    setLightboxSrc(previewImageUrl);
+    setLightboxOpen(true);
+    lightboxJobRef.current = activeJobId;
+    void useUploadQueueStore.getState().ensureOriginal(activeJobId)
+      .then((url) => { if (url && lightboxJobRef.current === activeJobId) setLightboxSrc(url); })
+      .catch(() => addToast('No se pudo cargar el original en alta resolución.', 'warning'));
+  };
+  const zoomButton = (field, label) => (
+    <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto', padding: '2px 6px' }}
+      onClick={() => openZoom(field)} disabled={!previewImageUrl || !(/^(image\/|application\/pdf$)/.test(activeRow?.mimeType || ''))}
+      aria-label={`Ampliar ${label} en la foto`} title={`Ampliar ${label} en la foto`}>
+      <Icon name="search" size={14} />
+    </button>
+  );
 
   const goTo = (index) => {
     const target = visibleRows[index];
@@ -593,8 +626,8 @@ export default function BatchReviewPage() {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setLightboxOpen(true)}
-                  disabled={!previewImageUrl || !activeRow.mimeType?.startsWith('image/')}
+                  onClick={() => openZoom()}
+                  disabled={!previewImageUrl || !(/^(image\/|application\/pdf$)/.test(activeRow.mimeType || ''))}
                   title="Ver a pantalla completa"
                 >
                   <Icon name="search" size={14} /> Ampliar
@@ -605,7 +638,11 @@ export default function BatchReviewPage() {
               ) : (
                 <div className="empty-state" style={{ flex: 1 }}>
                   <div className="empty-state-icon"><Icon name="photo" size={24} /></div>
-                  <p className="empty-state-text">Sin imagen disponible</p>
+                  <p className="empty-state-text">Cargando vista previa…</p>
+                  <button className="btn btn-secondary btn-sm" type="button"
+                    onClick={() => void useUploadQueueStore.getState().ensurePreview(activeJobId).catch(() => addToast('No se pudo cargar la imagen.', 'error'))}>
+                    Reintentar imagen
+                  </button>
                 </div>
               )}
             </div>
@@ -614,10 +651,10 @@ export default function BatchReviewPage() {
             <div className="card focus-form-card">
               <div className="focus-form-scroll space-y-4">
                 <details><summary>Otros montos y clasificación</summary>
-                  {['exemptAmount','specificTax','otherTax','withholdingAmount'].map((field,index) => <label key={field} className="form-group">
-                    {['Monto exento','Impuesto específico','Otros impuestos','Retenciones'][index]}
-                    <input className="form-input" type="number" min="0" value={activeRow[field] ?? ''} onChange={e => set(field,e.target.value===''?null:Number(e.target.value))} />
-                  </label>)}
+                  {['exemptAmount','specificTax','otherTax','withholdingAmount'].map((field,index) => <div key={field} className="form-group">
+                    <div className="form-label flex items-center">{['Monto exento','Impuesto específico','Otros impuestos','Retenciones'][index]}{zoomButton(field, ['Monto exento','Impuesto específico','Otros impuestos','Retenciones'][index])}</div>
+                    <input className="form-input" aria-label={['Monto exento','Impuesto específico','Otros impuestos','Retenciones'][index]} type="number" min="0" value={activeRow[field] ?? ''} onChange={e => set(field,e.target.value===''?null:Number(e.target.value))} />
+                  </div>)}
                   <label className="form-group">Centro de costo<input className="form-input" value={activeRow.costCenter || ''} onChange={e=>set('costCenter',e.target.value)} /></label>
                   <label className="form-group">Notas<input className="form-input" value={activeRow.notes || ''} onChange={e=>set('notes',e.target.value)} /></label>
                 </details>
@@ -638,9 +675,10 @@ export default function BatchReviewPage() {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label">Proveedor</label>
+                  <div className="form-label flex items-center">Proveedor{zoomButton('providerName', 'Proveedor')}</div>
                   <input
                     className="form-input"
+                    aria-label="Proveedor"
                     value={activeRow.providerName ?? ''}
                     onChange={(e) => set('providerName', e.target.value)}
                   />
@@ -648,9 +686,10 @@ export default function BatchReviewPage() {
 
                 <div className="form-grid" style={{ gap: 'var(--space-3)' }}>
                   <div className="form-group">
-                    <label className="form-label">RUT proveedor</label>
+                    <div className="form-label flex items-center">RUT proveedor{zoomButton('providerRut', 'RUT proveedor')}</div>
                     <input
                       className="form-input text-mono"
+                      aria-label="RUT proveedor"
                       value={activeRow.providerRut ?? ''}
                       onChange={(e) => set('providerRut', e.target.value)}
                       onBlur={(e) => e.target.value && set('providerRut', formatRut(e.target.value))}
@@ -659,9 +698,10 @@ export default function BatchReviewPage() {
                     {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
                   </div>
                   <div className="form-group">
-                    <label className="form-label">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° comprobante / operación' : 'Folio / N° documento'}</label>
+                    <div className="form-label flex items-center">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° comprobante / operación' : 'Folio / N° documento'}{zoomButton('documentNumber', 'Folio / N° documento')}</div>
                     <input
                       className="form-input text-mono"
+                      aria-label="Folio / N° documento"
                       value={activeRow.documentNumber ?? ''}
                       onChange={(e) => set('documentNumber', e.target.value)}
                       style={fieldError('documentNumber') ? { borderColor: 'var(--color-danger)' } : undefined}
@@ -686,9 +726,10 @@ export default function BatchReviewPage() {
 
                 <div className="form-grid" style={{ gap: 'var(--space-3)' }}>
                   <div className="form-group">
-                    <label className="form-label">Tipo de documento</label>
+                    <div className="form-label flex items-center">Tipo de documento{zoomButton('documentType', 'Tipo de documento')}</div>
                     <select
                       className="form-select"
+                      aria-label="Tipo de documento"
                       value={activeRow.documentType ?? 'Boleta'}
                       onChange={(e) => set('documentType', e.target.value)}
                     >
@@ -696,10 +737,11 @@ export default function BatchReviewPage() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Fecha</label>
+                    <div className="form-label flex items-center">Fecha de emisión{zoomButton('date', 'Fecha de emisión')}</div>
                     <input
                       type="date"
                       className="form-input text-mono"
+                      aria-label="Fecha de emisión"
                       value={activeRow.date ?? ''}
                       onChange={(e) => set('date', e.target.value)}
                       style={fieldError('date') ? { borderColor: 'var(--color-danger)' } : undefined}
@@ -709,9 +751,10 @@ export default function BatchReviewPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Tipo de gasto</label>
+                  <div className="form-label flex items-center">Tipo de gasto{zoomButton('expenseType', 'Tipo de gasto')}</div>
                   <select
                     className="form-select"
+                    aria-label="Tipo de gasto"
                     value={activeRow.expenseType ?? ''}
                     onChange={(e) => set('expenseType', e.target.value)}
                     style={fieldError('expenseType') ? { borderColor: 'var(--color-danger)' } : undefined}
@@ -724,28 +767,31 @@ export default function BatchReviewPage() {
 
                 <div className="form-grid-3" style={{ gap: 'var(--space-3)' }}>
                   <div className="form-group">
-                    <label className="form-label">Neto</label>
+                    <div className="form-label flex items-center">Neto{zoomButton('netAmount', 'Neto')}</div>
                     <input
                       type="number"
                       className="form-input text-mono"
+                      aria-label="Neto"
                       value={activeRow.netAmount ?? ''}
                       onChange={(e) => set('netAmount', Number(e.target.value))}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">IVA</label>
+                    <div className="form-label flex items-center">IVA{zoomButton('ivaAmount', 'IVA')}</div>
                     <input
                       type="number"
                       className="form-input text-mono"
+                      aria-label="IVA"
                       value={activeRow.ivaAmount ?? ''}
                       onChange={(e) => set('ivaAmount', Number(e.target.value))}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Total</label>
+                    <div className="form-label flex items-center">Total{zoomButton('totalAmount', 'Total')}</div>
                     <input
                       type="number"
                       className="form-input text-mono"
+                      aria-label="Total"
                       value={activeRow.totalAmount ?? ''}
                       onChange={(e) => set('totalAmount', Number(e.target.value))}
                       style={{ fontWeight: 700, ...(fieldError('amounts') ? { borderColor: 'var(--color-danger)' } : {}) }}
@@ -788,11 +834,13 @@ export default function BatchReviewPage() {
         );
       })()}
 
-      {lightboxOpen && previewImageUrl && (
+      {lightboxOpen && lightboxSrc && (
         <ImageLightbox
-          src={previewImageUrl}
+          src={lightboxSrc}
           title={activeRow?.fileName || 'Comprobante'}
-          onClose={() => setLightboxOpen(false)}
+          focus={zoomFocus}
+          mimeType={activeRow?.mimeType}
+          onClose={() => { lightboxJobRef.current = null; setLightboxOpen(false); }}
         />
       )}
 
@@ -958,7 +1006,7 @@ export default function BatchReviewPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
                 type="button"
-                onClick={() => setLightboxOpen(true)}
+                onClick={() => openZoom()}
                 title="Clic para ampliar"
                 style={{
                   width: '100%',
@@ -974,16 +1022,15 @@ export default function BatchReviewPage() {
                   padding: 0
                 }}
               >
-                <img
-                  src={previewImageUrl}
-                  alt="Comprobante activo"
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                />
+                {activeRow?.mimeType === 'application/pdf'
+                  ? <span>Ver PDF original</span>
+                  : <img src={previewImageUrl} alt="Comprobante activo"
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary w-full text-center text-xs"
-                onClick={() => setLightboxOpen(true)}
+                onClick={() => openZoom()}
                 style={{ padding: '6px' }}
               >
                 <Icon name="search" size={14} /> Ampliar con zoom

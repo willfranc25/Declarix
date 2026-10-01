@@ -21,19 +21,23 @@ export default function UploadQueueWatcher() {
   useEffect(() => {
     if (!activeCompany) return;
     let busy = false;
+    let timer;
+    let stopped = false;
     const refresh = async () => {
-      if (busy) return;
+      if (busy || stopped) return;
       busy = true;
       try {
         await useUploadQueueStore.getState().hydrate();
         if (useUploadQueueStore.getState().queue.some((item) => item.serverStatus === 'queued')) {
           void wakeExtractionQueue().catch(() => {});
         }
-      } finally { busy = false; }
+      } finally {
+        busy = false;
+        if (!stopped) timer = setTimeout(refresh, useUploadQueueStore.getState().isProcessing ? 5000 : 20000);
+      }
     };
-    refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => clearInterval(timer);
+    void refresh();
+    return () => { stopped = true; clearTimeout(timer); };
   }, [activeCompany?.id]);
   const lastBatchSummary = useUploadQueueStore((s) => s.lastBatchSummary);
   const { addToast } = useToast();

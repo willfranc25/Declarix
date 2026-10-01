@@ -11,6 +11,9 @@
     },
     "api/documents.js": {
       "maxDuration": 60
+    },
+    "api/document-preview.js": {
+      "maxDuration": 60
     }
   },
   "crons": [

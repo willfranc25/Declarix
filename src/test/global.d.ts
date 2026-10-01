@@ -26,6 +26,10 @@ declare module '*BatchReviewPage' {
   const Component: () => any;
   export default Component;
 }
+declare module '*InvoicesPage' {
+  const Component: () => any;
+  export default Component;
+}
 declare module '*ReportsPage' {
   const Component: () => any;
   export default Component;
@@ -128,6 +132,8 @@ declare module '*store/uploadQueueStore' {
     isHydrated: boolean;
     lastBatchSummary: { at: number; done: number; errors: number; duplicates: number } | null;
     hydrate: () => Promise<void>;
+    ensurePreview: (jobId: string) => Promise<string | null>;
+    ensureOriginal: (jobId: string) => Promise<string | null>;
     addFiles: (files: File[]) => Promise<number>;
     updateReview: (id: string, patch: Record<string, any>) => void;
     removeItem: (id: string) => void;

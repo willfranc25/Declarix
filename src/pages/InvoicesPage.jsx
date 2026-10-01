@@ -3,7 +3,9 @@ import logger from '../utils/logger';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
-import { formatCurrency, formatDate, getStatusLabel, getStatusVariant } from '../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, getStatusLabel, getStatusVariant } from '../utils/formatters';
+import { getStorageProvider } from '../services/storage/StorageProvider';
+import { getWorkspaceGeneration } from '../services/organizationService';
 import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
@@ -112,8 +114,11 @@ function InvoiceRow({
 
   const cells = (
     <>
-      <td data-label="Fecha" className="text-mono" style={{ color: 'var(--color-text-secondary)' }} onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}>
+      <td data-label="Emisión" className="text-mono" style={{ color: 'var(--color-text-secondary)' }} onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}>
         {formatDate(inv.date)}
+      </td>
+      <td data-label="Carga al sistema" className="text-mono" style={{ color: 'var(--color-text-secondary)' }} onClick={() => !isSwiped && navigate(`/invoices/${inv.id}`)}>
+        {formatDateTime(inv.uploadedAt || inv.createdAt) || '—'}
       </td>
       <td
         data-label="Proveedor"
@@ -204,8 +209,11 @@ function InvoiceRow({
                 border: '1px solid var(--color-border)',
               }}
             >
-              <div className="table-field" data-label="Fecha">
+              <div className="table-field" data-label="Emisión">
                 <span className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>{formatDate(inv.date)}</span>
+              </div>
+              <div className="table-field" data-label="Carga al sistema">
+                <span className="text-mono" style={{ color: 'var(--color-text-secondary)' }}>{formatDateTime(inv.uploadedAt || inv.createdAt) || '—'}</span>
               </div>
               <div className="table-field" data-label="Proveedor">
                 <span className="truncate" style={{ maxWidth: 200, fontWeight: 500 }} title={inv.providerName}>
@@ -267,20 +275,46 @@ function InvoiceRow({
 export default function InvoicesPage() {
   const navigate = useNavigate();
   const {
-    invoices,
-    loadInvoices,
     deleteInvoice,
     updateTaxStatus,
     filters,
     setFilters,
     clearFilters,
-    getFilteredInvoices,
-    isLoading,
-    error,
-    clearError
   } = useInvoiceStore();
 
-  const filteredInvoices = getFilteredInvoices();
+  const [filteredInvoices, setFilteredInvoices] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const filtersKey = JSON.stringify(filters);
+  const pageSize = 25;
+  useEffect(() => { setPage(1); }, [filtersKey]);
+  useEffect(() => {
+    let cancelled = false;
+    const generation = getWorkspaceGeneration();
+    setIsLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const storage = getStorageProvider();
+        await storage.initialize();
+        const result = await storage.getPage({ page, pageSize, filters });
+        if (cancelled || generation !== getWorkspaceGeneration()) return;
+        setFilteredInvoices(result.rows);
+        setTotal(result.total);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'No se pudieron cargar los comprobantes.');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }, filters.providerSearch ? 250 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  // filtersKey serializa filtros para no disparar consultas por objetos equivalentes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, filtersKey, refreshKey]);
+  const refreshPage = () => setRefreshKey((value) => value + 1);
   const activePreset = getActivePreset(filters);
   const hasActiveFilters = Object.values(filters).some((value) =>
     Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== '',
@@ -335,10 +369,6 @@ export default function InvoicesPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  useEffect(() => { 
-    loadInvoices(); 
-  }, [loadInvoices]);
-
   const handlePageTouchStart = (e) => {
     if (!isMobile || window.scrollY > 0 || isRefreshing) return;
     setPullStartY(e.touches[0].clientY);
@@ -377,7 +407,7 @@ export default function InvoicesPage() {
       setIsPullRefreshing(true);
       setPullDistance(60); // Keep indicator visible during refresh
       try {
-        await loadInvoices();
+        refreshPage();
       } catch (err) {
         logger.error(err);
       } finally {
@@ -395,6 +425,8 @@ export default function InvoicesPage() {
     setIsDeleting(true);
     try {
       await deleteInvoice(deleteId);
+      if (filteredInvoices.length === 1 && page > 1) setPage(page - 1);
+      else refreshPage();
       setDeleteId(null);
       addToast('Comprobante eliminado.', 'success');
     } catch (err) {
@@ -408,6 +440,7 @@ export default function InvoicesPage() {
   const handleTaxStatusChange = async (id, taxStatus) => {
     try {
       await updateTaxStatus(id, taxStatus);
+      refreshPage();
     } catch (err) {
       logger.error(err);
     }
@@ -490,9 +523,7 @@ export default function InvoicesPage() {
         <div>
           <h1 className="page-title">Comprobantes</h1>
           <p className="page-subtitle">
-            {filteredInvoices.length === invoices.length
-              ? `${invoices.length} comprobantes`
-              : `${filteredInvoices.length} de ${invoices.length} comprobantes`}
+            {total} comprobantes{total > 0 ? ` · ${Math.min((page - 1) * pageSize + 1, total)}–${Math.min(page * pageSize, total)} visibles` : ''}
             {hasActiveFilters && (
               <> · {activeFilterLabels.join(' · ') || 'Filtros activos'} <button className="btn btn-ghost btn-sm" onClick={() => clearFilters()} style={{ padding: '0 4px', textDecoration: 'underline' }}>Mostrar todos</button></>
             )}
@@ -510,7 +541,7 @@ export default function InvoicesPage() {
       {error && (
         <div className="alert alert-danger flex justify-between items-center">
           <span>{error}</span>
-          <button className="btn btn-ghost btn-sm" onClick={clearError}><Icon name="x" size={16} /></button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
 
@@ -651,7 +682,8 @@ export default function InvoicesPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Fecha</th>
+                  <th>Emisión</th>
+                  <th>Carga al sistema</th>
                   <th>Proveedor</th>
                   <th className="table-mobile-hidden">Doc.</th>
                   <th className="table-mobile-hidden">Tipo de gasto</th>
@@ -677,6 +709,16 @@ export default function InvoicesPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {total > pageSize && (
+        <nav className="flex items-center justify-between gap-3 flex-wrap" aria-label="Paginación de comprobantes">
+          <span className="text-sm text-muted">Página {page} de {Math.ceil(total / pageSize)}</span>
+          <div className="flex gap-2">
+            <button className="btn btn-secondary" type="button" disabled={page <= 1 || isLoading} onClick={() => setPage((value) => value - 1)}>Anterior</button>
+            <button className="btn btn-secondary" type="button" disabled={page >= Math.ceil(total / pageSize) || isLoading} onClick={() => setPage((value) => value + 1)}>Siguiente</button>
+          </div>
+        </nav>
       )}
 
       {/* Delete Modal */}

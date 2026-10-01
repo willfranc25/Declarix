@@ -25,6 +25,17 @@ const useInvoiceStore = create((set, get) => ({
       if (generation === getWorkspaceGeneration()) set({ error: err.message || 'Error al cargar comprobantes', isLoading: false });
     }
   },
+  loadInvoice: async (id) => {
+    const generation = getWorkspaceGeneration();
+    const storage = getStorageProvider();
+    await storage.initialize();
+    const invoice = await storage.getById(id);
+    if (generation === getWorkspaceGeneration() && invoice && !invoice.deleted) {
+      set((state) => ({ invoices: [invoice, ...state.invoices.filter((item) => item.id !== id)] }));
+      return invoice;
+    }
+    return null;
+  },
 
   /**
    * Agrega un nuevo comprobante.

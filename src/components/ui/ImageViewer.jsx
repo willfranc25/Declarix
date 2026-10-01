@@ -15,8 +15,9 @@ import { useDialogBehavior } from './Modal';
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 
-export function ZoomableImage({ src, alt = 'Comprobante' }) {
+export function ZoomableImage({ src, alt = 'Comprobante', focus = null }) {
   const containerRef = useRef(null);
+  const imageRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
@@ -26,6 +27,17 @@ export function ZoomableImage({ src, alt = 'Comprobante' }) {
     setScale(1);
     setPos({ x: 0, y: 0 });
   }, [src]);
+
+  const applyFocus = useCallback(() => {
+    if (!focus || !imageRef.current) return;
+    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, focus.scale || 2.5));
+    setScale(nextScale);
+    setPos({
+      x: -(focus.x - 0.5) * imageRef.current.offsetWidth * nextScale,
+      y: -(focus.y - 0.5) * imageRef.current.offsetHeight * nextScale,
+    });
+  }, [focus]);
+  useEffect(() => { applyFocus(); }, [src, applyFocus]);
 
   const clampScale = (s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 
@@ -86,8 +98,10 @@ export function ZoomableImage({ src, alt = 'Comprobante' }) {
         style={{ cursor: scale > 1 ? (drag.current ? 'grabbing' : 'grab') : 'zoom-in' }}
       >
         <img
+          ref={imageRef}
           src={src}
           alt={alt}
+          onLoad={applyFocus}
           draggable={false}
           style={{
             transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
@@ -110,7 +124,7 @@ export function ZoomableImage({ src, alt = 'Comprobante' }) {
   );
 }
 
-export function ImageLightbox({ src, title, onClose }) {
+export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'image/jpeg' }) {
   const ref = useRef(null);
   useDialogBehavior(ref, onClose);
 
@@ -123,7 +137,9 @@ export function ImageLightbox({ src, title, onClose }) {
             <Icon name="x" size={18} />
           </button>
         </div>
-        <ZoomableImage src={src} alt={title || 'Comprobante'} />
+        {mimeType === 'application/pdf'
+          ? <iframe className="document-preview" src={src} title={title || 'Comprobante PDF'} style={{ flex: 1, minHeight: 0 }} />
+          : <ZoomableImage src={src} alt={title || 'Comprobante'} focus={focus} />}
       </div>
     </div>
   );
