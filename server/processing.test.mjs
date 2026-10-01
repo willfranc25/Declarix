@@ -150,7 +150,7 @@ test("provider validation rejects do not spend the daily processing budget", asy
   }
 });
 
-test("a provider 400 retries once with a minimal multimodal request", async () => {
+test("the proven minimal request extracts a JSON response in one provider call", async () => {
   const calls = [];
   const db = {
     rpc: async (name, args) => {
@@ -167,18 +167,12 @@ test("a provider 400 retries once with a minimal multimodal request", async () =
       single: async () => ({ data: { provider_rules: {} }, error: null }),
     }) }) }),
   };
-  const originalLog = console.error;
-  console.error = () => {};
   process.env.OPENROUTER_API_KEY = "test-key";
   let requests = 0;
   try {
     const result = await runOne(db, { fetchImpl: async (_url, options) => {
       requests++;
       const request = JSON.parse(options.body);
-      if (requests === 1) {
-        assert.equal(request.response_format.type, "json_schema");
-        return Response.json({ error: { message: "INVALID_ARGUMENT" } }, { status: 400 });
-      }
       assert.equal(request.response_format, undefined);
       assert.equal(request.reasoning, undefined);
       assert.match(request.messages[0].content[0].text, /documents/);
@@ -188,13 +182,12 @@ test("a provider 400 retries once with a minimal multimodal request", async () =
       });
     } });
     assert.equal(result.status, "ready");
-    assert.equal(requests, 2);
+    assert.equal(requests, 1);
     const finish = calls.find((c) => c[0] === "finish_extraction")[1];
     assert.equal(finish.p_metrics.estimatedUsd, 0.0001);
     assert.equal(finish.p_result.documents[0].totalAmount, 1190);
   } finally {
     delete process.env.OPENROUTER_API_KEY;
-    console.error = originalLog;
   }
 });
 
@@ -224,10 +217,10 @@ for (const mimeType of ["image/png", "application/pdf"]) {
         assert.equal(options.headers.Authorization, "Bearer test-key");
         const request = JSON.parse(options.body);
         assert.equal(request.model, "google/gemini-3.1-flash-lite");
-        assert.equal(request.response_format.type, "json_schema");
-        assert.equal(request.response_format.json_schema.strict, true);
-        assert.equal(request.provider.require_parameters, true);
-        assert.deepEqual(request.usage, { include: true });
+        assert.equal(request.response_format, undefined);
+        assert.equal(request.provider, undefined);
+        assert.equal(request.reasoning, undefined);
+        assert.match(request.messages[0].content[0].text, /documents/);
         const attachment = request.messages[0].content[1];
         if (mimeType === "application/pdf") {
           assert.equal(attachment.type, "file");
