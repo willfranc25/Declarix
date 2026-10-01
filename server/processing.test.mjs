@@ -191,6 +191,45 @@ test("the proven minimal request extracts a JSON response in one provider call",
   }
 });
 
+test("worker rereads a questionable RUT and missing folio without replacing other fields", async () => {
+  const calls = [];
+  const db = {
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      return { data: name === "claim_extraction" ? [{
+        id: "job", organization_id: "company", mime_type: "image/jpeg",
+        object_path: "path", lease_token: "lease", attempts: 1,
+      }] : true, error: null };
+    },
+    storage: { from: () => ({ download: async () => ({ data: new Blob(["image"]), error: null }) }) },
+    from: () => ({ select: () => ({ eq: () => ({
+      single: async () => ({ data: { provider_rules: {} }, error: null }),
+    }) }) }),
+  };
+  process.env.OPENROUTER_API_KEY = "test-key";
+  let requests = 0;
+  try {
+    await runOne(db, { fetchImpl: async () => {
+      requests++;
+      return Response.json({
+        choices: [{ finish_reason: "stop", message: { content: requests === 1
+          ? JSON.stringify({ documents: [{ providerName: "REYES & VALENCIA SPA", providerRut: "77217795-2", documentType: "factura", documentNumber: null, date: "2026-09-09", totalAmount: 7000 }] })
+          : JSON.stringify({ providerRut: "77.217.995-2", documentNumber: "261561", folioEvidence: "BOLETA ELECTRONICA 261561", typeEvidence: "BOLETA ELECTRONICA 261561" }) } }],
+        usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 },
+      });
+    } });
+    assert.equal(requests, 2);
+    const finish = calls.find((c) => c[0] === "finish_extraction")[1];
+    assert.equal(finish.p_result.documents[0].providerRut, "77.217.995-2");
+    assert.equal(finish.p_result.documents[0].documentNumber, "261561");
+    assert.equal(finish.p_result.documents[0].documentType, "Boleta Electrónica");
+    assert.equal(finish.p_result.documents[0].totalAmount, 7000);
+    assert.equal(finish.p_metrics.estimatedUsd, 0.0002);
+  } finally {
+    delete process.env.OPENROUTER_API_KEY;
+  }
+});
+
 for (const mimeType of ["image/png", "application/pdf"]) {
   test(`worker sends ${mimeType} through OpenRouter and records billed cost`, async () => {
     const calls = [];
