@@ -116,6 +116,40 @@ test("worker releases a failed request through the finish RPC, with retry metada
   assert.equal(finish.p_error, "PROVIDER_429");
 });
 
+test("provider validation rejects do not spend the daily processing budget", async () => {
+  const calls = [];
+  const db = {
+    rpc: async (name, args) => {
+      calls.push([name, args]);
+      return { data: name === "claim_extraction" ? [{
+        id: "job", organization_id: "company", mime_type: "image/jpeg",
+        object_path: "path", lease_token: "lease", attempts: 1,
+      }] : true, error: null };
+    },
+    storage: { from: () => ({
+      download: async () => ({ data: new Blob(["image"]), error: null }),
+    }) },
+    from: () => ({ select: () => ({ eq: () => ({
+      single: async () => ({ data: { provider_rules: {} }, error: null }),
+    }) }) }),
+  };
+  const originalLog = console.error;
+  console.error = () => {};
+  process.env.OPENROUTER_API_KEY = "test-key";
+  try {
+    const result = await runOne(db, {
+      fetchImpl: async () => Response.json({ error: { message: "bad schema" } }, { status: 400 }),
+    });
+    assert.equal(result.status, "failed");
+    const finish = calls.find((c) => c[0] === "finish_extraction")[1];
+    assert.equal(finish.p_error, "PROVIDER_400");
+    assert.equal(finish.p_metrics.estimatedUsd, 0);
+  } finally {
+    delete process.env.OPENROUTER_API_KEY;
+    console.error = originalLog;
+  }
+});
+
 for (const mimeType of ["image/png", "application/pdf"]) {
   test(`worker sends ${mimeType} through OpenRouter and records billed cost`, async () => {
     const calls = [];

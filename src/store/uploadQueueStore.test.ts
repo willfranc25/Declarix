@@ -17,11 +17,16 @@ describe('durable company queue',()=>{
   const pending=store.getState().hydrate();setActiveOrganization(company('b'));store.getState().reset();release([ready]);await pending;
   expect(store.getState().queue).toEqual([]);
  });
- it('captures company before uploading and stops the batch on a switch',async()=>{
-  let release:any;mocks.upload.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
-  const pending=store.getState().addFiles([new File(['a'],'a.png'),new File(['b'],'b.png')]);
-  setActiveOrganization(company('b'));store.getState().reset();release('job');await pending;
-  expect(mocks.upload).toHaveBeenCalledTimes(1);expect(mocks.upload.mock.calls[0][1]).toBe('a');
+ it('starts at most three uploads and stops adding files after a company switch',async()=>{
+  const releases:Array<(value:string)=>void>=[];
+  mocks.upload.mockImplementation(()=>new Promise(resolve=>{releases.push(resolve);}));
+  const files=['a','b','c','d'].map(name=>new File([name],`${name}.png`));
+  const pending=store.getState().addFiles(files);
+  expect(mocks.upload).toHaveBeenCalledTimes(3);
+  setActiveOrganization(company('b'));store.getState().reset();
+  releases.forEach(release=>release('job'));await pending;
+  expect(mocks.upload).toHaveBeenCalledTimes(3);
+  expect(mocks.upload.mock.calls.every((call)=>call[1]==='a')).toBe(true);
  });
  it('merges corrections in sequence and persists a dismissal',async()=>{
   mocks.jobs.mockResolvedValue([ready]);await store.getState().hydrate();
