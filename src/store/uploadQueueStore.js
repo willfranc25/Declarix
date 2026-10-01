@@ -10,7 +10,7 @@ import {
   documentRequest,
 } from "../services/jobService";
 import { supabase } from "../services/supabaseClient";
-import { documentKey } from "../utils/documentRules";
+import { documentKey, normalizeDocumentType } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
 let epoch = 0;
 const previews = new Map();
@@ -93,6 +93,7 @@ const useUploadQueueStore = create((set, get) => ({
               pendingReviews.get(id)?.patch || j.review?.[index] || {};
             const original = {
               ...data,
+              documentType: normalizeDocumentType(data.documentType),
               imagePath: j.object_path,
               source_job_id: j.id,
               source_index: index,

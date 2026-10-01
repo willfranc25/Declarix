@@ -63,7 +63,7 @@ describe('getRowErrors', () => {
 
   it('marca RUT faltante e inválido', () => {
     expect(getRowErrors({ ...validBoletaData, providerRut: '' }).providerRut).toBe('Falta RUT');
-    expect(getRowErrors({ ...validBoletaData, providerRut: '12.345.678-0' }).providerRut).toBe('RUT inválido');
+    expect(getRowErrors({ ...validBoletaData, providerRut: '12.345.678-0' }).providerRut).toMatch(/dígito verificador/);
   });
 
   it('factura: neto + IVA debe cuadrar con el total', () => {

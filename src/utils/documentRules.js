@@ -1,5 +1,17 @@
 import { validateRut, cleanRut } from "./rutValidator.js";
 
+export function normalizeDocumentType(value) {
+  if (typeof value !== "string") return null;
+  const plain = value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!plain) return null;
+  if (/nota de credito/.test(plain)) return "Nota de Crédito";
+  if (/nota de debito/.test(plain)) return "Nota de Débito";
+  if (/boleta.*honorario/.test(plain)) return "Boleta de Honorarios";
+  if (/factura/.test(plain)) return /exent|no afecta/.test(plain) ? "Factura Exenta" : /electronic/.test(plain) ? "Factura Electrónica" : "Factura";
+  if (/boleta/.test(plain)) return /exent|no afecta/.test(plain) ? "Boleta Exenta" : /electronic/.test(plain) ? "Boleta Electrónica" : "Boleta";
+  return "Otro";
+}
+
 export const AMOUNT_FIELDS = [
   "netAmount",
   "exemptAmount",
@@ -44,7 +56,8 @@ export function documentKey(doc) {
     "Factura Electrónica": "Factura",
     "Boleta Electrónica": "Boleta",
   };
-  return `${cleanRut(doc.providerRut)}|${types[doc.documentType] || doc.documentType}|${String(
+  const type = normalizeDocumentType(doc.documentType);
+  return `${cleanRut(doc.providerRut)}|${types[type] || type}|${String(
     doc.documentNumber,
   )
     .trim()
@@ -54,7 +67,9 @@ export function documentErrors(doc, today = todayChile()) {
   const errors = {};
   if (!doc.providerName?.trim()) errors.providerName = "Falta proveedor";
   if (!validateRut(doc.providerRut || ""))
-    errors.providerRut = doc.providerRut ? "RUT inválido" : "Falta RUT";
+    errors.providerRut = doc.providerRut
+      ? "El RUT leído no coincide con su dígito verificador. Compáralo con la foto."
+      : "Falta RUT";
   if (!String(doc.documentNumber || "").trim())
     errors.documentNumber = "Falta folio";
   if (!civilDate(doc.date)) errors.date = "Fecha inválida o ausente";
@@ -109,6 +124,7 @@ export function normalizeDocument(raw) {
     "costCenter",
   ])
     out[key] = typeof raw[key] === "string" ? raw[key].trim() : null;
+  out.documentType = normalizeDocumentType(out.documentType);
   for (const key of AMOUNT_FIELDS)
     out[key] =
       raw[key] == null || raw[key] === ""
