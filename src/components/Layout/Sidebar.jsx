@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getCurrentTheme, toggleTheme } from '../../utils/theme';
 import Icon from '../ui/Icon';
 import useUploadQueueStore from '../../store/uploadQueueStore';
+import { developerRequest } from '../../services/developerFormats';
 
 const baseItems = [
   { path: '/dashboard', label: 'Resumen de empresa', shortLabel: 'Resumen', icon: <Icon name="chart" /> },
@@ -80,6 +81,15 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const [theme, setTheme] = useState(getCurrentTheme());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [developerAccount, setDeveloperAccount] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    const abort = new AbortController();
+    developerRequest('access', {}, abort.signal).then(({ allowed }) => {
+      if (!abort.signal.aborted) setDeveloperAccount(allowed ? user.id : null);
+    }).catch(() => {});
+    return () => abort.abort();
+  }, [user?.id]);
   const footerRef = useRef(null);
   // Boletas en proceso de extracción (visible desde cualquier página)
   const processingCount = useUploadQueueStore(
@@ -205,6 +215,7 @@ export default function Sidebar() {
                 {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
               </button>
               <div className="account-menu-divider" aria-hidden="true" />
+              {user?.id && developerAccount === user.id && <NavLink role="menuitem" to="/developer/formats" onClick={() => setAccountMenuOpen(false)}>Formatos · Desarrollador</NavLink>}
               <button role="menuitem" className="danger" onClick={handleLogout}>
                 {logoutIcon}
                 Cerrar sesión

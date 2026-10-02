@@ -70,17 +70,28 @@ test("a voucher can use an explicitly labelled operation without calling it a fo
     operationEvidence: "Operación #177217075749",
   });
   assert.equal(voucher.documentType, "Comprobante de pago electrónico");
-  assert.equal(voucher.documentNumber, "177217075749");
-  assert.match(voucher.notes, /no es folio de boleta electrónica/);
+  assert.equal(voucher.documentNumber, "0000");
+  assert.equal(voucher.referenceNumber, "177217075749");
+
   const enex = applyFocusedReading({ documentType: "Comprobante de pago electrónico", documentNumber: null }, {
     typeEvidence: "VÁLIDO COMO BOLETA", operationNumber: "001209",
     operationEvidence: "Comprobante: 001209",
   });
-  assert.equal(enex.documentNumber, "001209");
+  assert.equal(enex.documentNumber, "0000");
+  assert.equal(enex.referenceNumber, "001209");
   const uncertain = applyFocusedReading({ documentType: "Boleta", documentNumber: null }, {
     typeEvidence: "VÁLIDO COMO BOLETA", operationNumber: "155379",
     operationEvidence: "Aprobación 155379",
   });
   assert.equal(uncertain.documentType, "Comprobante de pago electrónico");
-  assert.equal(uncertain.documentNumber, null);
+  assert.equal(uncertain.documentNumber, "0000");
+  assert.equal(uncertain.referenceNumber, undefined);
+});
+
+test("voucher evidence replaces even a mistaken initial tax folio, while a real separate boleta wins", () => {
+  const first = {documentType:"Boleta Electrónica",documentNumber:"155379"};
+  assert.equal(reconcileFolioReading(first,{typeEvidence:"VÁLIDO COMO BOLETA"}).documentNumber,"0000");
+  const real = reconcileFolioReading({...first,documentNumber:"001322303900"},{typeEvidence:"Bol. Electronica: 001322303900",documentNumber:"001322303900",folioEvidence:"Bol. Electronica: 001322303900"});
+  assert.equal(real.documentNumber,"001322303900");
+  assert.equal(real.documentType,"Boleta Electrónica");
 });

@@ -5,7 +5,7 @@ const db = new PGlite();
 await db.exec(`
 create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage;
-create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint);
 create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text);
@@ -124,6 +124,13 @@ await asUser(a);
 await fail(() => inv(cb, "2"), /row-level security|permission denied/);
 await fail(() => inv(ca, "0001"), /Ya existe/);
 await inv(ca2, "1"); // Same issuer+folio is allowed in another company.
+const voucher = (ref, date='2026-01-01') => db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber","referenceNumber",date,"totalAmount","expenseType","taxStatus",deleted)
+ values($1,$2,'Provider','76123456-0','Comprobante de pago electrónico','155379',$3,$4,12003,'Combustible','reviewed',false) returning "documentNumber"`,[a,ca,ref,date]);
+assert.equal((await voucher('002211')).rows[0].documentNumber,'0000','Server forces the marker even for unnormalized client writes');
+await voucher('002212');
+await voucher(null); await voucher(null);
+await voucher('002211','2026-01-02');
+await fail(()=>voucher('002211'),/Ya existe/);
 await db.query(
   "insert into public.period_closures(organization_id,period) values($1,'2026-01')",
   [ca],
@@ -242,6 +249,25 @@ await db.query("select public.finish_extraction($1,$2,$3,$4,$5,$6)", [
   { model: "mock", estimatedUsd: 0.01 },
 ]);
 const account = (await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0];
+// The catalog is private even to the accountant who owns the source documents.
+await db.exec('reset role');
+await db.query('insert into private.developer_accounts(user_id) values($1)',[a]);
+await admin();
+const formatFingerprint='a'.repeat(64);
+const formatEntries=[{index:0,fingerprint:formatFingerprint,profile:{brand:'test',sections:[]},issues:[]}];
+await db.query('select public.record_receipt_formats($1,$2,$3)',[job,claimed[0].lease_token,formatEntries]);
+await db.query('select public.record_receipt_formats($1,$2,$3)',[job,claimed[0].lease_token,formatEntries]);
+assert.equal((await db.query('select seen_count::int n from private.receipt_formats')).rows[0].n,1,'Repeated registration must not inflate counts');
+assert.equal((await db.query('select public.record_receipt_formats($1,$2,$3) ok',[job,job2,formatEntries])).rows[0].ok,false,'A stale lease cannot register examples');
+assert.equal((await db.query('select public.developer_format_access($1) ok',[b])).rows[0].ok,false);
+await fail(()=>db.query("select public.developer_format_inbox($1,'',0)",[b]),/DEVELOPER_FORBIDDEN/);
+assert.equal((await db.query("select public.developer_format_inbox($1,'',0) inbox",[a])).rows[0].inbox.total,1);
+await db.query("select public.review_receipt_format($1,$2,'reviewed','Investigated')",[a,formatFingerprint]);
+await asUser(a);
+await fail(()=>db.query('select * from private.receipt_formats'),/permission denied/);
+await fail(()=>db.query('select public.developer_format_access($1)',[a]),/permission denied/);
+await fail(()=>db.query('insert into private.developer_accounts(user_id) values($1)',[b]),/permission denied/);
+await admin();
 assert.deepEqual(account, { reserved: 20 }, "Successful extraction releases the reservation without consuming a quota");
 assert.equal((await db.query("select private.queue_ready_reinspection($1) queued", [job])).rows[0].queued, true);
 assert.equal((await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0].reserved, 40);
@@ -249,6 +275,15 @@ assert.equal((await db.query("select private.queue_ready_reinspection($1) queued
 assert.equal((await db.query("select private.restore_ready_reinspection($1) restored", [job])).rows[0].restored, true);
 assert.equal((await db.query("select reserved from public.accountant_accounts where user_id=$1", [a])).rows[0].reserved, 20);
 assert.equal((await db.query("select status from public.extraction_jobs where id=$1", [job])).rows[0].status, "ready");
+await asUser(a);
+await db.query("select public.patch_job_review($1,0,'{\"providerName\":\"Manual correction\"}')",[job]);
+await admin();
+const corrected=(await db.query('select status,issue_count::int n from private.receipt_formats')).rows[0];
+assert.deepEqual(corrected,{status:'needs_review',n:1});
+assert.equal((await db.query('select issues from private.receipt_format_observations')).rows[0].issues.includes('corrected:providerName'),true);
+await db.query('select public.developer_format_sample($1,$2,0)',[a,job]);
+assert.equal((await db.query("select count(*)::int n from private.receipt_format_access where action='sample'")).rows[0].n,1);
+
 await asUser(a);
 await fail(
   () =>

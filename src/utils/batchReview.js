@@ -1,4 +1,4 @@
-import { documentErrors, normalizeDocument } from './documentRules';
+import { documentErrors, normalizeDocument, withVoucherFolio } from './documentRules';
 
 /**
  * Lógica pura del flujo de Revisión en lote (BatchReview), extraída para
@@ -24,7 +24,7 @@ const AMOUNT_KEYS = ['netAmount', 'ivaAmount', 'totalAmount', 'totalBoletaServic
 export function deriveRowsFromQueue(queue) {
   return queue
     .filter((q) => q.status === 'done' && q.extractedData)
-    .map((q) => ({
+    .map((q) => withVoucherFolio({
       id: q.id,
       file: q.file,
       fileName: q.name,

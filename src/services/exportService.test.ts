@@ -52,6 +52,17 @@ async function makeTemplate(): Promise<ArrayBuffer> {
 }
 
 describe('exportToRendicion', () => {
+  it('keeps the voucher marker as four literal zeros in Excel, template and CSV', async () => {
+    const voucher = {...invoices[0],documentType:'Comprobante de pago electrónico',documentNumber:'155379',referenceNumber:'002211'};
+    const sheet = new ExcelJS.Workbook();
+    await sheet.xlsx.load(await exportToExcel([voucher]));
+    expect(sheet.worksheets[0].getCell('D2').value).toBe('0000');
+    const rendered = new ExcelJS.Workbook();
+    await rendered.xlsx.load(await exportToRendicion([voucher], await makeTemplate()));
+    expect(rendered.worksheets[0].getCell('D21').value).toBe('0000');
+    expect(exportToCSV([voucher])).toContain(';0000;');
+    expect(voucher.documentNumber).toBe('155379');
+  });
   it('escribe los datos según el mapping y preserva las fórmulas de la plantilla', async () => {
     const template = await makeTemplate();
     const result = await exportToRendicion(invoices, template, {

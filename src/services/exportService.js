@@ -1,4 +1,4 @@
-import { signedAmount } from '../utils/documentRules';
+import { signedAmount, withVoucherFolio } from '../utils/documentRules';
 import { formatDate } from '../utils/formatters';
 import { generateMonthlySummary, generateCategorySummary } from '../utils/calculations';
 
@@ -12,6 +12,7 @@ export { fillTemplate as exportToRendicion, exportRendicionPackage } from './tem
  * Usa ExcelJS (la dependencia `xlsx` se eliminó por CVEs sin fix en npm).
  */
 export async function exportToExcel(invoices, options = {}) {
+  invoices = invoices.map(withVoucherFolio);
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
 
@@ -71,6 +72,7 @@ export async function exportToExcel(invoices, options = {}) {
  * Exporta a CSV simple.
  */
 export function exportToCSV(invoices) {
+  invoices = invoices.map(withVoucherFolio);
   const headers = [
     'Nombre Proveedor', 'RUT Proveedor', 'Tipo Documento', 'N° Documento',
     'Fecha', 'Detalle Compra', 'Tipo de Gasto', 'Neto', 'Total Boleta Servicios',

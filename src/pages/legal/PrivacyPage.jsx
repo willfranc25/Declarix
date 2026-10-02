@@ -2,7 +2,7 @@ import LegalLayout from './LegalLayout';
 
 export default function PrivacyPage() {
   return (
-    <LegalLayout title="Política de privacidad" updated="25 de septiembre de 2026">
+    <LegalLayout title="Política de privacidad" updated="2 de octubre de 2026">
       <p>
         Esta política describe qué datos personales trata Declarix, con qué fin y
         con qué resguardos, conforme a la Ley N° 19.628 y a la Ley N° 21.719 de
@@ -25,6 +25,7 @@ export default function PrivacyPage() {
         </li>
         <li><strong>Uso:</strong> registros técnicos de operaciones (extracciones, exportaciones) asociados a tu cuenta, usados para operar el servicio y resolver errores.</li>
         <li><strong>Errores:</strong> si ocurre una falla, registramos información técnica del error para diagnosticarla.</li>
+        <li><strong>Diagnóstico de formatos:</strong> guardamos características del diseño, campos con errores y referencias a ejemplos ya almacenados. El equipo autorizado puede revisar el original y sus correcciones para resolver problemas de extracción; ese acceso queda registrado. No duplicamos las imágenes para el catálogo.</li>
       </ul>
 
       <h2>3. Finalidades</h2>
@@ -40,7 +41,7 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>Supabase</strong> (base de datos, autenticación y almacenamiento de imágenes; infraestructura en AWS).</li>
         <li><strong>Vercel</strong> (alojamiento de la aplicación y funciones de servidor).</li>
-        <li><strong>Google (Gemini)</strong>: las imágenes y PDF se envían a su API para extraer datos. El tratamiento por parte de Google depende de la modalidad contratada y de sus <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">condiciones del servicio</a>. Los XML DTE se interpretan sin enviarlos a Gemini.</li>
+        <li><strong>OpenRouter y Google (Gemini)</strong>: las imágenes y PDF se envían mediante OpenRouter al modelo Gemini para extraer datos. Los XML DTE se interpretan sin enviarlos a estos proveedores.</li>
         <li><strong>Sentry</strong> (si está habilitado): reportes técnicos de errores.</li>
       </ul>
       <p>

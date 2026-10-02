@@ -1,0 +1,30 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import DeveloperFormatsPage from "./DeveloperFormatsPage";
+import { developerRequest } from "../services/developerFormats";
+vi.mock("../services/developerFormats",()=>({developerRequest:vi.fn()}));
+vi.mock("../components/DocumentPreview",()=>({default:({title})=><div>Original: {title}</div>}));
+const format={fingerprint:"a".repeat(64),profile:{brand:"shell",documentType:"Comprobante de pago electrónico",layout:"thermal",processor:"getnet",folioLabel:"none",sections:["merchant","payment","totals"]},notes:"",status:"new",seen_count:2,issue_count:1,last_seen:"2026-10-02",samples:[{job_id:"job",document_index:0,filename:"shell.jpg"}]};
+beforeEach(()=>vi.resetAllMocks());
+it("shows no examples or controls when the backend denies developer access",async()=>{
+  developerRequest.mockRejectedValue(new Error("Acceso exclusivo del desarrollador."));
+  render(<DeveloperFormatsPage/>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Acceso exclusivo");
+  expect(screen.queryByText("Ejemplos recientes")).not.toBeInTheDocument();
+});
+it("reviews a private layout and opens the same sample again after closing it",async()=>{
+  developerRequest.mockImplementation(async action=>action==="list"?{rows:[format],total:1}:action==="sample"?{document:{documentNumber:"0000"},review:{},filename:"shell.jpg",issues:["field:providerRut"],mimeType:"image/jpeg",url:"https://signed"}:{updated:true});
+  const user=userEvent.setup();render(<DeveloperFormatsPage/>);
+  await user.click(await screen.findByRole("button",{name:/shell · Comprobante/}));
+  await user.click(screen.getByRole("button",{name:/shell.jpg · Documento 1/}));
+  expect(await screen.findByText("Original: shell.jpg")).toBeInTheDocument();
+  expect(screen.getByText("0000")).toBeInTheDocument();
+  await user.click(screen.getByRole("button",{name:"Cerrar ejemplo"}));
+  await user.click(screen.getByRole("button",{name:/shell.jpg · Documento 1/}));
+  await screen.findByText("Original: shell.jpg");
+  expect(developerRequest.mock.calls.filter(([action])=>action==="sample")).toHaveLength(2);
+  await user.type(screen.getByLabelText("Notas privadas para mejorar la extracción"),"Revisar rótulo");
+  await user.click(screen.getByRole("button",{name:"Marcar revisado"}));
+  await waitFor(()=>expect(developerRequest).toHaveBeenCalledWith("review",{fingerprint:format.fingerprint,status:"reviewed",notes:"Revisar rótulo"}));
+});

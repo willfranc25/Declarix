@@ -1,5 +1,5 @@
 import { validateRut } from "../src/utils/rutValidator.js";
-import { normalizeDocumentType } from "../src/utils/documentRules.js";
+import { normalizeDocumentType, withVoucherFolio } from "../src/utils/documentRules.js";
 
 // A payment operation, terminal or authorization is not an SII folio.
 function printedFolio(number) {
@@ -49,24 +49,21 @@ export function applyFocusedReading(document, reading) {
     next.documentNumber = reading.documentNumber.trim();
   const label = typeof reading.typeEvidence === "string" ? reading.typeEvidence : "";
   const isVoucher = /v[aá]lido como boleta/i.test(label);
-  if (isVoucher && !/^(?:Boleta Electrónica|Factura Electrónica)$/.test(next.documentType || "") &&
-      !next.documentNumber) {
+  if (isVoucher && !supportedFolio(reading.documentNumber, reading.folioEvidence)) {
     next.documentType = "Comprobante de pago electrónico";
     if (supportedOperation(reading.operationNumber, reading.operationEvidence)) {
-      next.documentNumber = reading.operationNumber.trim();
       next.referenceNumber = reading.operationNumber.trim();
-      next.notes = [next.notes, "Identificador del voucher; no es folio de boleta electrónica."]
-        .filter(Boolean).join(" ");
     }
   } else if (/\b(?:boleta|factura|nota de cr[eé]dito|nota de d[eé]bito)\b/i.test(label)) {
     const type = normalizeDocumentType(label);
     if (type) next.documentType = type;
   }
-  return next;
+  return withVoucherFolio(next);
 }
 
 export function reconcileFolioReading(document, reading) {
   const next = applyFocusedReading(document, reading);
+  if (next.documentType === "Comprobante de pago electrónico") return next;
   if (!document.documentNumber || !/^(?:boleta|factura|nota de)/i.test(document.documentType || ""))
     return next;
   const first = String(document.documentNumber).trim();

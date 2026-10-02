@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DOCUMENT_TYPES, EXPENSE_TYPES } from "../data/expenseTypes";
 import { useCompany } from "../context/CompanyContext";
-import { documentErrors, AMOUNT_FIELDS } from "../utils/documentRules";
+import { documentErrors, AMOUNT_FIELDS, withVoucherFolio, isPaymentVoucher } from "../utils/documentRules";
 import useInvoiceStore from "../store/invoiceStore";
 const LABELS = {
   providerName: "Proveedor",
@@ -25,10 +25,12 @@ const LABELS = {
 };
 export default function DocumentEditor({ invoice, onClose }) {
   const { activeCompany } = useCompany();
-  const [draft, setDraft] = useState({ ...invoice }),
+  const [draft, setDraft] = useState(withVoucherFolio({ ...invoice })),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
+  const set = (key, value) => setDraft((d) => withVoucherFolio({ ...d, [key]: value,
+    ...(key === 'documentType' && isPaymentVoucher(d) && value !== d.documentType ? { documentNumber: null } : {}),
+  }));
   const categories = activeCompany.categories?.length
     ? activeCompany.categories
     : EXPENSE_TYPES;
@@ -86,12 +88,13 @@ export default function DocumentEditor({ invoice, onClose }) {
         const number = AMOUNT_FIELDS.includes(key);
         return (
           <label key={key}>
-            {label}
+            {key === 'referenceNumber' && isPaymentVoucher(draft) ? 'Operación del voucher (opcional)' : label}
             <input
               className="form-input"
               type={number ? "number" : key === "date" ? "date" : "text"}
               min={number ? 0 : undefined}
               value={draft[key] ?? ""}
+              readOnly={key === 'documentNumber' && isPaymentVoucher(draft)}
               onChange={(e) =>
                 set(
                   key,
@@ -103,6 +106,7 @@ export default function DocumentEditor({ invoice, onClose }) {
                 )
               }
             />
+            {key === 'documentNumber' && isPaymentVoucher(draft) && <small>Sin folio SII: se registra como 0000.</small>}
           </label>
         );
       })}

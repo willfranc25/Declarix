@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { AMOUNT_FIELDS, signedAmount } from "../utils/documentRules";
+import { AMOUNT_FIELDS, signedAmount, withVoucherFolio } from "../utils/documentRules";
 import { formatDate } from "../utils/formatters";
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const REL =
@@ -72,6 +72,7 @@ export async function fillTemplate(
     throw new Error(
       "La plantilla admite 25 filas. Usa el paquete de rendición para exportar todas.",
     );
+  invoices = invoices.map(withVoucherFolio);
   mapping = mapping || DEFAULT_MAPPING;
   const columns = Object.values(mapping)
     .filter(Boolean)
