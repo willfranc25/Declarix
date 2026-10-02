@@ -1,0 +1,9 @@
+.format-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin:1rem 0; }
+.format-card { display:flex; flex-direction:column; gap:.5rem; text-align:left; cursor:pointer; padding:1rem; color:var(--color-text-primary); }
+.format-card:hover,.format-card:focus-visible { border-color:var(--color-primary); }
+.format-review { padding:1.5rem; margin-top:1.5rem; display:grid; gap:1rem; }
+.format-sample { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; }
+.format-sample td { word-break:break-word; }
+.format-sample table { width:100%; border-collapse:collapse; }
+.format-sample th,.format-sample td { padding:.5rem .75rem; text-align:left; border-bottom:1px solid var(--color-border); }
+@media(max-width:800px) { .format-sample { grid-template-columns:1fr; } .format-review { padding:1rem; } }

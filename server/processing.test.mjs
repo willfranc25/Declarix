@@ -326,6 +326,7 @@ for (const mimeType of ["image/png", "application/pdf"]) {
               providerName: "Empresa", providerRut: "76123456-0", documentType: "factura",
               documentNumber: "10", date: "2026-01-01", netAmount: 1000,
               ivaAmount: 190, totalAmount: 1190,
+              formatProfile: {brand:"Copec",layout:"thermal",processor:"none",folioLabel:"factura_electronica",sections:["header","totals"]},
             }] })
             : JSON.stringify({ documentNumber: "10", folioEvidence: "Factura N° 10" }) } }],
           usage: { prompt_tokens: 1000, completion_tokens: 200, cost: 0.0007,
@@ -338,6 +339,9 @@ for (const mimeType of ["image/png", "application/pdf"]) {
       assert.equal(finish.p_metrics.estimatedUsd, mimeType === "image/png" ? 0.0014 : 0.0007);
       assert.equal(finish.p_metrics.thinkingTokens, mimeType === "image/png" ? 20 : 10);
       assert.equal(finish.p_result.documents[0].totalAmount, 1190);
+      assert.equal(finish.p_result.documents[0].formatProfile, undefined, "Developer metadata is not included in customer results");
+      const telemetry=calls.find(c=>c[0]==="record_receipt_formats")[1];
+      assert.equal(telemetry.p_entries[0].profile.brand,"copec");
     } finally {
       delete process.env.OPENROUTER_API_KEY;
     }

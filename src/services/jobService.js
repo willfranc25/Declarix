@@ -94,7 +94,7 @@ export async function listInvoiceKeys(companyId) {
   const rows = [];
   for (let from = 0; ; from += 500) {
     const { data, error } = await supabase.from("invoices")
-      .select("providerRut,documentNumber,documentType")
+      .select("providerRut,documentNumber,documentType,referenceNumber,date,totalAmount")
       .eq("organization_id", companyId).eq("deleted", false)
       .range(from, from + 499);
     if (error) throw error;

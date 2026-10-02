@@ -22,6 +22,7 @@ const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const TermsPage = lazy(() => import('./pages/legal/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/legal/PrivacyPage'));
+const DeveloperFormatsPage = lazy(() => import('./pages/DeveloperFormatsPage'));
 
 
 // Loading fallback for lazy pages
@@ -136,6 +137,7 @@ function AppRoutes() {
                   <Route path="invoices/:id" element={<InvoiceDetailPage />} />
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path="settings" element={<SettingsPage />} />
+                  <Route path="developer/formats" element={<DeveloperFormatsPage />} />
                   <Route path="reset-password" element={<ResetPasswordPage />} />
                 </Routes>
               </Suspense>

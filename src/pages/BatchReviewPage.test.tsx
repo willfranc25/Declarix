@@ -90,6 +90,15 @@ function renderPage() {
 }
 
 describe('BatchReviewPage — flujo revisar → guardar', () => {
+  it('presents an old voucher operation as the read-only 0000 folio without changing other review fields', () => {
+    const item = doneItem('voucher');
+    useUploadQueueStore.setState({queue:[{...item,extractedData:{...item.extractedData,documentType:'Comprobante de pago electrónico',documentNumber:'002211',referenceNumber:'002211'},review:{documentNumber:'155379',providerName:'Proveedor corregido'}}] as any});
+    renderPage();
+    const folio = screen.getByLabelText('Folio / N° documento') as HTMLInputElement;
+    expect(folio.value).toBe('0000');
+    expect(folio.readOnly).toBe(true);
+    expect(screen.getByDisplayValue('Proveedor corregido')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: () => 'blob:x', revokeObjectURL: () => {} });
     navigateMock.mockReset();

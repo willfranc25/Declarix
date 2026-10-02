@@ -51,8 +51,19 @@ export const isCreditNote = (doc) =>
     : Number(doc.documentCode) === 61;
 export const signedAmount = (doc, field) =>
   (isCreditNote(doc) ? -1 : 1) * Math.abs(Number(doc[field]) || 0);
+export const isPaymentVoucher = (doc) => normalizeDocumentType(doc.documentType) === "Comprobante de pago electrónico";
+// 0000 is our no-SII-folio marker, never a number inferred from a POS ticket.
+export function withVoucherFolio(doc) {
+  return isPaymentVoucher(doc) ? { ...doc, documentNumber: "0000", folioReview: null } : doc;
+}
 export function documentKey(doc) {
   if (!doc.providerRut || !doc.documentNumber || !doc.documentType) return null;
+  if (isPaymentVoucher(doc)) {
+    // Without an explicit operation, only source/file idempotency can decide duplicates.
+    const reference = String(doc.referenceNumber || "").trim();
+    if (!reference || !civilDate(doc.date) || !(Number(doc.totalAmount) > 0)) return null;
+    return `${cleanRut(doc.providerRut)}|voucher|${reference}|${doc.date}|${Number(doc.totalAmount)}`;
+  }
   const types = {
     "Factura Electrónica": "Factura",
     "Boleta Electrónica": "Boleta",
@@ -71,11 +82,12 @@ export function documentErrors(doc, today = todayChile()) {
     errors.providerRut = doc.providerRut
       ? "El RUT leído no coincide con su dígito verificador. Compáralo con la foto."
       : "Falta RUT";
-  if (doc.folioReview)
+  if (isPaymentVoucher(doc)) {
+    if (doc.documentNumber !== "0000") errors.documentNumber = "El voucher sin folio SII usa 0000";
+  } else if (doc.folioReview)
     errors.documentNumber = "Confirma el folio comparándolo con la foto";
   else if (!String(doc.documentNumber || "").trim())
-    errors.documentNumber = normalizeDocumentType(doc.documentType) === "Comprobante de pago electrónico"
-      ? "Falta número de comprobante u operación del voucher" : "Falta folio";
+    errors.documentNumber = "Falta folio";
   if (!civilDate(doc.date)) errors.date = "Fecha inválida o ausente";
   else if (doc.date > today) errors.date = "Fecha futura";
   if (!doc.documentType) errors.documentType = "Falta tipo de documento";
@@ -139,5 +151,5 @@ export function normalizeDocument(raw) {
   out.documentCode = Number(raw.documentCode) || null;
   out.taxStatus = "pending";
   out.status = "pending";
-  return out;
+  return withVoucherFolio(out);
 }

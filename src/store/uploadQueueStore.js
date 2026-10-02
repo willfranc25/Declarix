@@ -12,7 +12,7 @@ import {
   fetchDocumentPreview,
 } from "../services/jobService";
 import { supabase } from "../services/supabaseClient";
-import { documentKey, normalizeDocumentType } from "../utils/documentRules";
+import { documentKey, normalizeDocumentType, withVoucherFolio } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
 let epoch = 0;
 const previews = new Map();
@@ -152,14 +152,14 @@ const useUploadQueueStore = create((set, get) => ({
             if (saved.has(id) || j.review?.[index]?._dismissed) return;
             const review =
               pendingReviews.get(id)?.patch || j.review?.[index] || {};
-            const original = {
+            const original = withVoucherFolio({
               ...data,
               documentType: normalizeDocumentType(data.documentType),
               imagePath: j.object_path,
               source_job_id: j.id,
               source_index: index,
               extracted_original: data,
-            };
+            });
             queue.push({
               ...base,
               id,
@@ -167,7 +167,7 @@ const useUploadQueueStore = create((set, get) => ({
               status: "done",
               extractedData: original,
               review,
-              isDuplicate: invoiceKeys.has(documentKey({ ...data, ...review })),
+              isDuplicate: invoiceKeys.has(documentKey(withVoucherFolio({ ...data, ...review }))),
             });
           });
         } else

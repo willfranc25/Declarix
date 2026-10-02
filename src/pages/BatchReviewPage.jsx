@@ -22,7 +22,7 @@ const COLUMNS = [
   { key: 'providerName', label: 'Proveedor', type: 'text' },
   { key: 'providerRut', label: 'RUT', type: 'text' },
   { key: 'documentType', label: 'Tipo Doc', type: 'select', options: DOCUMENT_TYPES },
-  { key: 'documentNumber', label: 'Folio / comprobante', type: 'text' },
+  { key: 'documentNumber', label: 'Folio', type: 'text' },
   { key: 'date', label: 'Fecha', type: 'date' },
   { key: 'expenseType', label: 'Tipo Gasto', type: 'select', options: EXPENSE_TYPES },
   { key: 'netAmount', label: 'Neto', type: 'number' },
@@ -163,6 +163,11 @@ export default function BatchReviewPage() {
 
     const patch = { [key]: value };
     if (key === 'documentNumber') patch.folioReview = null;
+    if (key === 'documentType') {
+      if (value === 'Comprobante de pago electrónico') {
+        patch.documentNumber = '0000'; patch.folioReview = null;
+      } else if (row.documentType === 'Comprobante de pago electrónico') patch.documentNumber = null;
+    }
     // Si cambia Neto o IVA, recalcular Total para Facturas/NC automáticamente
     const nextType = key === 'documentType' ? value : row.documentType;
     const isInvoiceOrNC = ['Factura', 'Factura Electrónica', 'Nota de Crédito'].includes(nextType);
@@ -698,14 +703,16 @@ export default function BatchReviewPage() {
                     {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
                   </div>
                   <div className="form-group">
-                    <div className="form-label flex items-center">{activeRow.documentType === 'Comprobante de pago electrónico' ? 'N° comprobante / operación' : 'Folio / N° documento'}{zoomButton('documentNumber', 'Folio / N° documento')}</div>
+                    <div className="form-label flex items-center">Folio / N° documento{zoomButton('documentNumber', 'Folio / N° documento')}</div>
                     <input
                       className="form-input text-mono"
                       aria-label="Folio / N° documento"
                       value={activeRow.documentNumber ?? ''}
+                      readOnly={activeRow.documentType === 'Comprobante de pago electrónico'}
                       onChange={(e) => set('documentNumber', e.target.value)}
                       style={fieldError('documentNumber') ? { borderColor: 'var(--color-danger)' } : undefined}
                     />
+                    {activeRow.documentType === 'Comprobante de pago electrónico' && <span className="text-muted text-sm">Voucher sin folio SII: se registra como 0000.</span>}
                     {fieldError('documentNumber') && !activeRow.folioReview && <span className="form-error">{errors.documentNumber}</span>}
                     {activeRow.folioReview && (
                       <div className="form-error" role="alert">
@@ -955,6 +962,7 @@ export default function BatchReviewPage() {
                             <input
                               data-row={rowIndex}
                               data-col={col.key}
+                              readOnly={col.key === 'documentNumber' && row.documentType === 'Comprobante de pago electrónico'}
                               type={col.type}
                               value={value}
                               onChange={(e) => handleCellChange(row.id, col.key, col.type === 'number' ? Number(e.target.value) : e.target.value)}
