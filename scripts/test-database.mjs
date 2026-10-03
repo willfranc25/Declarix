@@ -346,4 +346,15 @@ await db.query("insert into public.organizations(name,plan_id) values('Empresa A
 console.log(
   "PASS: all migrations, two-account RLS, two-company isolation, closed periods, duplicate guards, export snapshots, extraction queue without billing quotas, provider pacing.",
 );
+
+await admin();
+await db.query("insert into storage.objects(bucket_id,name) values('document-previews','owner/test-v1.jpg')");
+assert.equal((await db.query("select public from storage.buckets where id='document-previews'")).rows[0].public,false);
+await asUser(a);
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='document-previews'")).rows[0].n,0);
+await db.exec('reset role; set role anon');
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='document-previews'")).rows[0].n,0);
+await admin();
+assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='document-previews'")).rows[0].n,1);
+console.log('PASS: preview bucket is private and accessible only through the authorized server.');
 await db.close();

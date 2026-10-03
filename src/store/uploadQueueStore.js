@@ -15,6 +15,7 @@ import { supabase } from "../services/supabaseClient";
 import { documentKey, normalizeDocumentType, withVoucherFolio } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
 let epoch = 0;
+let prefetchVersion = 0;
 const previews = new Map();
 const originals = new Map();
 const previewRequests = new Map();
@@ -28,6 +29,7 @@ const useUploadQueueStore = create((set, get) => ({
   uploadProgress: null,
   reset() {
     epoch++;
+    prefetchVersion++;
     for (const entry of previews.values()) if (entry.objectUrl) URL.revokeObjectURL(entry.url);
     previews.clear();
     originals.clear();
@@ -68,7 +70,6 @@ const useUploadQueueStore = create((set, get) => ({
     const request = (async () => {
       let url, objectUrl = false;
       if (item.mimeType?.startsWith("image/")) {
-        try {
           const blob = await fetchDocumentPreview(jobId);
           url = URL.createObjectURL(blob);
           objectUrl = true;
@@ -76,9 +77,6 @@ const useUploadQueueStore = create((set, get) => ({
           const img = new Image();
           img.src = url;
           if (img.decode) await img.decode().catch(() => {});
-        } catch {
-          url = await get().ensureOriginal(jobId);
-        }
       } else {
         url = await get().ensureOriginal(jobId);
       }
@@ -100,9 +98,25 @@ const useUploadQueueStore = create((set, get) => ({
         row.jobId === jobId ? { ...row, tempPreviewUrl: url }
           : evicted.includes(row.jobId) ? { ...row, tempPreviewUrl: null } : row) }));
       return url;
-    })().finally(() => previewRequests.delete(jobId));
+    })().finally(() => {
+      // An old company request must not erase a new request after reset.
+      if (previewRequests.get(jobId) === request) previewRequests.delete(jobId);
+    });
     previewRequests.set(jobId, request);
     return request;
+  },
+  async prefetchPreviews(jobIds) {
+    const version = ++prefetchVersion;
+    const ids = [...new Set(jobIds.filter(Boolean))];
+    let cursor = 0;
+    const warm = async () => {
+      while (version === prefetchVersion && cursor < ids.length) {
+        const id = ids[cursor++];
+        // Background failures leave the active image's explicit retry available.
+        await get().ensurePreview(id).catch(() => {});
+      }
+    };
+    await Promise.all([warm(), warm()]);
   },
   async hydrate() {
     const company = requireCompany(),

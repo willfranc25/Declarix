@@ -1,0 +1,15 @@
+# Vistas previas para revisión en lote
+
+Las fotos originales permanecen en `documents`. La revisión usa JPEG de hasta 1200 × 1600, guardados una sola vez en el bucket privado `document-previews`. La ruta incluye usuario, trabajo, hash de la ruta original y versión de transformación. Son archivos derivados reconstruibles; no sustituyen los respaldos del original.
+
+El worker prepara la vista previa con los bytes que ya descargó, en paralelo con la extracción. Un error de preparación no pierde el resultado ni impide reintentar la vista previa desde la revisión. Para trabajos anteriores, la primera solicitud genera y guarda la copia; las siguientes reutilizan esa copia. No se vuelve a llamar a la IA para generar vistas previas.
+
+La API autentica y comprueba el propietario y el estado del trabajo antes de leer cualquier copia. El bucket no tiene políticas de acceso directo para clientes. `Vary: Authorization` y `Cache-Control: private` impiden compartir respuestas entre cuentas. El navegador elimina las URL de imágenes al cambiar de empresa o cerrar sesión.
+
+La revisión prepara cuatro trabajos siguientes y uno anterior, con dos solicitudes de anticipación simultáneas, y da acceso inmediato a la solicitud activa. Cambiar de fila cancela la anticipación aún no iniciada; solicitudes ya iniciadas se deduplican y pueden completar la caché. Hasta 24 vistas previas permanecen en la sesión. No se descarga automáticamente el original grande cuando falla una vista previa: se ofrece reintentar. Al ampliar se solicita el original.
+
+El visor reemplaza el elemento de imagen al cambiar de fuente, reinicia el zoom y muestra carga hasta que la imagen actual está lista. Así no conserva los píxeles de la boleta anterior junto a los datos nuevos.
+
+Diagnóstico: las respuestas incluyen `X-Preview-Cache: hit|miss` y `Server-Timing: preview;dur=...`. Los fallos de preparación/escritura quedan en los registros del servidor con ID de trabajo y código, sin contenido de las boletas. El bucket puede vaciarse mediante la API de Storage para reconstruirlo; nunca borrar filas de `storage.objects` directamente. Las copias usan almacenamiento adicional pequeño y no cambian el consumo de IA.
+
+Validación: pruebas de caché, concurrencia, autorización, aislamiento entre empresas, cancelación de anticipación y cambios de imagen. Ensayo de migraciones gratuito con PGlite, incluyendo acceso denegado al bucket para usuarios y anónimos. En navegador local, con 1200 ms de demora simulada por solicitud, cuatro cambios consecutivos a imágenes anticipadas tomaron 25–28 ms cada uno. Es una medición controlada, no una garantía de tiempos en producción; la primera vista de una foto anterior y la ampliación del original dependen de la conexión.
