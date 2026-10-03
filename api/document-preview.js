@@ -22,6 +22,12 @@ export const createPreviewHandler = (getDb = adminClient) => async (req, res) =>
     res.setHeader("Content-Type", "image/jpeg");
     return res.status(200).send(preview.bytes);
   } catch (err) {
+    console.error("[document-preview] request failed", {
+      jobId: uuid(req.query?.jobId) ? req.query.jobId : null,
+      code: err.code || err.statusCode || err.status || "PREVIEW_FAILED",
+      // Only allow known image errors; never log tokens, object paths or receipts.
+      reason: /pixel limit/i.test(err.message || "") ? "IMAGE_PIXEL_LIMIT" : "PREVIEW_UNAVAILABLE",
+    });
     return respondError(res, err);
   }
 };

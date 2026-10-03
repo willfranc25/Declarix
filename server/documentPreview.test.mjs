@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import { createDocumentPreview, getDocumentPreview, PREVIEW_BUCKET, previewPath } from "./documentPreview.js";
 import { createPreviewHandler } from "../api/document-preview.js";
+import { handlePreviewMaintenance } from "./previewMaintenance.js";
 
 test("review preview is a bounded JPEG while the original remains untouched", async () => {
   const original = await sharp({ create: { width: 2400, height: 3200, channels: 3, background: "white" } })
@@ -12,6 +13,16 @@ test("review preview is a bounded JPEG while the original remains untouched", as
   assert.equal(metadata.format, "jpeg");
   assert.ok(metadata.width <= 1200 && metadata.height <= 1600);
   assert.equal((await sharp(original).metadata()).width, 2400);
+});
+
+test("48 MP camera photos accepted by extraction also produce a review preview", async () => {
+  const original = await sharp({ create: { width: 8000, height: 6000, channels: 3, background: "white" } }).jpeg().toBuffer();
+  await assert.rejects(() => sharp(original, { limitInputPixels: 40_000_000 }).resize(1200).toBuffer(), /pixel limit/i);
+  const preview = await createDocumentPreview(original);
+  const metadata = await sharp(preview).metadata();
+  assert.equal(metadata.format, "jpeg");
+  assert.ok(metadata.width <= 1200 && metadata.height <= 1600);
+  assert.equal((await sharp(original).metadata()).width, 8000);
 });
 
 const job = { id: "11111111-1111-4111-8111-111111111111", user_id: "owner", object_path: "owner/company/source.jpg", status: "ready", mime_type: "image/jpeg" };
@@ -73,4 +84,19 @@ test("preview endpoint checks ownership before reading even a persisted preview"
   await createPreviewHandler(() => db)({ method: "GET", headers: {}, query: { jobId: job.id } }, res);
   assert.equal(res.code, 401);
   assert.equal(reads, 0);
+});
+
+test("maintenance warming requires the existing server signature and exposes only statistics", async () => {
+  const fixture = await storageFixture();
+  fixture.db.from = () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: job }) }) }) });
+  fixture.db.rpc = async () => ({ data: true });
+  const res = { setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } };
+  await handlePreviewMaintenance({ method: "GET", headers: {}, query: { jobId: job.id } }, res, fixture.db);
+  assert.equal(res.code, 401); assert.equal(fixture.originals(), 0);
+  const req = { method: "GET", headers: { "x-dispatch-timestamp": "1791000000", "x-dispatch-signature": "a".repeat(64) }, query: { jobId: job.id } };
+  await handlePreviewMaintenance(req, res, fixture.db);
+  assert.equal(res.code, 200); assert.equal(res.body.cache, "miss");
+  assert.deepEqual(Object.keys(res.body).sort(), ["jobId", "cache", "bytes", "durationMs"].sort());
+  await handlePreviewMaintenance(req, res, fixture.db);
+  assert.equal(res.body.cache, "hit"); assert.equal(fixture.originals(), 1);
 });

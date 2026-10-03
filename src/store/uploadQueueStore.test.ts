@@ -80,4 +80,14 @@ describe('review preview loading',()=>{
   const duplicate=store.getState().ensurePreview('job0');expect(mocks.preview).toHaveBeenCalledTimes(2);
   releases[1](new Blob(['new']));expect(await duplicate).toBe(await next);
  });
+ it('shows the active original when preview generation fails, including an in-flight prefetch',async()=>{
+  await seed(1);let reject:any;
+  mocks.preview.mockImplementation(()=>new Promise((_resolve,rejectPromise)=>{reject=rejectPromise;}));
+  const prefetch=store.getState().prefetchPreviews(['job0']);
+  const active=store.getState().ensureReviewPreview('job0');
+  reject(new Error('preview server failed'));await prefetch;
+  expect(await active).toBe('https://example.test/preview');
+  expect(store.getState().queue[0].tempPreviewUrl).toBe('https://example.test/preview');
+  expect(mocks.preview).toHaveBeenCalledTimes(1);
+ });
 });

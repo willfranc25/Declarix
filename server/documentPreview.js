@@ -7,7 +7,9 @@ const generating = new Map();
 export const previewPath = (job) => `${job.user_id}/${job.id}/${createHash("sha256").update(job.object_path).digest("hex")}-v1.jpg`;
 
 export async function createDocumentPreview(bytes) {
-  return sharp(bytes, { limitInputPixels: 40_000_000 })
+  // Use the same bounded Sharp default as imageForModel. Camera photos accepted
+  // by extraction can exceed 40 MP; a smaller preview limit rejected them.
+  return sharp(bytes)
     .rotate()
     .resize({ width: 1200, height: 1600, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 72 })
@@ -16,7 +18,9 @@ export async function createDocumentPreview(bytes) {
 
 // Private, disposable derivatives. Never overwrite or modify the source file.
 export async function storeDocumentPreview(db, job, bytes) {
+  const source = await sharp(bytes).metadata();
   const preview = await createDocumentPreview(bytes);
+  console.info("[document-preview] generated", { jobId: job.id, width: source.width, height: source.height, originalBytes: bytes.length, previewBytes: preview.length });
   const { error } = await db.storage.from(PREVIEW_BUCKET).upload(previewPath(job), preview, {
     contentType: "image/jpeg", cacheControl: "31536000", upsert: false,
   });
