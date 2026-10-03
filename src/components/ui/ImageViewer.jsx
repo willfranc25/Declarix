@@ -15,24 +15,23 @@ import { useDialogBehavior } from './Modal';
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 
-export function ZoomableImage({ src, alt = 'Comprobante', focus = null, upgradeSrc = null, detailLoading = false }) {
+export function ZoomableImage({ src, alt = 'Comprobante', focus = null, upgradeSrc = null, detailLoading = false, preloaded = false }) {
   // A new DOM image cannot retain pixels from the previous receipt while loading.
-  return <ImageCanvas key={src} src={src} alt={alt} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} />;
+  return <ImageCanvas key={src} src={src} alt={alt} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} preloaded={preloaded} />;
 }
 
-function ImageCanvas({ src, alt, focus, upgradeSrc, detailLoading }) {
+function ImageCanvas({ src, alt, focus, upgradeSrc, detailLoading, preloaded }) {
   const containerRef = useRef(null);
   const imageRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(preloaded);
   const [failed, setFailed] = useState(false);
 
   const [displayedSrc, setDisplayedSrc] = useState(src);
   const [upgrading, setUpgrading] = useState(false);
   const [upgradeFailed, setUpgradeFailed] = useState(false);
-  const initialFocusApplied = useRef(false);
   useEffect(() => {
     if (!upgradeSrc || upgradeSrc === src) return undefined;
     let current = true;
@@ -68,9 +67,8 @@ function ImageCanvas({ src, alt, focus, upgradeSrc, detailLoading }) {
   }, [focus]);
   const onImageLoad = useCallback(() => {
     setLoaded(true);
-    if (!initialFocusApplied.current) {
-      initialFocusApplied.current = true; applyFocus();
-    }
+    // Each completed image starts at its initial view, without retaining zoom.
+    setScale(1); setPos({ x: 0, y: 0 }); applyFocus();
   }, [applyFocus]);
   useEffect(() => { applyFocus(); }, [src, applyFocus]);
 
@@ -172,7 +170,7 @@ function ImageCanvas({ src, alt, focus, upgradeSrc, detailLoading }) {
   );
 }
 
-export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'image/jpeg', upgradeSrc = null, detailLoading = false, onOriginal = null }) {
+export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'image/jpeg', upgradeSrc = null, detailLoading = false, onOriginal = null, preloaded = false }) {
   const ref = useRef(null);
   useDialogBehavior(ref, onClose);
 
@@ -190,7 +188,7 @@ export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'i
         </div>
         {mimeType === 'application/pdf'
           ? <iframe className="document-preview" src={src} title={title || 'Comprobante PDF'} style={{ flex: 1, minHeight: 0 }} />
-          : <ZoomableImage src={src} alt={title || 'Comprobante'} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} />}
+          : <ZoomableImage src={src} alt={title || 'Comprobante'} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} preloaded={preloaded} />}
       </div>
     </div>
   );

@@ -55,6 +55,14 @@ const useUploadQueueStore = create((set, get) => ({
     detailPins.add(jobId);
     return () => detailPins.delete(jobId);
   },
+  getReadyDetailPreview(jobId) {
+    const url = details.get(jobId);
+    if (url) { details.delete(jobId); details.set(jobId, url); }
+    return url || null;
+  },
+  isPreviewDecoded(jobId, url) {
+    return details.get(jobId) === url || (previews.get(jobId)?.objectUrl && previews.get(jobId)?.url === url) || false;
+  },
   async ensureDetailPreview(jobId) {
     const cached = details.get(jobId);
     if (cached) {

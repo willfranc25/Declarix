@@ -57,10 +57,14 @@ describe('review preview loading',()=>{
   await seed(1);const small=await store.getState().ensurePreview('job0');
   const [a,b]=await Promise.all([store.getState().ensureDetailPreview('job0'),store.getState().ensureDetailPreview('job0')]);
   expect(a).toBe(b);expect(a).not.toBe(small);
+  expect(store.getState().getReadyDetailPreview('job0')).toBe(a);
+  expect(store.getState().isPreviewDecoded('job0',a!)).toBe(true);
+  expect(store.getState().isPreviewDecoded('job0','blob:unknown')).toBe(false);
   expect(mocks.preview).toHaveBeenCalledTimes(2);expect(mocks.preview).toHaveBeenLastCalledWith('job0','detail');
   expect(store.getState().queue[0].tempPreviewUrl).toBe(small);
   expect(await store.getState().ensureDetailPreview('job0')).toBe(a);
   store.getState().reset();expect(URL.revokeObjectURL).toHaveBeenCalledWith(a);
+  expect(store.getState().getReadyDetailPreview('job0')).toBeNull();
  });
  it('does not revoke an open image when background detail requests fill the cache',async()=>{
   await seed(6);const release=store.getState().pinDetailPreview('job0');

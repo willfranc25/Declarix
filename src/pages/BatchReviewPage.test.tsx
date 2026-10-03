@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -155,6 +155,39 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     expect(original).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', 'blob:a'));
     expect(screen.getByText('400%')).toBeInTheDocument();
+  });
+
+  it('opens cached detail immediately at 100% and resets it on every reopening', async () => {
+    const user = userEvent.setup();
+    const before = useUploadQueueStore.getState();
+    const detail = vi.fn().mockResolvedValue('blob:ready-detail');
+    useUploadQueueStore.setState({
+      getReadyDetailPreview: () => 'blob:ready-detail',
+      isPreviewDecoded: () => true,
+      ensureDetailPreview: detail,
+      queue: [doneItem('a', { jobId: 'job-a', mimeType: 'image/jpeg',
+        extractedData: { ...doneItem('a').extractedData, source_job_id: 'job-a' } })] as any,
+    });
+    try {
+      renderPage();
+      await waitFor(() => expect(detail).toHaveBeenCalled());
+      const count = detail.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: /^Ampliar$/ }));
+      const dialog = screen.getByRole('dialog');
+      expect(dialog.querySelector('img')).toHaveAttribute('src', 'blob:ready-detail');
+      expect(dialog.querySelector('img')).toHaveStyle({ visibility: 'visible' });
+      expect(within(dialog).queryByText('Cargando imagen…')).toBeNull();
+      expect(within(dialog).getByText('100%')).toBeInTheDocument();
+      expect(detail.mock.calls.length).toBe(count);
+      await user.click(within(dialog).getByRole('button', { name: 'Acercar' }));
+      expect(within(dialog).getByText('130%')).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+      await user.click(screen.getByRole('button', { name: /^Ampliar$/ }));
+      expect(within(screen.getByRole('dialog')).getByText('100%')).toBeInTheDocument();
+    } finally {
+      useUploadQueueStore.setState({ getReadyDetailPreview: before.getReadyDetailPreview,
+        isPreviewDecoded: before.isPreviewDecoded, ensureDetailPreview: before.ensureDetailPreview });
+    }
   });
 
   it('"Guardar y seguir" guarda el comprobante, lo saca de la cola y avanza', async () => {
