@@ -40,11 +40,14 @@ function QueueThumbnail({ item, onOpen }) {
   const open = async () => {
     if (!item.mimeType?.startsWith('image/') || item.status !== 'done') return;
     try {
-      const src = item.tempPreviewUrl || await useUploadQueueStore.getState().ensurePreview(item.jobId);
+      const store = useUploadQueueStore.getState();
+      const readyDetail = store.getReadyDetailPreview(item.jobId);
+      const src = readyDetail || item.tempPreviewUrl || await store.ensurePreview(item.jobId);
       if (!src) return;
-      const opening = { src, title: item.name, jobId: item.jobId, request: Symbol() };
+      const opening = { src, title: item.name, jobId: item.jobId, request: Symbol(), preloaded: store.isPreviewDecoded(item.jobId, src) };
       onOpen(opening);
-      const detail = await useUploadQueueStore.getState().ensureDetailPreview(item.jobId);
+      if (readyDetail) return;
+      const detail = await store.ensureDetailPreview(item.jobId);
       onOpen(current => current?.request === opening.request ? { ...current, upgradeSrc: detail } : current);
     } catch { /* La revisión conserva el original aunque falle esta vista previa. */ }
   };
@@ -470,7 +473,7 @@ export default function UploadPage() {
       </div>
 
       {preview && (
-        <ImageLightbox src={preview.src} upgradeSrc={preview.upgradeSrc} title={preview.title} onClose={() => setPreview(null)} />
+        <ImageLightbox src={preview.src} preloaded={preview.preloaded} upgradeSrc={preview.upgradeSrc} title={preview.title} onClose={() => setPreview(null)} />
       )}
     </div>
   );

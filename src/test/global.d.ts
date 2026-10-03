@@ -135,6 +135,8 @@ declare module '*store/uploadQueueStore' {
     ensurePreview: (jobId: string) => Promise<string | null>;
     ensureReviewPreview: (jobId: string) => Promise<string | null>;
     prefetchPreviews: (jobIds: string[]) => Promise<void>;
+    getReadyDetailPreview: (jobId: string) => string | null;
+    isPreviewDecoded: (jobId: string, url: string) => boolean;
     pinDetailPreview: (jobId: string) => () => void;
     ensureDetailPreview: (jobId: string) => Promise<string | null>;
     ensureOriginal: (jobId: string) => Promise<string | null>;

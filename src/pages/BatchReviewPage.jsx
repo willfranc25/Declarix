@@ -67,6 +67,7 @@ export default function BatchReviewPage() {
   const [lightboxDocument, setLightboxDocument] = useState(null);
   const [lightboxDetailSrc, setLightboxDetailSrc] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [lightboxPreloaded, setLightboxPreloaded] = useState(false);
   const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
@@ -150,12 +151,16 @@ export default function BatchReviewPage() {
     setZoomFocus(box
       ? { x: (box.x + box.width / 2) / 1000, y: (box.y + box.height / 2) / 1000,
           scale: Math.min(5, Math.max(2.5, 400 / Math.max(box.width, box.height))) }
-      : { x: 0.5, y: 0.5, scale: 2.5 });
-    setLightboxSrc(previewImageUrl);
+      : null);
+    const store = useUploadQueueStore.getState();
+    const readyDetail = store.getReadyDetailPreview(activeJobId);
+    const src = readyDetail || previewImageUrl;
+    setLightboxSrc(src);
+    setLightboxPreloaded(store.isPreviewDecoded(activeJobId, src));
     setLightboxOpen(true);
     setLightboxDocument({ jobId: activeJobId, title: activeRow.fileName, mimeType: activeRow.mimeType });
     setLightboxDetailSrc(null);
-    if (activeRow.mimeType?.startsWith('image/')) loadZoomDetail(activeJobId);
+    if (activeRow.mimeType?.startsWith('image/') && !readyDetail) loadZoomDetail(activeJobId);
     else { lightboxRequestRef.current++; setDetailLoading(false); }
   };
   const zoomButton = (field, label) => (
@@ -882,6 +887,7 @@ export default function BatchReviewPage() {
           mimeType={lightboxDocument?.mimeType}
           upgradeSrc={lightboxDetailSrc}
           detailLoading={detailLoading}
+          preloaded={lightboxPreloaded}
           onOriginal={() => loadZoomDetail(lightboxDocument.jobId, true)}
           onClose={() => { lightboxRequestRef.current++; setLightboxOpen(false); }}
         />

@@ -9,7 +9,7 @@ describe('receipt image navigation',()=>{
   vi.stubGlobal('Image',class {src='';decode(){return new Promise((resolve,reject)=>pending.push({resolve,reject,src:this.src}));}});
   return pending;
  };
- it('keeps visible pixels and user zoom until the sharper image is decoded',async()=>{
+ it('keeps visible pixels during detail loading and resets zoom when it loads',async()=>{
   const pending=decodeGate();
   const {rerender}=render(<ZoomableImage src="/small.jpg"/>);
   const image=screen.getByAltText('Comprobante');fireEvent.load(image);
@@ -20,8 +20,14 @@ describe('receipt image navigation',()=>{
   expect(screen.queryByText('Cargando imagen…')).toBeNull();
   await act(async()=>pending[0].resolve());
   await waitFor(()=>expect(image).toHaveAttribute('src','/detail.jpg'));
-  fireEvent.load(image);expect(screen.getByText('130%')).toBeInTheDocument();
+  fireEvent.load(image);expect(screen.getByText('100%')).toBeInTheDocument();
   expect(image).toHaveStyle({visibility:'visible'});
+ });
+ it('shows a predecoded expanded photo in the first render without a loading screen',()=>{
+  render(<ZoomableImage src="blob:predecoded" preloaded/>);
+  expect(screen.getByAltText('Comprobante')).toHaveStyle({visibility:'visible'});
+  expect(screen.queryByText('Cargando imagen…')).toBeNull();
+  expect(screen.getByText('100%')).toBeInTheDocument();
  });
  it('keeps the photo visible when detail decoding fails',async()=>{
   const pending=decodeGate();render(<ZoomableImage src="/small.jpg" upgradeSrc="/broken.jpg"/>);
