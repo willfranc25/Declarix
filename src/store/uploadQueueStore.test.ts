@@ -1,6 +1,6 @@
-import {beforeEach,describe,it,expect,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn()}));
-vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:vi.fn(),uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request}));
+import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn(),preview:vi.fn()}));
+vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:mocks.preview,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request}));
 vi.mock('../services/supabaseClient',()=>({supabase:{from:()=>({select:()=>({eq:()=>({in:()=>({range:async()=>({data:[],error:null})})})})}),storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'https://example.test/preview'}})})}}}));
 import store from '../store/uploadQueueStore';
 import {setActiveOrganization} from '../services/organizationService';
@@ -40,5 +40,44 @@ describe('durable company queue',()=>{
  it('resumes an uploaded draft using enqueue without uploading again',async()=>{
   mocks.jobs.mockResolvedValue([{...ready,status:'uploading'}]);await store.getState().hydrate();await store.getState().retryItem('job');
   expect(mocks.request).toHaveBeenCalledWith('enqueue',{jobId:'job'});expect(mocks.upload).not.toHaveBeenCalled();
+ });
+});
+
+
+describe('review preview loading',()=>{
+ beforeEach(()=>{
+  vi.stubGlobal('Image',class {src='';async decode(){}});
+  vi.spyOn(URL,'createObjectURL').mockImplementation(()=> 'blob:preview-'+Math.random());
+  vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
+  mocks.preview.mockResolvedValue(new Blob(['preview']));
+ });
+ afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
+ const seed=async(count=6)=>{mocks.jobs.mockResolvedValue(Array.from({length:count},(_,index)=>({...ready,id:'job'+index})));await store.getState().hydrate();};
+ it('prepares the next four photos with at most two background requests',async()=>{
+  await seed();
+  let inFlight=0,max=0;
+  mocks.preview.mockImplementation(async()=>{inFlight++;max=Math.max(max,inFlight);await Promise.resolve();inFlight--;return new Blob(['preview']);});
+  await store.getState().prefetchPreviews(['job1','job2','job3','job4','job1']);
+  expect(max).toBe(2);expect(mocks.preview).toHaveBeenCalledTimes(4);
+  await store.getState().ensurePreview('job1');
+  expect(mocks.preview).toHaveBeenCalledTimes(4);
+ });
+ it('drops obsolete prefetches after navigation and never downloads a full-size fallback',async()=>{
+  await seed();const releases:Array<(value:Blob)=>void>=[];
+  mocks.preview.mockImplementation(()=>new Promise(resolve=>{releases.push(resolve);}));
+  const pending=store.getState().prefetchPreviews(['job1','job2','job3']);
+  await store.getState().prefetchPreviews([]);releases.forEach(release=>release(new Blob(['preview'])));await pending;
+  expect(mocks.preview).toHaveBeenCalledTimes(2);
+  mocks.preview.mockRejectedValue(new Error('offline'));
+  await expect(store.getState().ensurePreview('job3')).rejects.toThrow('offline');
+  expect(store.getState().queue.find((item:any)=>item.jobId==='job3')?.tempPreviewUrl).toBeNull();
+ });
+ it('does not let an old response erase the new company request',async()=>{
+  await seed(1);const releases:Array<(value:Blob)=>void>=[];
+  mocks.preview.mockImplementation(()=>new Promise(resolve=>{releases.push(resolve);}));
+  const old=store.getState().ensurePreview('job0');store.getState().reset();await seed(1);
+  const next=store.getState().ensurePreview('job0');releases[0](new Blob(['old']));expect(await old).toBeNull();
+  const duplicate=store.getState().ensurePreview('job0');expect(mocks.preview).toHaveBeenCalledTimes(2);
+  releases[1](new Blob(['new']));expect(await duplicate).toBe(await next);
  });
 });

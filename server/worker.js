@@ -8,6 +8,7 @@ import {
 import { EXPENSE_TYPES } from "../src/data/expenseTypes.js";
 import { validateRut } from "../src/utils/rutValidator.js";
 import { FORMAT_PROMPT, formatEntry, recordReceiptFormats } from "./receiptFormats.js";
+import { storeDocumentPreview } from "./documentPreview.js";
 import { applyFocusedReading, FOCUSED_PROMPT, normalizeElectronicFolio, reconcileFolioReading, unverifiedFolio } from "./focusedReading.js";
 const stringFields = [
   "providerName",
@@ -86,6 +87,7 @@ export async function runOne(
     errorCode = null,
     retry = null;
   let formatProfiles = [];
+  let previewTask;
   let metrics = {
     model: "xml",
     promptTokens: 0,
@@ -108,6 +110,13 @@ export async function runOne(
       await db.storage.from("documents").download(job.object_path),
     );
     const bytes = Buffer.from(await blob.arrayBuffer());
+    if (job.mime_type.startsWith("image/")) {
+      // Use bytes already downloaded for extraction, concurrently with the AI.
+      // A derivative failure must never turn a successful extraction into an error.
+      previewTask = storeDocumentPreview(db, job, bytes).catch(() => {
+        console.warn("[document-preview] preparation failed", { jobId: job.id });
+      });
+    }
     if (/xml$/.test(job.mime_type))
       result = { documents: parseDTE(bytes.toString("utf8")) };
     else {
@@ -281,6 +290,7 @@ export async function runOne(
       err.retryAfter,
     );
   }
+  await previewTask;
   metrics.durationMs = Date.now() - started;
   const finished = checked(
     await db.rpc("finish_extraction", {

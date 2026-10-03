@@ -133,6 +133,7 @@ declare module '*store/uploadQueueStore' {
     lastBatchSummary: { at: number; done: number; errors: number; duplicates: number } | null;
     hydrate: () => Promise<void>;
     ensurePreview: (jobId: string) => Promise<string | null>;
+    prefetchPreviews: (jobIds: string[]) => Promise<void>;
     ensureOriginal: (jobId: string) => Promise<string | null>;
     addFiles: (files: File[]) => Promise<number>;
     updateReview: (id: string, patch: Record<string, any>) => void;

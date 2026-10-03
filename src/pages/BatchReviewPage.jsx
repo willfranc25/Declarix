@@ -103,13 +103,16 @@ export default function BatchReviewPage() {
   const activeRow = visibleRows[activeIndex] || visibleRows[0] || null;
   const previewImageUrl = activeRow?.tempPreviewUrl || null;
   const activeJobId = activeRow?.source_job_id;
-  const previousJobId = visibleRows[activeIndex - 1]?.source_job_id;
-  const nextJobId = visibleRows[activeIndex + 1]?.source_job_id;
+  const nearbyJobIds = JSON.stringify([
+    ...visibleRows.slice(activeIndex + 1, activeIndex + 5).map(row => row.source_job_id),
+    visibleRows[activeIndex - 1]?.source_job_id,
+  ].filter(Boolean));
   useEffect(() => {
-    for (const jobId of new Set([activeJobId, previousJobId, nextJobId].filter(Boolean))) {
-      void useUploadQueueStore.getState().ensurePreview(jobId).catch(() => {});
-    }
-  }, [activeJobId, previousJobId, nextJobId]);
+    const store = useUploadQueueStore.getState();
+    if (activeJobId) void store.ensurePreview(activeJobId).catch(() => {});
+    void store.prefetchPreviews(JSON.parse(nearbyJobIds));
+    return () => { void store.prefetchPreviews([]); };
+  }, [activeJobId, nearbyJobIds]);
 
   const openZoom = (field = null) => {
     if (!activeRow || !previewImageUrl || !(/^(image\/|application\/pdf$)/.test(activeRow.mimeType || ''))) return;
@@ -639,7 +642,7 @@ export default function BatchReviewPage() {
                 </button>
               </div>
               {previewImageUrl ? (
-                <DocumentPreview src={previewImageUrl} mimeType={activeRow.mimeType} title={activeRow.fileName} />
+                <DocumentPreview key={activeRow.id} src={previewImageUrl} mimeType={activeRow.mimeType} title={activeRow.fileName} />
               ) : (
                 <div className="empty-state" style={{ flex: 1 }}>
                   <div className="empty-state-icon"><Icon name="photo" size={24} /></div>

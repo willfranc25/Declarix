@@ -16,11 +16,18 @@ const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 
 export function ZoomableImage({ src, alt = 'Comprobante', focus = null }) {
+  // A new DOM image cannot retain pixels from the previous receipt while loading.
+  return <ImageCanvas key={src} src={src} alt={alt} focus={focus} />;
+}
+
+function ImageCanvas({ src, alt, focus }) {
   const containerRef = useRef(null);
   const imageRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // Reiniciar zoom al cambiar de imagen
   useEffect(() => {
@@ -37,6 +44,7 @@ export function ZoomableImage({ src, alt = 'Comprobante', focus = null }) {
       y: -(focus.y - 0.5) * imageRef.current.offsetHeight * nextScale,
     });
   }, [focus]);
+  const onImageLoad = useCallback(() => { setLoaded(true); applyFocus(); }, [applyFocus]);
   useEffect(() => { applyFocus(); }, [src, applyFocus]);
 
   const clampScale = (s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
@@ -101,13 +109,20 @@ export function ZoomableImage({ src, alt = 'Comprobante', focus = null }) {
           ref={imageRef}
           src={src}
           alt={alt}
-          onLoad={applyFocus}
+          onLoad={onImageLoad}
+          onError={() => setFailed(true)}
+          decoding="async"
+          fetchPriority="high"
           draggable={false}
           style={{
+            visibility: loaded ? 'visible' : 'hidden',
             transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
             transition: drag.current ? 'none' : 'transform 0.15s ease-out',
           }}
         />
+        {!loaded && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+          {failed ? 'No se pudo mostrar la imagen.' : 'Cargando imagen…'}
+        </div>}
       </div>
 
       <div className="zoom-view-controls" role="group" aria-label="Controles de zoom">
