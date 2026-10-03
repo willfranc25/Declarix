@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
+import { randomBytes } from "node:crypto";
 import { createDocumentPreview, getDocumentPreview, PREVIEW_BUCKET, previewPath } from "./documentPreview.js";
 import { createPreviewHandler } from "../api/document-preview.js";
 import { handlePreviewMaintenance } from "./previewMaintenance.js";
@@ -26,6 +27,15 @@ test("48 MP camera photos accepted by extraction also produce a review preview",
 });
 
 const job = { id: "11111111-1111-4111-8111-111111111111", user_id: "owner", object_path: "owner/company/source.jpg", status: "ready", mime_type: "image/jpeg" };
+test("detailed JPEG remains bounded even for noisy camera images", async () => {
+  const source = await sharp(randomBytes(3300 * 4300 * 3), { raw: { width: 3300, height: 4300, channels: 3 } }).png().toBuffer();
+  const detail = await createDocumentPreview(source, "detail");
+  const metadata = await sharp(detail).metadata();
+  assert.ok(detail.length <= 3 * 1024 * 1024);
+  assert.ok(metadata.width <= 3200 && metadata.height <= 4200);
+  assert.ok(metadata.width > 1200);
+  assert.equal((await sharp(source).metadata()).width, 3300);
+});
 async function storageFixture({ writeError = null } = {}) {
   const original = await sharp({ create: { width: 2400, height: 3200, channels: 3, background: "white" } }).jpeg().toBuffer();
   const files = new Map();
@@ -54,6 +64,19 @@ test("cached review requests never download or transform the original again", as
   assert.equal(fixture.originals(), 1);
   assert.deepEqual(first.bytes, second.bytes);
   assert.notEqual(previewPath(job), previewPath({ ...job, object_path: "different-source" }));
+});
+
+test("review and detail have separate caches and generation locks", async () => {
+  const fixture = await storageFixture();
+  const [review, detail] = await Promise.all([
+    getDocumentPreview(fixture.db, job), getDocumentPreview(fixture.db, job, "detail"),
+  ]);
+  assert.notEqual(previewPath(job), previewPath(job, "detail"));
+  assert.equal(fixture.files.size, 2);
+  assert.ok((await sharp(detail.bytes).metadata()).width > (await sharp(review.bytes).metadata()).width);
+  assert.equal((await getDocumentPreview(fixture.db, job, "detail")).cache, "hit");
+  assert.equal(fixture.originals(), 2);
+  await assert.rejects(() => getDocumentPreview(fixture.db, job, "original"), /INVALID_PREVIEW_VARIANT/);
 });
 
 test("concurrent cache misses share generation and a failed write still returns the preview", async () => {

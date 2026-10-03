@@ -1,5 +1,5 @@
 import { adminClient, authenticate, checked, respondError, uuid } from "../server/admin.js";
-import { getDocumentPreview } from "../server/documentPreview.js";
+import { getDocumentPreview, validPreviewVariant } from "../server/documentPreview.js";
 
 export const createPreviewHandler = (getDb = adminClient) => async (req, res) => {
   res.setHeader("Vary", "Authorization");
@@ -16,7 +16,9 @@ export const createPreviewHandler = (getDb = adminClient) => async (req, res) =>
       .eq("id", jobId).eq("user_id", user.id).maybeSingle());
     if (!job || job.status !== "ready" || !job.mime_type?.startsWith("image/"))
       return res.status(404).json({ error: "Vista previa no disponible" });
-    const preview = await getDocumentPreview(db, job);
+    const variant = req.query?.variant ?? "review";
+    if (!validPreviewVariant(variant)) return res.status(400).json({ error: "INVALID_PREVIEW_VARIANT" });
+    const preview = await getDocumentPreview(db, job, variant);
     res.setHeader("X-Preview-Cache", preview.cache);
     res.setHeader("Server-Timing", `preview;dur=${Math.round(performance.now() - started)}`);
     res.setHeader("Content-Type", "image/jpeg");

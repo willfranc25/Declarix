@@ -1,6 +1,6 @@
 import { checked, uuid } from "./admin.js";
 import { schedulerAuthorized } from "./schedulerAuth.js";
-import { getDocumentPreview } from "./documentPreview.js";
+import { getDocumentPreview, validPreviewVariant } from "./documentPreview.js";
 
 // Operations-only warming uses the same server-to-server signed dispatch as the
 // extraction worker. It never returns the source, a signed image URL or secrets.
@@ -13,7 +13,9 @@ export async function handlePreviewMaintenance(req, res, db) {
     const job = checked(await db.from("extraction_jobs").select("id,user_id,object_path,mime_type,status").eq("id", req.query.jobId).maybeSingle());
     if (!job || job.status !== "ready" || !job.mime_type?.startsWith("image/")) return res.status(404).end();
     const started = performance.now();
-    const preview = await getDocumentPreview(db, job);
+    const variant = req.query?.variant ?? "review";
+    if (!validPreviewVariant(variant)) return res.status(400).json({ error: "INVALID_PREVIEW_VARIANT" });
+    const preview = await getDocumentPreview(db, job, variant);
     return res.status(200).json({ jobId: job.id, cache: preview.cache, bytes: preview.bytes.length, durationMs: Math.round(performance.now() - started) });
   } catch (err) {
     const reason = /pixel limit/i.test(err.message || "") ? "IMAGE_PIXEL_LIMIT" : "PREVIEW_UNAVAILABLE";

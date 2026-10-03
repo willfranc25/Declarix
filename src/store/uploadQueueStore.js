@@ -18,6 +18,9 @@ let epoch = 0;
 let prefetchVersion = 0;
 const previews = new Map();
 const originals = new Map();
+const details = new Map();
+const detailRequests = new Map();
+const detailPins = new Set();
 const previewRequests = new Map();
 const pendingReviews = new Map();
 const useUploadQueueStore = create((set, get) => ({
@@ -31,6 +34,10 @@ const useUploadQueueStore = create((set, get) => ({
     epoch++;
     prefetchVersion++;
     for (const entry of previews.values()) if (entry.objectUrl) URL.revokeObjectURL(entry.url);
+    for (const url of details.values()) URL.revokeObjectURL(url);
+    details.clear();
+    detailPins.clear();
+    detailRequests.clear();
     previews.clear();
     originals.clear();
     previewRequests.clear();
@@ -43,6 +50,41 @@ const useUploadQueueStore = create((set, get) => ({
       error: null,
       uploadProgress: null,
     });
+  },
+  pinDetailPreview(jobId) {
+    detailPins.add(jobId);
+    return () => detailPins.delete(jobId);
+  },
+  async ensureDetailPreview(jobId) {
+    const cached = details.get(jobId);
+    if (cached) {
+      details.delete(jobId); details.set(jobId, cached);
+      return cached;
+    }
+    if (detailRequests.has(jobId)) return detailRequests.get(jobId);
+    const item = get().queue.find(row => row.jobId === jobId);
+    if (!item?.mimeType?.startsWith("image/")) return null;
+    const version = epoch;
+    const request = (async () => {
+      const blob = await fetchDocumentPreview(jobId, "detail");
+      const url = URL.createObjectURL(blob);
+      try {
+        const image = new Image(); image.src = url;
+        if (image.decode) await image.decode();
+        if (version !== epoch) { URL.revokeObjectURL(url); return null; }
+        details.set(jobId, url);
+        while (details.size > 4) {
+          const oldest = [...details.keys()].find(id => !detailPins.has(id));
+          if (!oldest) break;
+          URL.revokeObjectURL(details.get(oldest)); details.delete(oldest);
+        }
+        return url;
+      } catch (err) { URL.revokeObjectURL(url); throw err; }
+    })().finally(() => {
+      if (detailRequests.get(jobId) === request) detailRequests.delete(jobId);
+    });
+    detailRequests.set(jobId, request);
+    return request;
   },
   async ensureOriginal(jobId) {
     const item = get().queue.find((row) => row.jobId === jobId);

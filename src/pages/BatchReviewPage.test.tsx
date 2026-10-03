@@ -131,12 +131,14 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     expect(screen.getByText('1 con errores')).toBeInTheDocument();
   });
 
-  it('abre el original al ampliar un campo y conserva la posición extraída', async () => {
+  it('mantiene la vista previa al ampliar y solicita detalle sin descargar el original', async () => {
     const user = userEvent.setup();
     const original = vi.fn().mockResolvedValue('blob:original');
+    const detail = vi.fn().mockImplementation(() => new Promise(() => {}));
     useUploadQueueStore.setState({
       ensurePreview: vi.fn().mockResolvedValue('blob:a'),
       ensureOriginal: original,
+      ensureDetailPreview: detail,
       queue: [doneItem('a', {
         jobId: 'job-a', mimeType: 'image/jpeg',
         extractedData: {
@@ -149,8 +151,9 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     renderPage();
     await user.click(screen.getByRole('button', { name: 'Ampliar Folio / N° documento en la foto' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    await waitFor(() => expect(original).toHaveBeenCalledWith('job-a'));
-    await waitFor(() => expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', 'blob:original'));
+    await waitFor(() => expect(detail).toHaveBeenCalledWith('job-a'));
+    expect(original).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', 'blob:a'));
     expect(screen.getByText('400%')).toBeInTheDocument();
   });
 

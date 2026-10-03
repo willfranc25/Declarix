@@ -113,9 +113,10 @@ export async function runOne(
     if (job.mime_type.startsWith("image/")) {
       // Use bytes already downloaded for extraction, concurrently with the AI.
       // A derivative failure must never turn a successful extraction into an error.
-      previewTask = storeDocumentPreview(db, job, bytes).catch(() => {
-        console.warn("[document-preview] preparation failed", { jobId: job.id });
-      });
+      previewTask = Promise.all(["review", "detail"].map(variant =>
+        storeDocumentPreview(db, job, bytes, variant).catch(() => {
+          console.warn("[document-preview] preparation failed", { jobId: job.id, variant });
+        })));
     }
     if (/xml$/.test(job.mime_type))
       result = { documents: parseDTE(bytes.toString("utf8")) };
