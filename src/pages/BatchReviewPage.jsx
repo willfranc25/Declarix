@@ -61,6 +61,7 @@ export default function BatchReviewPage() {
   const [viewMode, setViewMode] = useState('focus');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [previewError, setPreviewError] = useState(false);
   const [zoomFocus, setZoomFocus] = useState(null);
   const lightboxJobRef = useRef(null);
   const { addToast } = useToast();
@@ -109,9 +110,11 @@ export default function BatchReviewPage() {
   ].filter(Boolean));
   useEffect(() => {
     const store = useUploadQueueStore.getState();
-    if (activeJobId) void store.ensurePreview(activeJobId).catch(() => {});
+    let current = true;
+    setPreviewError(false);
+    if (activeJobId) void store.ensureReviewPreview(activeJobId).catch(() => { if (current) setPreviewError(true); });
     void store.prefetchPreviews(JSON.parse(nearbyJobIds));
-    return () => { void store.prefetchPreviews([]); };
+    return () => { current = false; void store.prefetchPreviews([]); };
   }, [activeJobId, nearbyJobIds]);
 
   const openZoom = (field = null) => {
@@ -646,9 +649,9 @@ export default function BatchReviewPage() {
               ) : (
                 <div className="empty-state" style={{ flex: 1 }}>
                   <div className="empty-state-icon"><Icon name="photo" size={24} /></div>
-                  <p className="empty-state-text">Cargando vista previa…</p>
+                  <p className="empty-state-text">{previewError ? 'No se pudo cargar la imagen. Reintenta para consultar nuevamente el original.' : 'Cargando vista previa…'}</p>
                   <button className="btn btn-secondary btn-sm" type="button"
-                    onClick={() => void useUploadQueueStore.getState().ensurePreview(activeJobId).catch(() => addToast('No se pudo cargar la imagen.', 'error'))}>
+                    onClick={() => { setPreviewError(false); void useUploadQueueStore.getState().ensureReviewPreview(activeJobId).catch(() => { setPreviewError(true); addToast('No se pudo cargar la imagen.', 'error'); }); }}>
                     Reintentar imagen
                   </button>
                 </div>

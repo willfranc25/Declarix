@@ -118,6 +118,21 @@ const useUploadQueueStore = create((set, get) => ({
     };
     await Promise.all([warm(), warm()]);
   },
+  async ensureReviewPreview(jobId) {
+    const version = epoch;
+    try {
+      return await get().ensurePreview(jobId);
+    } catch {
+      if (version !== epoch) return null;
+      // Only the active receipt gets this fallback. Background anticipation must
+      // never download several large originals when preview generation is down.
+      const url = await get().ensureOriginal(jobId);
+      if (!url || version !== epoch) return null;
+      previews.set(jobId, { url, objectUrl: false, expires: Date.now() + 3_300_000 });
+      set(state => ({ queue: state.queue.map(row => row.jobId === jobId ? { ...row, tempPreviewUrl: url } : row) }));
+      return url;
+    }
+  },
   async hydrate() {
     const company = requireCompany(),
       version = epoch,
