@@ -63,7 +63,10 @@ export default function BatchReviewPage() {
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [previewError, setPreviewError] = useState(false);
   const [zoomFocus, setZoomFocus] = useState(null);
-  const lightboxJobRef = useRef(null);
+  const lightboxRequestRef = useRef(0);
+  const [lightboxDocument, setLightboxDocument] = useState(null);
+  const [lightboxDetailSrc, setLightboxDetailSrc] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const { addToast } = useToast();
 
   // Guardar valor original para "Escape to cancel"
@@ -117,6 +120,30 @@ export default function BatchReviewPage() {
     return () => { current = false; void store.prefetchPreviews([]); };
   }, [activeJobId, nearbyJobIds]);
 
+  const nextDetailJobId = visibleRows[activeIndex + 1]?.source_job_id;
+  useEffect(() => {
+    let current = true;
+    if (activeJobId) void useUploadQueueStore.getState().ensureReviewPreview(activeJobId)
+      .then(() => current && useUploadQueueStore.getState().ensureDetailPreview(activeJobId)).catch(() => {});
+    if (nextDetailJobId) void useUploadQueueStore.getState().ensurePreview(nextDetailJobId)
+      .then(() => current && useUploadQueueStore.getState().ensureDetailPreview(nextDetailJobId)).catch(() => {});
+    return () => { current = false; };
+  }, [activeJobId, nextDetailJobId]);
+  useEffect(() => () => { lightboxRequestRef.current++; }, []);
+  useEffect(() => {
+    if (!lightboxOpen || !lightboxDocument?.jobId) return undefined;
+    return useUploadQueueStore.getState().pinDetailPreview(lightboxDocument.jobId);
+  }, [lightboxOpen, lightboxDocument]);
+
+  const loadZoomDetail = (jobId, original = false) => {
+    const request = ++lightboxRequestRef.current;
+    setDetailLoading(true);
+    const store = useUploadQueueStore.getState();
+    void (original ? store.ensureOriginal(jobId) : store.ensureDetailPreview(jobId))
+      .then(url => { if (url && request === lightboxRequestRef.current) setLightboxDetailSrc(url); })
+      .catch(() => { if (request === lightboxRequestRef.current) addToast('No se pudo cargar más detalle. La vista previa sigue disponible.', 'warning'); })
+      .finally(() => { if (request === lightboxRequestRef.current) setDetailLoading(false); });
+  };
   const openZoom = (field = null) => {
     if (!activeRow || !previewImageUrl || !(/^(image\/|application\/pdf$)/.test(activeRow.mimeType || ''))) return;
     const box = activeRow.fieldLocations?.[field];
@@ -126,10 +153,10 @@ export default function BatchReviewPage() {
       : { x: 0.5, y: 0.5, scale: 2.5 });
     setLightboxSrc(previewImageUrl);
     setLightboxOpen(true);
-    lightboxJobRef.current = activeJobId;
-    void useUploadQueueStore.getState().ensureOriginal(activeJobId)
-      .then((url) => { if (url && lightboxJobRef.current === activeJobId) setLightboxSrc(url); })
-      .catch(() => addToast('No se pudo cargar el original en alta resolución.', 'warning'));
+    setLightboxDocument({ jobId: activeJobId, title: activeRow.fileName, mimeType: activeRow.mimeType });
+    setLightboxDetailSrc(null);
+    if (activeRow.mimeType?.startsWith('image/')) loadZoomDetail(activeJobId);
+    else { lightboxRequestRef.current++; setDetailLoading(false); }
   };
   const zoomButton = (field, label) => (
     <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto', padding: '2px 6px' }}
@@ -148,7 +175,7 @@ export default function BatchReviewPage() {
 
   // Flechas ←/→ navegan entre boletas (solo en modo enfocado y fuera de inputs)
   useEffect(() => {
-    if (viewMode !== 'focus') return undefined;
+    if (viewMode !== 'focus' || lightboxOpen) return undefined;
     const onKey = (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target?.tagName)) return;
       if (e.key === 'ArrowLeft') goPrev();
@@ -157,7 +184,7 @@ export default function BatchReviewPage() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, activeIndex, visibleRows.length]);
+  }, [viewMode, activeIndex, visibleRows.length, lightboxOpen]);
 
   /**
    * Editar una celda: la corrección va directo al store (y a IndexedDB),
@@ -850,10 +877,13 @@ export default function BatchReviewPage() {
       {lightboxOpen && lightboxSrc && (
         <ImageLightbox
           src={lightboxSrc}
-          title={activeRow?.fileName || 'Comprobante'}
+          title={lightboxDocument?.title || 'Comprobante'}
           focus={zoomFocus}
-          mimeType={activeRow?.mimeType}
-          onClose={() => { lightboxJobRef.current = null; setLightboxOpen(false); }}
+          mimeType={lightboxDocument?.mimeType}
+          upgradeSrc={lightboxDetailSrc}
+          detailLoading={detailLoading}
+          onOriginal={() => loadZoomDetail(lightboxDocument.jobId, true)}
+          onClose={() => { lightboxRequestRef.current++; setLightboxOpen(false); }}
         />
       )}
 

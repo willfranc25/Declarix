@@ -53,6 +53,28 @@ describe('review preview loading',()=>{
  });
  afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
  const seed=async(count=6)=>{mocks.jobs.mockResolvedValue(Array.from({length:count},(_,index)=>({...ready,id:'job'+index})));await store.getState().hydrate();};
+ it('deduplicates detailed downloads without replacing the small preview',async()=>{
+  await seed(1);const small=await store.getState().ensurePreview('job0');
+  const [a,b]=await Promise.all([store.getState().ensureDetailPreview('job0'),store.getState().ensureDetailPreview('job0')]);
+  expect(a).toBe(b);expect(a).not.toBe(small);
+  expect(mocks.preview).toHaveBeenCalledTimes(2);expect(mocks.preview).toHaveBeenLastCalledWith('job0','detail');
+  expect(store.getState().queue[0].tempPreviewUrl).toBe(small);
+  expect(await store.getState().ensureDetailPreview('job0')).toBe(a);
+  store.getState().reset();expect(URL.revokeObjectURL).toHaveBeenCalledWith(a);
+ });
+ it('does not revoke an open image when background detail requests fill the cache',async()=>{
+  await seed(6);const release=store.getState().pinDetailPreview('job0');
+  const visible=await store.getState().ensureDetailPreview('job0');
+  for(let i=1;i<6;i++)await store.getState().ensureDetailPreview('job'+i);
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(visible);
+  expect(await store.getState().ensureDetailPreview('job0')).toBe(visible);release();
+ });
+ it('discards a detailed response after switching company',async()=>{
+  await seed(1);let release:any;
+  mocks.preview.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  const pending=store.getState().ensureDetailPreview('job0');store.getState().reset();
+  release(new Blob(['detail']));expect(await pending).toBeNull();expect(URL.revokeObjectURL).toHaveBeenCalled();
+ });
  it('prepares the next four photos with at most two background requests',async()=>{
   await seed();
   let inFlight=0,max=0;

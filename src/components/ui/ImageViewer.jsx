@@ -15,12 +15,12 @@ import { useDialogBehavior } from './Modal';
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 
-export function ZoomableImage({ src, alt = 'Comprobante', focus = null }) {
+export function ZoomableImage({ src, alt = 'Comprobante', focus = null, upgradeSrc = null, detailLoading = false }) {
   // A new DOM image cannot retain pixels from the previous receipt while loading.
-  return <ImageCanvas key={src} src={src} alt={alt} focus={focus} />;
+  return <ImageCanvas key={src} src={src} alt={alt} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} />;
 }
 
-function ImageCanvas({ src, alt, focus }) {
+function ImageCanvas({ src, alt, focus, upgradeSrc, detailLoading }) {
   const containerRef = useRef(null);
   const imageRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -28,6 +28,28 @@ function ImageCanvas({ src, alt, focus }) {
   const drag = useRef(null);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  const [displayedSrc, setDisplayedSrc] = useState(src);
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeFailed, setUpgradeFailed] = useState(false);
+  const initialFocusApplied = useRef(false);
+  useEffect(() => {
+    if (!upgradeSrc || upgradeSrc === src) return undefined;
+    let current = true;
+    const image = new Image();
+    setUpgrading(true); setUpgradeFailed(false);
+    const ready = image.decode
+      ? () => image.decode()
+      : () => new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+    // Install the fallback handlers before setting src in older browsers.
+    const completion = image.decode ? null : ready();
+    image.src = upgradeSrc;
+    (completion || ready()).then(() => {
+      if (current) setDisplayedSrc(upgradeSrc);
+    }).catch(() => { if (current) setUpgradeFailed(true); })
+      .finally(() => { if (current) setUpgrading(false); });
+    return () => { current = false; };
+  }, [src, upgradeSrc]);
 
   // Reiniciar zoom al cambiar de imagen
   useEffect(() => {
@@ -44,7 +66,12 @@ function ImageCanvas({ src, alt, focus }) {
       y: -(focus.y - 0.5) * imageRef.current.offsetHeight * nextScale,
     });
   }, [focus]);
-  const onImageLoad = useCallback(() => { setLoaded(true); applyFocus(); }, [applyFocus]);
+  const onImageLoad = useCallback(() => {
+    setLoaded(true);
+    if (!initialFocusApplied.current) {
+      initialFocusApplied.current = true; applyFocus();
+    }
+  }, [applyFocus]);
   useEffect(() => { applyFocus(); }, [src, applyFocus]);
 
   const clampScale = (s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
@@ -107,10 +134,13 @@ function ImageCanvas({ src, alt, focus }) {
       >
         <img
           ref={imageRef}
-          src={src}
+          src={displayedSrc}
           alt={alt}
           onLoad={onImageLoad}
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (displayedSrc !== src) { setDisplayedSrc(src); setUpgradeFailed(true); }
+            else setFailed(true);
+          }}
           decoding="async"
           fetchPriority="high"
           draggable={false}
@@ -120,6 +150,9 @@ function ImageCanvas({ src, alt, focus }) {
             transition: drag.current ? 'none' : 'transform 0.15s ease-out',
           }}
         />
+        {loaded && (detailLoading || upgrading || upgradeFailed) && <span role="status" style={{ position: 'absolute', top: 12, left: 12, padding: '6px 10px', background: 'var(--color-bg-primary)', borderRadius: 6, fontSize: 12 }}>
+          {upgradeFailed ? 'Se mantiene la vista previa. Puedes ver el original.' : 'Cargando más detalle…'}
+        </span>}
         {!loaded && <div role="status" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
           {failed ? 'No se pudo mostrar la imagen.' : 'Cargando imagen…'}
         </div>}
@@ -139,7 +172,7 @@ function ImageCanvas({ src, alt, focus }) {
   );
 }
 
-export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'image/jpeg' }) {
+export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'image/jpeg', upgradeSrc = null, detailLoading = false, onOriginal = null }) {
   const ref = useRef(null);
   useDialogBehavior(ref, onClose);
 
@@ -147,14 +180,17 @@ export function ImageLightbox({ src, title, onClose, focus = null, mimeType = 'i
     <div className="lightbox-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label={title || 'Imagen del comprobante'}>
       <div className="lightbox-body" ref={ref} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <div className="lightbox-header">
-          <span className="truncate">{title}</span>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Cerrar">
-            <Icon name="x" size={18} />
-          </button>
+          <span className="truncate" style={{ minWidth: 0 }}>{title}</span>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+            {onOriginal && mimeType.startsWith('image/') && <button type="button" className="btn btn-secondary btn-sm" onClick={onOriginal}>Ver original</button>}
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Cerrar">
+              <Icon name="x" size={18} />
+            </button>
+          </div>
         </div>
         {mimeType === 'application/pdf'
           ? <iframe className="document-preview" src={src} title={title || 'Comprobante PDF'} style={{ flex: 1, minHeight: 0 }} />
-          : <ZoomableImage src={src} alt={title || 'Comprobante'} focus={focus} />}
+          : <ZoomableImage src={src} alt={title || 'Comprobante'} focus={focus} upgradeSrc={upgradeSrc} detailLoading={detailLoading} />}
       </div>
     </div>
   );

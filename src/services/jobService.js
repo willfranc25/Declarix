@@ -18,10 +18,10 @@ export async function documentRequest(action, payload) {
     throw new Error(data.error || "No se pudo completar la carga.");
   return data;
 }
-export async function fetchDocumentPreview(jobId) {
+export async function fetchDocumentPreview(jobId, variant = "review") {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Inicia sesión nuevamente.");
-  const response = await fetch(`/api/document-preview?jobId=${encodeURIComponent(jobId)}`, {
+  const response = await fetch(`/api/document-preview?jobId=${encodeURIComponent(jobId)}${variant === "detail" ? "&variant=detail" : ""}`, {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!response.ok) throw new Error("No se pudo cargar la vista previa.");

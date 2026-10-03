@@ -42,9 +42,10 @@ function QueueThumbnail({ item, onOpen }) {
     try {
       const src = item.tempPreviewUrl || await useUploadQueueStore.getState().ensurePreview(item.jobId);
       if (!src) return;
-      onOpen({ src, title: item.name, jobId: item.jobId });
-      const original = await useUploadQueueStore.getState().ensureOriginal(item.jobId);
-      onOpen((current) => current?.jobId === item.jobId ? { ...current, src: original } : current);
+      const opening = { src, title: item.name, jobId: item.jobId, request: Symbol() };
+      onOpen(opening);
+      const detail = await useUploadQueueStore.getState().ensureDetailPreview(item.jobId);
+      onOpen(current => current?.request === opening.request ? { ...current, upgradeSrc: detail } : current);
     } catch { /* La revisión conserva el original aunque falle esta vista previa. */ }
   };
   return <button ref={buttonRef} type="button" onClick={open} title="Ver boleta ampliada"
@@ -77,6 +78,10 @@ export default function UploadPage() {
   const [globalError, setGlobalError] = useState(null);
   // Miniatura ampliada: { src, title } | null
   const [preview, setPreview] = useState(null);
+  useEffect(() => {
+    if (!preview?.jobId) return undefined;
+    return useUploadQueueStore.getState().pinDetailPreview(preview.jobId);
+  }, [preview?.jobId]);
 
   const { addToast } = useToast();
 
@@ -465,7 +470,7 @@ export default function UploadPage() {
       </div>
 
       {preview && (
-        <ImageLightbox src={preview.src} title={preview.title} onClose={() => setPreview(null)} />
+        <ImageLightbox src={preview.src} upgradeSrc={preview.upgradeSrc} title={preview.title} onClose={() => setPreview(null)} />
       )}
     </div>
   );
