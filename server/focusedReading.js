@@ -14,7 +14,7 @@ function plainEvidence(evidence) {
   return evidence.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-export function supportedFolio(number, evidence) {
+export function supportedFolio(number, evidence, typeEvidence) {
   if (!printedFolio(number) || typeof evidence !== "string") return false;
   const folio = number.trim().replace(/^0+/, "");
   const quote = plainEvidence(evidence);
@@ -25,13 +25,20 @@ export function supportedFolio(number, evidence) {
     // A payment caption alone is not evidence of an electronic tax folio.
     if (!/valido como\s*$/.test(quote.slice(0, match.index))) return true;
   }
+  // Receipts often print the tax heading and «Nº 123» on separate lines.
+  // Accept the separate heading only with a number caption, never a bare number,
+  // payment operation, or a «Válido como Boleta» voucher heading.
+  const numberedLine = new RegExp(`^(?:n(?:[°ºo.]?|ro\\.?)|numero)\\s*[:#-]?\\s*0*${digits}\\s*$`);
+  if (typeof typeEvidence === 'string' && numberedLine.test(quote.trim()) &&
+      !/valido como|operacion|transaccion|terminal|aprobacion/.test(plainEvidence(typeEvidence)))
+    return supportedFolio(number, `${typeEvidence}\n${evidence}`);
   return false;
 }
 
 export function supportedRut(number, evidence) {
   if (!validateRut(number) || typeof evidence !== "string") return false;
   const digits = cleanRut(number).toLowerCase().split('').join('[.\\s-]*');
-  return new RegExp(`\\brut\\s*[:.]?\\s*${digits}(?![\\dk])`).test(plainEvidence(evidence));
+  return new RegExp(`\\br[.\\s]*u[.\\s]*t\\.?\\s*[:.]?\\s*${digits}(?![\\dk])`).test(plainEvidence(evidence));
 }
 
 export function supportedOperation(number, evidence) {
@@ -56,11 +63,11 @@ export function applyFocusedReading(document, reading) {
   if (!validateRut(next.providerRut || "") &&
       typeof reading.providerRut === "string" && supportedRut(reading.providerRut, reading.rutEvidence))
     next.providerRut = reading.providerRut.trim();
-  if (!next.documentNumber && supportedFolio(reading.documentNumber, reading.folioEvidence))
+  if (!next.documentNumber && supportedFolio(reading.documentNumber, reading.folioEvidence, reading.typeEvidence))
     next.documentNumber = reading.documentNumber.trim();
   const label = typeof reading.typeEvidence === "string" ? reading.typeEvidence : "";
   const isVoucher = /v[aá]lido como boleta/i.test(label);
-  if (isVoucher && !supportedFolio(reading.documentNumber, reading.folioEvidence)) {
+  if (isVoucher && !supportedFolio(reading.documentNumber, reading.folioEvidence, reading.typeEvidence)) {
     next.documentType = "Comprobante de pago electrónico";
     if (supportedOperation(reading.operationNumber, reading.operationEvidence)) {
       next.referenceNumber = reading.operationNumber.trim();
@@ -78,7 +85,7 @@ export function reconcileFolioReading(document, reading) {
   if (!document.documentNumber || !/^(?:boleta|factura|nota de)/i.test(document.documentType || ""))
     return { ...next, folioReview: null };
   const first = String(document.documentNumber).trim();
-  const second = supportedFolio(reading?.documentNumber, reading?.folioEvidence)
+  const second = supportedFolio(reading?.documentNumber, reading?.folioEvidence, reading?.typeEvidence)
     ? reading.documentNumber.trim() : null;
   if (second && first.replace(/^0+(?=\d)/, "") === second.replace(/^0+(?=\d)/, ""))
     return { ...next, folioReview: null };

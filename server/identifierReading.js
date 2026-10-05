@@ -23,9 +23,9 @@ export async function readIdentifiers(document, read, canRetry = () => true) {
       readings.push(second);
       const corrected = applyFocusedReading(next, second);
       if (next.folioReview) corrected.documentNumber = null;
-      if (next.folioReview && supportedFolio(second?.documentNumber, second?.folioEvidence)) {
+      if (next.folioReview && supportedFolio(second?.documentNumber, second?.folioEvidence, second?.typeEvidence)) {
         const number = second.documentNumber.trim();
-        const previous = supportedFolio(first?.documentNumber, first?.folioEvidence) ? first.documentNumber : null;
+        const previous = supportedFolio(first?.documentNumber, first?.folioEvidence, first?.typeEvidence) ? first.documentNumber : null;
         if (comparable(number) === comparable(seed.documentNumber) ||
             (previous && comparable(number) === comparable(previous))) {
           corrected.documentNumber = comparable(number) === comparable(seed.documentNumber) ? seed.documentNumber : number;
