@@ -4,10 +4,10 @@ import useUploadQueueStore from '../store/uploadQueueStore';
 import Icon from '../components/ui/Icon';
 import { ImageLightbox } from '../components/ui/ImageViewer';
 import { useToast } from '../components/ui/Toast';
+import { documentMimeType, uploadLimit } from '../utils/uploadLimits';
 import {documentErrors} from '../utils/documentRules';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'application/xml', 'text/xml'];
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 /**
  * Datos efectivos de un item ya procesado (extracción + correcciones de
@@ -90,27 +90,29 @@ export default function UploadPage() {
 
   // Validar un archivo individual
   const validateFile = (file) => {
-    if (!ALLOWED_TYPES.includes(file.type) && !/\.xml$/i.test(file.name)) return 'Usa imágenes JPEG, PNG, WEBP, PDF o XML DTE.';
-    if (file.size > MAX_FILE_SIZE) return 'El tamaño máximo es de 20 MB.';
+    if (!ALLOWED_TYPES.includes(documentMimeType(file))) return 'Usa imágenes JPEG, PNG, WEBP, PDF o XML DTE.';
+    if (file.size > uploadLimit(documentMimeType(file))) return documentMimeType(file).startsWith('image/') ? 'La foto supera 50 MB.' : 'El documento supera 20 MB.';
     return null;
   };
 
   // Manejar la selección de múltiples archivos
   const handleFilesAdded = async (filesList) => {
     const validFiles = [];
-    let hasInvalidFiles = false;
+    const rejected = [];
+    setGlobalError(null);
 
     for (let i = 0; i < filesList.length; i++) {
       const rawFile = filesList[i];
-      if (validateFile(rawFile)) {
-        hasInvalidFiles = true;
+      const error = validateFile(rawFile);
+      if (error) {
+        rejected.push(`${rawFile.name}: ${error}`);
         continue;
       }
       validFiles.push(rawFile);
     }
 
-    if (hasInvalidFiles) {
-      const errorMsg = 'Se omitieron archivos incompatibles o mayores a 20 MB.';
+    if (rejected.length) {
+      const errorMsg = rejected.join(' · ');
       setGlobalError(errorMsg);
       addToast(errorMsg, 'error');
     }
@@ -244,7 +246,7 @@ export default function UploadPage() {
             <strong>Elige archivos</strong> o arrástralos aquí
           </p>
           <p className="drop-zone-hint">
-            JPEG, PNG, WEBP, PDF o XML · máx. 20 MB por archivo · puedes seleccionar varios a la vez
+            Fotos JPEG, PNG o WEBP hasta 50 MB · PDF o XML hasta 20 MB · puedes seleccionar varios a la vez
           </p>
         </div>
 

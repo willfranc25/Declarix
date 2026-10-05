@@ -16,7 +16,7 @@ test("folio requires a document label, not a payment operation", () => {
 test("focused reading fixes photographed RUT only with a valid reread", () => {
   const initial = { providerRut: "77217795-2", documentNumber: null, documentType: "Factura" };
   const fixed = applyFocusedReading(initial, {
-    providerRut: "77.217.995-2", documentNumber: "261561",
+    providerRut: "77.217.995-2", rutEvidence: "RUT:77.217.995-2", documentNumber: "261561",
     folioEvidence: "BOLETA ELECTRONICA 261561",
     typeEvidence: "BOLETA ELECTRONICA 261561",
   });

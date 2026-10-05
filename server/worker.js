@@ -1,6 +1,6 @@
 import { checked } from "./admin.js";
 import { parseDTE } from "./documentInput.js";
-import { folioVerificationImages, imageForModel } from "./modelImage.js";
+import { folioVerificationImages, identifierCloseups, imageForModel } from "./modelImage.js";
 import {
   normalizeDocument,
   AMOUNT_FIELDS,
@@ -9,7 +9,8 @@ import { EXPENSE_TYPES } from "../src/data/expenseTypes.js";
 import { validateRut } from "../src/utils/rutValidator.js";
 import { FORMAT_PROMPT, formatEntry, recordReceiptFormats } from "./receiptFormats.js";
 import { storeDocumentPreview } from "./documentPreview.js";
-import { applyFocusedReading, FOCUSED_PROMPT, normalizeElectronicFolio, reconcileFolioReading, unverifiedFolio } from "./focusedReading.js";
+import { FOCUSED_PROMPT, normalizeElectronicFolio, unverifiedFolio } from "./focusedReading.js";
+import { readIdentifiers } from "./identifierReading.js";
 const stringFields = [
   "providerName",
   "providerRut",
@@ -224,42 +225,40 @@ export async function runOne(
       const needsFocused = result.documents.length === 1 &&
         (!doc.documentNumber || !validateRut(doc.providerRut || "") || verifyFolio);
       if (needsFocused && Date.now() - started < timeoutMs - 18_000) {
-        try {
+        let crops;
+        const read = async (extra) => {
           let attachments = [filePart];
           if (job.mime_type.startsWith("image/")) {
             try {
-              attachments = [filePart, ...await folioVerificationImages(bytes, job.mime_type)];
-            } catch {
-              // The stored original remains available if enhancement fails.
-            }
+              crops ||= await identifierCloseups(bytes, job.mime_type, doc.fieldLocations);
+              attachments.push(...crops);
+              if (extra) attachments.push(...await folioVerificationImages(bytes, job.mime_type));
+            } catch { /* Whole-photo context stays available if cropping fails. */ }
           }
           const focused = await send({ model, messages: messages(FOCUSED_PROMPT, attachments) });
-          if (focused.ok) {
-            const focusedBody = await focused.json();
-            const usage = focusedBody.usage || {};
-            metrics.promptTokens += usage.prompt_tokens || 0;
-            metrics.outputTokens += usage.completion_tokens || 0;
-            metrics.thinkingTokens += usage.completion_tokens_details?.reasoning_tokens || 0;
-            const extraCost = typeof usage.cost === "number" ? usage.cost :
-              Number.isFinite(usage.prompt_tokens) && Number.isFinite(usage.completion_tokens)
-                ? (usage.prompt_tokens * 0.25 + usage.completion_tokens * 1.5) / 1e6
-                : null;
-            metrics.estimatedUsd = typeof metrics.estimatedUsd === "number" && extraCost !== null
-              ? metrics.estimatedUsd + extraCost : undefined;
-            const content = focusedBody.choices?.[0]?.message?.content;
-            if (focusedBody.choices?.[0]?.finish_reason === "stop" && typeof content === "string") {
-              const reading = JSON.parse(content.trim().replace(/^```(?:json)?\s*|\s*```$/g, ""));
-              result.documents[0] = verifyFolio
-                ? reconcileFolioReading(doc, reading)
-                : applyFocusedReading(doc, reading);
-            } else if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
-          } else {
+          if (!focused.ok) {
             logProviderRejection(job.id, focused.status, await focused.text());
-            if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
+            throw new Error("IDENTIFIER_PROVIDER_ERROR");
           }
-        } catch {
-          if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
-        }
+          const focusedBody = await focused.json();
+          const usage = focusedBody.usage || {};
+          metrics.promptTokens += usage.prompt_tokens || 0;
+          metrics.outputTokens += usage.completion_tokens || 0;
+          metrics.thinkingTokens += usage.completion_tokens_details?.reasoning_tokens || 0;
+          const extraCost = typeof usage.cost === "number" ? usage.cost :
+            Number.isFinite(usage.prompt_tokens) && Number.isFinite(usage.completion_tokens)
+              ? (usage.prompt_tokens * 0.25 + usage.completion_tokens * 1.5) / 1e6 : null;
+          metrics.estimatedUsd = typeof metrics.estimatedUsd === "number" && extraCost !== null
+            ? metrics.estimatedUsd + extraCost : undefined;
+          const content = focusedBody.choices?.[0]?.message?.content;
+          if (focusedBody.choices?.[0]?.finish_reason !== "stop" || typeof content !== "string") throw new Error("INVALID_READING");
+          return JSON.parse(content.trim().replace(/^```(?:json)?\s*|\s*```$/g, ""));
+        };
+        const verified = await readIdentifiers(doc, read, () => Date.now() - started < timeoutMs - 12_000);
+        result.documents[0] = verified.document;
+        console.info("[identifier-reading] completed", { jobId: job.id, attempts: verified.readings.length,
+          folioResolved: !verified.document.folioReview && !!verified.document.documentNumber,
+          rutValid: validateRut(verified.document.providerRut || "") });
       } else if (verifyFolio) result.documents[0] = unverifiedFolio(doc);
     }
     result.documents = result.documents.map((doc) => {
