@@ -64,8 +64,13 @@ export async function handleReadingRepair(req, res, db, fetchImpl = fetch) {
     const replacement = { ...doc, providerRut: verified.document.providerRut,
       documentNumber: verified.document.documentNumber, folioReview: verified.document.folioReview || null };
     const result = { ...job.result, documents: [replacement] };
+    // Only the service can read this audit. Retain bounded printed evidence to
+    // distinguish a bad OCR read from an unrecognized label; never log it publicly.
+    const identifierReadings = verified.readings.map(reading => Object.fromEntries(
+      ["providerRut", "rutEvidence", "documentNumber", "folioEvidence", "typeEvidence"].map(key =>
+        [key, typeof reading?.[key] === "string" ? reading[key].slice(0, 500) : null])));
     const updated = checked(await db.rpc("commit_identifier_repair", {
-      p_job: jobId, p_expected: job.result, p_result: result, p_metrics: metrics,
+      p_job: jobId, p_expected: job.result, p_result: result, p_metrics: { ...metrics, identifierReadings },
     }));
     return res.status(200).json({ jobId, updated, attempts: verified.readings.length,
       rutValid: validateRut(replacement.providerRut || ""), folioResolved: !replacement.folioReview && !!replacement.documentNumber,

@@ -38,6 +38,7 @@ test('private repair preserves amounts/dates, uses optimistic expected result an
     assert.deepEqual(commit.p_expected, original);
     assert.ok(Math.abs(commit.p_metrics.estimatedUsd - 0.00012) < 1e-9);
     assert.equal(JSON.stringify(state.res.body).includes('583965'), false);
+    assert.equal(commit.p_metrics.identifierReadings[0].folioEvidence, 'BOLETA ELECTRONICA AFECTA:583965');
   } finally { delete process.env.CRON_SECRET; delete process.env.OPENROUTER_API_KEY; }
 });
 

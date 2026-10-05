@@ -12,6 +12,7 @@ test('accepts afecta/exenta labels, separators and keeps printed leading zeros',
   assert.equal(supportedFolio('583965', 'Caja 02; BOLETA ELECTRONICA AFECTA:583965'), true);
   assert.equal(supportedFolio('583965', 'VÁLIDO COMO BOLETA 583965'), false);
   assert.equal(supportedFolio('583965', 'Operación 583965'), false);
+  assert.equal(supportedFolio('583965', 'BOLETA ELECTRÓNICA NÚMERO:583965'), true);
 });
 
 test('recovers existing inconclusive result from supported matching reread', async () => {
