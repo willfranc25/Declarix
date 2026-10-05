@@ -20,7 +20,7 @@ export function supportedFolio(number, evidence) {
   const quote = plainEvidence(evidence);
   const label = /(?:\bfolio\b|\b(?:boleta|bol\.?|factura|nota de credito|nota de debito)(?![a-z])(?:\s+(?:(?:o\s+)?electronica|electr\.?|afecta|no afecta|(?:o\s+)?exenta|de honorarios)){0,4}|\b(?:n[°ºo.]?|nro\.?|numero)\s*(?:de\s*)?(?:documento|boleta|factura)\b)/;
   const digits = folio.split('').join('[.\\s]*');
-  const pattern = new RegExp(`${label.source}\\s*(?:n(?:[°ºo.]?|ro\\.?)\\s*)?[:#-]?\\s*0*${digits}(?!\\d)`, 'g');
+  const pattern = new RegExp(`${label.source}\\s*(?:(?:n(?:[°ºo.]?|ro\\.?)|numero)\\s*)?[:#-]?\\s*0*${digits}(?!\\d)`, 'g');
   for (const match of quote.matchAll(pattern)) {
     // A payment caption alone is not evidence of an electronic tax folio.
     if (!/valido como\s*$/.test(quote.slice(0, match.index))) return true;
