@@ -35,7 +35,7 @@ const messages = {
   INVALID_PAGE_COUNT: "El archivo contiene una cantidad de páginas no válida.",
   JOB_PROCESSING: "El archivo está en procesamiento.",
   INVALID_FILE:
-    "Archivo inválido. Usa JPEG, PNG, WEBP, PDF sin contraseña o XML DTE; máximo 20 MB y 20 páginas.",
+    "Archivo inválido. Usa JPEG, PNG, WEBP, PDF sin contraseña o XML DTE; fotos hasta 50 MB, PDF/XML hasta 20 MB y PDF hasta 20 páginas.",
   JOB_NOT_CANCELLABLE:
     "Este archivo ya fue procesado; puedes descartarlo en revisión.",
   JOB_NOT_FOUND: "No se encontró el archivo.",

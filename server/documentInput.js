@@ -1,3 +1,4 @@
+import { uploadLimit } from "../src/utils/uploadLimits.js";
 import { createHash } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
@@ -81,7 +82,7 @@ export function parseDTE(xml) {
 export async function inspectDocument(bytes, mime) {
   if (
     !bytes.length ||
-    bytes.length > 20 * 1024 * 1024 ||
+    bytes.length > uploadLimit(mime) ||
     !MIME_TYPES.includes(mime)
   )
     invalid();

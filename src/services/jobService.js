@@ -1,3 +1,5 @@
+import { uploadResumable } from "./resumableUpload";
+import { documentMimeType } from "../utils/uploadLimits";
 import { supabase } from "./supabaseClient";
 let processingQueue;
 export async function documentRequest(action, payload) {
@@ -28,8 +30,7 @@ export async function fetchDocumentPreview(jobId, variant = "review") {
   return response.blob();
 }
 export async function uploadDocument(file, companyId) {
-  const mimeType =
-    file.type || (/\.xml$/i.test(file.name) ? "application/xml" : "");
+  const mimeType = documentMimeType(file);
   const prepared = await documentRequest("prepare", {
     companyId,
     name: file.name,
@@ -37,12 +38,16 @@ export async function uploadDocument(file, companyId) {
     size: file.size,
   });
   try {
-    const { error } = await supabase.storage
-      .from("documents")
-      .uploadToSignedUrl(prepared.path, prepared.token, file, {
-        contentType: mimeType,
-      });
-    if (error) throw error;
+    if (file.size > 6 * 1024 * 1024) {
+      await uploadResumable(file, prepared, mimeType);
+    } else {
+      const { error } = await supabase.storage
+        .from("documents")
+        .uploadToSignedUrl(prepared.path, prepared.token, file, {
+          contentType: mimeType,
+        });
+      if (error) throw error;
+    }
     await documentRequest("enqueue", { jobId: prepared.jobId });
     return prepared.jobId;
   } catch (err) {

@@ -357,4 +357,27 @@ assert.equal((await db.query("select count(*)::int n from storage.objects where 
 await admin();
 assert.equal((await db.query("select count(*)::int n from storage.objects where bucket_id='document-previews'")).rows[0].n,1);
 console.log('PASS: preview bucket is private and accessible only through the authorized server.');
+const largeJob = '55555555-5555-4555-8555-555555555555';
+const sizeBefore = (await db.query('select storage_bytes from public.accountant_accounts where user_id=$1', [a])).rows[0].storage_bytes;
+await db.query('select public.prepare_extraction($1,$2,$3,$4,$5,$6)', [a, ca, largeJob, 'large.jpg', 'image/jpeg', 30 * 1024 * 1024]);
+assert.equal(Number((await db.query('select storage_bytes from public.accountant_accounts where user_id=$1', [a])).rows[0].storage_bytes) - Number(sizeBefore), 30 * 1024 * 1024);
+for (const [mime, size] of [['application/pdf', 21 * 1024 * 1024], ['image/jpeg', 50 * 1024 * 1024 + 1]]) {
+  await fail(() => db.query('select public.prepare_extraction($1,$2,gen_random_uuid(),$3,$4,$5)', [a, ca, 'file', mime, size]), /INVALID_FILE/);
+}
+await fail(() => db.query('select public.prepare_extraction($1,$2,gen_random_uuid(),$3,$4,$5)', [a, cb, 'file', 'image/jpeg', 30 * 1024 * 1024]), /COMPANY_FORBIDDEN/);
+assert.deepEqual((await db.query("select public,file_size_limit from storage.buckets where id='documents'")).rows[0], { public: false, file_size_limit: 52428800 });
+const originalResult = { documents: [{ providerRut: '77217795-2', documentNumber: null, totalAmount: 7000 }] };
+const repairedResult = { documents: [{ providerRut: '77217995-2', documentNumber: '261561', totalAmount: 7000 }] };
+await db.query("update public.extraction_jobs set status='ready',result=$2,review='{}' where id=$1", [largeJob, originalResult]);
+const commitRepair = (id, before, after) => db.query('select public.commit_identifier_repair($1,$2,$3,$4) applied', [id, before, after, { estimatedUsd: 0.001 }]);
+assert.equal((await commitRepair(largeJob, originalResult, repairedResult)).rows[0].applied, true);
+assert.equal((await commitRepair(largeJob, originalResult, originalResult)).rows[0].applied, false, 'Old reads cannot overwrite a concurrent change');
+assert.deepEqual((await db.query('select result from public.extraction_jobs where id=$1', [largeJob])).rows[0].result, repairedResult);
+assert.equal((await commitRepair(job, originalResult, repairedResult)).rows[0].applied, false, 'Saved invoices are never reread or rewritten');
+assert.equal((await db.query('select count(*)::int n from private.identifier_repairs')).rows[0].n, 3);
+await asUser(a);
+await fail(() => db.query('select * from private.identifier_repairs'), /permission denied/);
+await fail(() => db.query('select public.identifier_repair_control()'), /permission denied/);
+await fail(() => commitRepair(largeJob, repairedResult, originalResult), /permission denied/);
+console.log('PASS: 30 MiB originals, MIME-specific bounds, byte quota, owner isolation and private optimistic repair audit.');
 await db.close();

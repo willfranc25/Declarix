@@ -224,7 +224,7 @@ test("worker rereads a questionable RUT and missing folio without replacing othe
       return Response.json({
         choices: [{ finish_reason: "stop", message: { content: requests === 1
           ? JSON.stringify({ documents: [{ providerName: "REYES & VALENCIA SPA", providerRut: "77217795-2", documentType: "factura", documentNumber: null, date: "2026-09-09", totalAmount: 7000 }] })
-          : JSON.stringify({ providerRut: "77.217.995-2", documentNumber: "261561", folioEvidence: "BOLETA ELECTRONICA 261561", typeEvidence: "BOLETA ELECTRONICA 261561" }) } }],
+          : JSON.stringify({ providerRut: "77.217.995-2", rutEvidence: "RUT:77.217.995-2", documentNumber: "261561", folioEvidence: "BOLETA ELECTRONICA 261561", typeEvidence: "BOLETA ELECTRONICA 261561" }) } }],
         usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 },
       });
     } });
@@ -265,11 +265,11 @@ test("worker does not silently accept a 3/8 folio disagreement", async () => {
           ? JSON.stringify({ documents: [{ providerName: "COPEC", providerRut: "76464286-4",
             documentType: "Boleta Electrónica", documentNumber: "3485367",
             date: "2026-09-21", totalAmount: 40205 }] })
-          : JSON.stringify({ documentNumber: "3485867", folioEvidence: "Boleta Electrónica 3485867" }) } }],
+          : JSON.stringify(requests === 2 ? { documentNumber: "3485867", folioEvidence: "Boleta Electrónica 3485867" } : { documentNumber: null }) } }],
         usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 },
       });
     } });
-    assert.equal(requests, 2);
+    assert.equal(requests, 3);
     const doc = calls.find((c) => c[0] === "finish_extraction")[1].p_result.documents[0];
     assert.equal(doc.documentNumber, null);
     assert.deepEqual(doc.folioReview, { first: "3485367", second: "3485867", reason: "mismatch" });

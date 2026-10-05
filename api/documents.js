@@ -1,3 +1,4 @@
+import { uploadLimit } from "../src/utils/uploadLimits.js";
 import { randomUUID } from "node:crypto";
 import {
   adminClient,
@@ -21,7 +22,7 @@ export default async function handler(req, res) {
         !MIME_TYPES.includes(body.mimeType) ||
         !Number.isSafeInteger(body.size) ||
         body.size < 1 ||
-        body.size > 20971520 ||
+        body.size > uploadLimit(body.mimeType) ||
         typeof body.name !== "string" ||
         body.name.length > 240
       )
