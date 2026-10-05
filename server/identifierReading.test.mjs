@@ -53,6 +53,7 @@ test('deadline or failed extra reading preserves prior results and manual review
 
 test('RUT correction requires readable RUT evidence plus a valid check digit', async () => {
   assert.equal(supportedRut('77.217.995-2', 'RUT: 77.217.995-2'), true);
+  assert.equal(supportedRut('77.217.995-2', 'R.U.T.: 77.217.995-2'), true);
   assert.equal(supportedRut('77.217.995-2', 'Terminal: 772179952'), false);
   const voucher = { providerRut: '77217795-2', documentType: 'Comprobante de pago electrónico', documentNumber: '0000' };
   const fixed = await readIdentifiers(voucher, async () => ({ providerRut: '77.217.995-2', rutEvidence: 'RUT: 77.217.995-2' }));
@@ -60,4 +61,20 @@ test('RUT correction requires readable RUT evidence plus a valid check digit', a
   assert.equal(fixed.readings.length, 1);
   const unsupported = await readIdentifiers(voucher, async () => ({ providerRut: '77.217.995-2' }));
   assert.equal(unsupported.document.providerRut, voucher.providerRut);
+});
+
+test('recognizes separate printed tax heading and numbered line, excludes vouchers and operations', async () => {
+  for (const caption of ['Nº 508739', 'N° 508739', 'N 508739', 'Número:508739']) {
+    assert.equal(supportedFolio('508739', caption, 'BOLETA ELECTRÓNICA'), true);
+    assert.equal(supportedFolio('508739', caption, 'VÁLIDO COMO BOLETA'), false);
+    assert.equal(supportedFolio('508739', caption, 'COMPRA AFECTA'), false);
+  }
+  assert.equal(supportedFolio('508739', 'Operación Nº 508739', 'BOLETA ELECTRÓNICA'), false);
+  assert.equal(supportedFolio('508739', '508739', 'BOLETA ELECTRÓNICA'), false);
+  const result = await readIdentifiers({ ...receipt, documentNumber: null, folioReview: { first: '508739', reason: 'inconclusive' } }, async () => ({
+    documentNumber: '508739', folioEvidence: 'Nº 508739', typeEvidence: 'BOLETA ELECTRÓNICA',
+  }));
+  assert.equal(result.document.documentNumber, '508739');
+  assert.equal(result.document.folioReview, null);
+  assert.equal(result.readings.length, 1);
 });
