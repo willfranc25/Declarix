@@ -24,10 +24,10 @@ function getReviewState(item) {
   return { needsReview: errors.length > 0, reasons: errors };
 }
 
-function QueueThumbnail({ item, onOpen }) {
+function QueueThumbnail({ item, onOpen, large = false }) {
   const buttonRef = useRef(null);
   useEffect(() => {
-    if (item.status !== 'done' || !item.mimeType?.startsWith('image/') || item.tempPreviewUrl) return undefined;
+    if (!['done', 'uploaded'].includes(item.status) || !item.mimeType?.startsWith('image/') || item.tempPreviewUrl) return undefined;
     const button = buttonRef.current;
     const load = () => { void useUploadQueueStore.getState().ensurePreview(item.jobId).catch(() => {}); };
     if (!button || !window.IntersectionObserver) { load(); return undefined; }
@@ -38,7 +38,7 @@ function QueueThumbnail({ item, onOpen }) {
     return () => observer.disconnect();
   }, [item.jobId, item.mimeType, item.status, item.tempPreviewUrl]);
   const open = async () => {
-    if (!item.mimeType?.startsWith('image/') || item.status !== 'done') return;
+    if (!item.mimeType?.startsWith('image/') || !['done', 'uploaded'].includes(item.status)) return;
     try {
       const store = useUploadQueueStore.getState();
       const readyDetail = store.getReadyDetailPreview(item.jobId);
@@ -51,12 +51,13 @@ function QueueThumbnail({ item, onOpen }) {
       onOpen(current => current?.request === opening.request ? { ...current, upgradeSrc: detail } : current);
     } catch { /* La revisión conserva el original aunque falle esta vista previa. */ }
   };
-  return <button ref={buttonRef} type="button" onClick={open} title="Ver boleta ampliada"
-    style={{ width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+  return <button ref={buttonRef} type="button" onClick={open} title="Ver boleta ampliada" aria-label={`Ampliar ${item.name}`}
+    disabled={!item.mimeType?.startsWith('image/') || !['done', 'uploaded'].includes(item.status)}
+    style={{ width: large ? '100%' : 44, height: large ? 160 : 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
       background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
-      padding: 0, cursor: item.status === 'done' ? 'zoom-in' : 'default', minWidth: 44, minHeight: 44 }}>
+      padding: 0, cursor: ['done', 'uploaded'].includes(item.status) ? 'zoom-in' : 'default', minWidth: 44, minHeight: 44 }}>
     {item.tempPreviewUrl && item.mimeType?.startsWith('image/')
-      ? <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ? <img src={item.tempPreviewUrl} alt={`Miniatura de ${item.name}`} style={{ width: '100%', height: '100%', objectFit: large ? 'contain' : 'cover' }} />
       : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)' }}><Icon name="document" size={20} /></div>}
   </button>;
 }
@@ -71,6 +72,10 @@ export default function UploadPage() {
   const queue = useUploadQueueStore((s) => s.queue);
   const isProcessing = useUploadQueueStore((s) => s.isProcessing);
   const uploadProgress = useUploadQueueStore(s=>s.uploadProgress);
+  const isStarting = useUploadQueueStore(s=>s.isStarting);
+  const uploadErrors = useUploadQueueStore(s=>s.uploadErrors);
+  const storeError = useUploadQueueStore(s=>s.error);
+  const startUploaded = useUploadQueueStore(s=>s.startUploaded);
   const addFiles = useUploadQueueStore((s) => s.addFiles);
   const removeItem = useUploadQueueStore((s) => s.removeItem);
   const clearQueue = useUploadQueueStore((s) => s.clearQueue);
@@ -97,6 +102,7 @@ export default function UploadPage() {
 
   // Manejar la selección de múltiples archivos
   const handleFilesAdded = async (filesList) => {
+    if (uploadProgress || isStarting) return;
     const validFiles = [];
     const rejected = [];
     setGlobalError(null);
@@ -120,7 +126,7 @@ export default function UploadPage() {
     if (validFiles.length > 0) {
       const added = await addFiles(validFiles);
       if (added > 0) {
-        addToast(`${added} archivo(s) agregado(s) a la cola.`, 'success');
+        addToast(`${added} archivo(s) subidos. Pulsa Cargar boletas para extraer los datos.`, 'success');
       }
     }
   };
@@ -157,7 +163,9 @@ export default function UploadPage() {
   };
 
   // Estadísticas globales para la barra de progreso
-  const totalFiles = queue.length;
+  const uploadedFiles = queue.filter(item => item.status === 'uploaded');
+  const processingQueue = queue.filter(item => item.status !== 'uploaded');
+  const totalFiles = processingQueue.length;
   const processedFiles = queue.filter(item => item.status === 'done' || item.status === 'error').length;
   const successfulFiles = queue.filter(item => item.status === 'done').length;
   const failedFiles = queue.filter(item => item.status === 'error').length;
@@ -212,7 +220,7 @@ export default function UploadPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Cargar documentos</h1>
-          <p className="page-subtitle">Sube fotos, PDF o XML de la empresa seleccionada. Los datos quedarán disponibles para revisión.</p>
+          <p className="page-subtitle">Primero sube tus archivos y revisa que estén completos. Después pulsa Cargar boletas para extraer los datos.</p>
         </div>
       </div>
 
@@ -225,18 +233,24 @@ export default function UploadPage() {
           <button className="btn btn-ghost btn-sm" onClick={() => setGlobalError(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
+      {storeError && <p className="alert alert-danger" role="alert">{storeError}</p>}
+      {uploadErrors.length > 0 && <div className="alert alert-danger" role="alert">
+        <strong>No se pudieron subir {uploadErrors.length} archivo(s):</strong>
+        <ul>{uploadErrors.map((failure, index) => <li key={index}>{failure.name}: {failure.message}</li>)}</ul>
+        <p>Puedes confirmar los archivos que sí se subieron o reintentar los pendientes.</p>
+      </div>}
 
       {/* Zona de Dropzone (sin card contenedora: la dropzone ES la superficie) */}
       <div>
         <div
           className={`drop-zone ${isDragging ? 'dragging' : ''}`}
-          role="button" tabIndex={0} aria-label="Seleccionar documentos"
+          role="button" tabIndex={uploadProgress || isStarting ? -1 : 0} aria-label="Seleccionar documentos" aria-disabled={Boolean(uploadProgress || isStarting)}
           onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInputRef.current?.click();}}}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => { if (!uploadProgress && !isStarting) fileInputRef.current?.click(); }}
           style={{ cursor: 'pointer' }}
         >
           <div className="drop-zone-icon">
@@ -254,6 +268,7 @@ export default function UploadPage() {
         <button
           type="button"
           className="btn btn-secondary w-full mt-4"
+          disabled={Boolean(uploadProgress || isStarting)}
           onClick={(e) => {
             e.stopPropagation();
             cameraInputRef.current?.click();
@@ -268,7 +283,8 @@ export default function UploadPage() {
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf,.xml"
           multiple
-          onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
+          disabled={Boolean(uploadProgress || isStarting)}
+          onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ''; void handleFilesAdded(files); }}
           style={{ display: 'none' }}
         />
         {/* Selector de cámara: una foto a la vez (limitación del hardware, no de la app) */}
@@ -277,10 +293,38 @@ export default function UploadPage() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(e) => e.target.files && handleFilesAdded(e.target.files)}
+          disabled={Boolean(uploadProgress || isStarting)}
+          onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ''; void handleFilesAdded(files); }}
           style={{ display: 'none' }}
         />
       </div>
+
+      {uploadedFiles.length > 0 && <section className="card space-y-4" aria-labelledby="uploaded-files-title">
+        <div className="flex justify-between items-center flex-wrap gap-3">
+          <div>
+            <h2 id="uploaded-files-title" className="card-title">Archivos subidos ({uploadedFiles.length})</h2>
+            <p className="text-sm text-muted">Guardados correctamente. Todavía no se han extraído sus datos.</p>
+          </div>
+          <button className="btn btn-primary" disabled={Boolean(uploadProgress || isStarting)}
+            onClick={async () => { if (await startUploaded()) addToast('Extracción iniciada. Puedes cerrar la app y continuará en segundo plano.', 'success'); }}>
+            {isStarting ? 'Iniciando…' : `Cargar boletas (${uploadedFiles.length})`}
+          </button>
+        </div>
+        {uploadProgress && <p className="text-sm text-muted" role="status">Espera a que termine la subida antes de confirmar.</p>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 16 }}>
+          {uploadedFiles.map(item => <article key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12, minWidth: 0 }}>
+            <QueueThumbnail item={item} onOpen={setPreview} large />
+            <p className="text-sm font-semibold" style={{ overflowWrap: 'anywhere', margin: '8px 0 4px' }}>{item.name}</p>
+            <div className="flex justify-between items-center gap-2">
+              <span className="text-xs text-muted">{(item.size / 1024 / 1024).toFixed(2)} MB</span>
+              <span className="badge badge-success">Subido</span>
+              <button className="btn btn-ghost btn-sm" title="Quitar archivo" aria-label={`Quitar ${item.name}`}
+                disabled={Boolean(uploadProgress || isStarting)} onClick={() => handleRemoveItem(item.id)}><Icon name="x" size={16} /></button>
+            </div>
+          </article>)}
+        </div>
+        <p className="text-xs text-muted">Puedes agregar más archivos o quitar alguno antes de confirmar. Si sales de la app, quedarán pendientes hasta que pulses Cargar boletas.</p>
+      </section>}
 
       {/* Card de progreso (prototipo: caption pequeño + % en mono + barra fina) */}
       {totalFiles > 0 && (
@@ -343,6 +387,7 @@ export default function UploadPage() {
             <button
               className="btn btn-secondary"
               onClick={handleClearQueue}
+              disabled={Boolean(uploadProgress || isStarting)}
             >
               Limpiar cola
             </button>
@@ -358,14 +403,14 @@ export default function UploadPage() {
       )}
 
       {/* Cola de archivos (card sin padding, filas separadas por hairline) */}
-      {queue.length > 0 && (
+      {processingQueue.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="flex justify-between items-center" style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
             <h3 className="card-title">Cola de archivos</h3>
             <span className="text-xs text-muted">Procesamiento en segundo plano</span>
           </div>
 
-          {queue.map((item, i) => {
+          {processingQueue.map((item, i) => {
             const review = getReviewState(item);
             return (
             <div
@@ -441,7 +486,7 @@ export default function UploadPage() {
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => handleRemoveItem(item.id)}
-                  disabled={item.status === 'processing'}
+                  disabled={item.status === 'processing' || Boolean(uploadProgress || isStarting)}
                   title="Quitar de la cola"
                   aria-label="Quitar de la cola"
                 >
@@ -468,8 +513,8 @@ export default function UploadPage() {
       >
         <span style={{ fontWeight: 700, color: 'var(--color-accent)', flexShrink: 0 }}>Tip</span>
         <span>
-          Arrastra varias fotos a la vez — se procesan en secuencia y el avance queda guardado
-          aunque cierres la ventana. Cuando terminen, usa{' '}
+          Selecciona tus archivos, revisa las imágenes subidas y pulsa <strong>Cargar boletas</strong>.
+          Desde ese momento la extracción continúa aunque cierres la ventana. Cuando termine, usa{' '}
           <strong style={{ color: 'var(--color-text-primary)' }}>Revisar todos</strong> para corregir e importar en lote.
         </span>
       </div>

@@ -116,7 +116,7 @@ declare module '*store/uploadQueueStore' {
     file: File;
     name: string;
     size: number;
-    status: 'pending' | 'processing' | 'waiting' | 'done' | 'error';
+    status: 'uploaded' | 'pending' | 'processing' | 'waiting' | 'done' | 'error';
     progress: number;
     error: string | null;
     extractedData: Record<string, any> | null;
@@ -130,6 +130,11 @@ declare module '*store/uploadQueueStore' {
     queue: QueueItem[];
     isProcessing: boolean;
     isHydrated: boolean;
+    isStarting: boolean;
+    uploadProgress: { done: number; total: number } | null;
+    uploadErrors: { name: string; message: string }[];
+    error: string | null;
+    startUploaded: () => Promise<boolean>;
     lastBatchSummary: { at: number; done: number; errors: number; duplicates: number } | null;
     hydrate: () => Promise<void>;
     ensurePreview: (jobId: string) => Promise<string | null>;

@@ -39,6 +39,8 @@ const messages = {
   JOB_NOT_CANCELLABLE:
     "Este archivo ya fue procesado; puedes descartarlo en revisión.",
   JOB_NOT_FOUND: "No se encontró el archivo.",
+  INVALID_BATCH: "Selecciona los archivos subidos que quieres procesar.",
+  JOB_NOT_UPLOADED: "Hay un archivo que aún no terminó de subir. Actualiza la cola antes de iniciar.",
 };
 export function respondError(res, err) {
   const code = Object.keys(messages).find((k) => err.message?.includes(k));

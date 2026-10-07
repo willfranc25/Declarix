@@ -123,3 +123,16 @@ test("maintenance warming requires the existing server signature and exposes onl
   await handlePreviewMaintenance(req, res, fixture.db);
   assert.equal(res.body.cache, "hit"); assert.equal(fixture.originals(), 1);
 });
+
+test('verified uploads can be previewed before extraction, while incomplete or cancelled uploads cannot',async()=>{
+  const fixture=await storageFixture();
+  let status='uploaded';
+  fixture.db.auth={getUser:async()=>({data:{user:{id:job.user_id}}})};
+  fixture.db.from=()=>({select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:{...job,status}})})})})});
+  const res={setHeader(){},status(code){this.code=code;return this;},json(body){this.body=body;return this;},send(bytes){this.bytes=bytes;return this;}};
+  const req={method:'GET',headers:{authorization:'Bearer test'},query:{jobId:job.id}};
+  await createPreviewHandler(()=>fixture.db)(req,res);assert.equal(res.code,200);assert.ok(res.bytes.length>0);
+  const reads=fixture.originals();
+  for(status of ['uploading','cancelled']){await createPreviewHandler(()=>fixture.db)(req,res);assert.equal(res.code,404);}
+  assert.equal(fixture.originals(),reads);
+});
