@@ -1,6 +1,6 @@
 import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn(),preview:vi.fn()}));
-vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:mocks.preview,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request}));
+const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn(),preview:vi.fn(),wake:vi.fn().mockResolvedValue(undefined)}));
+vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:mocks.preview,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request,wakeExtractionQueue:mocks.wake}));
 vi.mock('../services/supabaseClient',()=>({supabase:{from:()=>({select:()=>({eq:()=>({in:()=>({range:async()=>({data:[],error:null})})})})}),storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'https://example.test/preview'}})})}}}));
 import store from '../store/uploadQueueStore';
 import {setActiveOrganization} from '../services/organizationService';
@@ -37,9 +37,44 @@ describe('durable company queue',()=>{
   mocks.jobs.mockResolvedValue([{...ready,review:{0:{_dismissed:true}}}]);await store.getState().removeItem('job:0');
   expect(store.getState().queue).toEqual([]);
  });
- it('resumes an uploaded draft using enqueue without uploading again',async()=>{
+ it('finishes a pending upload without starting extraction or uploading again',async()=>{
   mocks.jobs.mockResolvedValue([{...ready,status:'uploading'}]);await store.getState().hydrate();await store.getState().retryItem('job');
-  expect(mocks.request).toHaveBeenCalledWith('enqueue',{jobId:'job'});expect(mocks.upload).not.toHaveBeenCalled();
+  expect(mocks.request).toHaveBeenCalledWith('complete',{jobId:'job'});expect(mocks.upload).not.toHaveBeenCalled();
+ });
+ it('keeps successful uploads visible without starting the worker, and lists failed filenames',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}]);
+  mocks.upload.mockResolvedValueOnce('job').mockRejectedValueOnce(new Error('Network failed'));
+  await store.getState().addFiles([new File(['a'],'a.png'),new File(['b'],'b.png')]);
+  expect(store.getState().queue[0].status).toBe('uploaded');
+  expect(store.getState().isProcessing).toBe(false);expect(mocks.request).not.toHaveBeenCalled();
+  expect(mocks.wake).not.toHaveBeenCalled();
+  expect(store.getState().uploadErrors).toEqual([{name:'b.png',message:'Network failed'}]);
+  store.getState().reset();await store.getState().hydrate();
+  expect(store.getState().queue[0].status).toBe('uploaded');expect(store.getState().isProcessing).toBe(false);
+ });
+ it('confirms only uploaded jobs once and blocks double clicks and new uploads during confirmation',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}, {...ready,id:'already-queued',status:'queued'}]);await store.getState().hydrate();
+  let release:any;mocks.request.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  const pending=store.getState().startUploaded();
+  expect(await store.getState().startUploaded()).toBe(false);
+  expect(await store.getState().addFiles([new File(['a'],'a.png')])).toBe(0);
+  expect(mocks.request).toHaveBeenCalledExactlyOnceWith('start',{companyId:'a',jobIds:['job']});
+  mocks.jobs.mockResolvedValue([{...ready,status:'queued'}]);release({started:1});expect(await pending).toBe(true);
+  expect(mocks.wake).toHaveBeenCalledTimes(1);
+  expect(store.getState().queue[0].status).toBe('waiting');expect(store.getState().isStarting).toBe(false);
+ });
+ it('never confirms files while their upload is in progress and retains them after a failed confirmation',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}]);await store.getState().hydrate();
+  store.setState({uploadProgress:{done:0,total:1}});expect(await store.getState().startUploaded()).toBe(false);
+  expect(mocks.request).not.toHaveBeenCalled();store.setState({uploadProgress:null});
+  mocks.request.mockRejectedValueOnce(new Error('Offline'));expect(await store.getState().startUploaded()).toBe(false);
+  expect(store.getState().queue[0].status).toBe('uploaded');expect(store.getState().error).toBe('Offline');
+ });
+ it('does not hydrate or change the new company when an old confirmation finishes',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}]);await store.getState().hydrate();
+  let release:any;mocks.request.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  const pending=store.getState().startUploaded();setActiveOrganization(company('b'));store.getState().reset();release({started:1});
+  expect(await pending).toBe(false);expect(store.getState().queue).toEqual([]);expect(mocks.jobs).toHaveBeenCalledTimes(1);
  });
 });
 

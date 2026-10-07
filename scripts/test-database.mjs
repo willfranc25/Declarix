@@ -21,6 +21,7 @@ await db.exec(
   await readFile(new URL("../supabase/bootstrap.sql", import.meta.url), "utf8"),
 );
 await db.exec(`create policy "Permitir todo en storage" on storage.objects for all using(bucket_id='images');`);
+let confirmationMigration;
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -34,6 +35,7 @@ for (const file of (
       "utf8",
     )
   ).replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/i, "");
+  if (file === '20261007132035_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
   try {
     await db.exec(sql);
   } catch (err) {
@@ -185,6 +187,16 @@ assert.equal(
   0,
 );
 await admin();
+// Rehearse the new migration against actual pre-existing invoice/job data.
+const legacyJob='66666666-6666-4666-8666-666666666666';
+await db.query('select public.prepare_extraction($1,$2,$3,$4,$5,$6)',[a,ca,legacyJob,'legacy.png','image/png',100]);
+await db.query("update public.extraction_jobs set status='saved' where id=$1",[legacyJob]);
+const migrationBefore=(await db.query("select jsonb_build_object('invoices',(select jsonb_agg(to_jsonb(i) order by id) from public.invoices i),'jobs',(select jsonb_agg(to_jsonb(j) order by id) from public.extraction_jobs j),'accounts',(select jsonb_agg(to_jsonb(a) order by user_id) from public.accountant_accounts a)) snapshot")).rows[0].snapshot;
+await db.exec('reset role');
+await db.exec(confirmationMigration);
+await admin();
+const migrationAfter=(await db.query("select jsonb_build_object('invoices',(select jsonb_agg(to_jsonb(i) order by id) from public.invoices i),'jobs',(select jsonb_agg(to_jsonb(j) order by id) from public.extraction_jobs j),'accounts',(select jsonb_agg(to_jsonb(a) order by user_id) from public.accountant_accounts a)) snapshot")).rows[0].snapshot;
+assert.deepEqual(migrationAfter,migrationBefore,'The migration must preserve every field of existing invoices, jobs and accounts');
 const job = "33333333-3333-4333-8333-333333333333";
 await db.query("select public.prepare_extraction($1,$2,$3,$4,$5,$6)", [
   a,
@@ -200,6 +212,11 @@ await db.query("select public.enqueue_extraction($1,$2,$3,$4)", [
   "sha256",
   20,
 ]);
+assert.equal((await db.query('select status from public.extraction_jobs where id=$1',[job])).rows[0].status,'uploaded');
+assert.equal((await db.query('select reserved from public.accountant_accounts where user_id=$1',[a])).rows[0].reserved,0);
+assert.equal((await db.query('select * from public.claim_extraction()')).rows.length,0,'Workers must ignore unconfirmed uploads');
+assert.equal((await db.query('select public.start_uploaded_extractions($1,$2,$3) n',[a,ca,[job,job]])).rows[0].n,1);
+assert.equal((await db.query('select public.start_uploaded_extractions($1,$2,$3) n',[a,ca,[job]])).rows[0].n,0,'Confirming twice must not reserve or queue twice');
 await db.query("select public.enqueue_extraction($1,$2,$3,$4)", [
   a,
   job,
@@ -225,6 +242,14 @@ await db.query("select public.prepare_extraction($1,$2,$3,$4,$5,$6)", [
   100,
 ]);
 await db.query("select public.enqueue_extraction($1,$2,$3,$4)", [a, job2, "hash2", 20]);
+await fail(()=>db.query('select public.start_uploaded_extractions($1,$2,$3)',[b,ca,[job2]]),/COMPANY_FORBIDDEN/);
+await fail(()=>db.query('select public.start_uploaded_extractions($1,$2,$3)',[a,ca2,[job2]]),/JOB_NOT_FOUND/);
+await fail(()=>db.query('select public.start_uploaded_extractions($1,$2,$3)',[a,ca,[job2,b]]),/JOB_NOT_FOUND/);
+assert.equal((await db.query('select status from public.extraction_jobs where id=$1',[job2])).rows[0].status,'uploaded','An invalid batch must not partially start');
+await asUser(a);
+await fail(()=>db.query('select public.start_uploaded_extractions($1,$2,$3)',[a,ca,[job2]]),/permission denied/);
+await admin();
+await db.query('select public.start_uploaded_extractions($1,$2,$3)',[a,ca,[job2]]);
 let claimed = (await db.query("select * from public.claim_extraction()")).rows;
 assert.equal(claimed.length, 1);
 assert.equal(
@@ -380,4 +405,22 @@ await fail(() => db.query('select * from private.identifier_repairs'), /permissi
 await fail(() => db.query('select public.identifier_repair_control()'), /permission denied/);
 await fail(() => commitRepair(largeJob, repairedResult, originalResult), /permission denied/);
 console.log('PASS: 30 MiB originals, MIME-specific bounds, byte quota, owner isolation and private optimistic repair audit.');
+await admin();
+const stagedIds=[];
+for(let index=0;index<25;index++){
+ const id=(await db.query('select gen_random_uuid() id')).rows[0].id;
+ await db.query('select public.prepare_extraction($1,$2,$3,$4,$5,$6)',[a,ca,id,`batch-${index}.png`,'image/png',100]);
+ await db.query('select public.enqueue_extraction($1,$2,$3,$4)',[a,id,`batch-hash-${index}`,1]);
+ stagedIds.push(id);
+}
+const unuploaded=(await db.query('select gen_random_uuid() id')).rows[0].id;
+await db.query('select public.prepare_extraction($1,$2,$3,$4,$5,$6)',[a,ca,unuploaded,'unfinished.png','image/png',100]);
+const reservedBefore=(await db.query('select reserved from public.accountant_accounts where user_id=$1',[a])).rows[0].reserved;
+await fail(()=>db.query('select public.start_uploaded_extractions($1,$2,$3)',[a,ca,[...stagedIds,unuploaded]]),/JOB_NOT_UPLOADED/);
+assert.equal((await db.query("select count(*)::int n from public.extraction_jobs where id=any($1) and status='uploaded'",[stagedIds])).rows[0].n,25,'An unfinished file must roll back the entire confirmation');
+assert.equal((await db.query('select reserved from public.accountant_accounts where user_id=$1',[a])).rows[0].reserved,reservedBefore);
+await db.query('select public.cancel_extraction($1,$2)',[a,stagedIds.pop()]);
+assert.equal((await db.query('select public.start_uploaded_extractions($1,$2,$3) n',[a,ca,stagedIds])).rows[0].n,24);
+assert.equal((await db.query('select reserved from public.accountant_accounts where user_id=$1',[a])).rows[0].reserved,reservedBefore+24);
+console.log('PASS: 25 uploaded originals wait for confirmation, atomic rollback, removal before confirmation, idempotency and owner/company authorization.');
 await db.close();

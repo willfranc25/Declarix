@@ -10,10 +10,12 @@ import {
   patchReview,
   documentRequest,
   fetchDocumentPreview,
+  wakeExtractionQueue,
 } from "../services/jobService";
 import { supabase } from "../services/supabaseClient";
 import { documentKey, normalizeDocumentType, withVoucherFolio } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
+import { documentMimeType } from "../utils/uploadLimits";
 let epoch = 0;
 let prefetchVersion = 0;
 const previews = new Map();
@@ -30,6 +32,8 @@ const useUploadQueueStore = create((set, get) => ({
   lastBatchSummary: null,
   error: null,
   uploadProgress: null,
+  isStarting: false,
+  uploadErrors: [],
   reset() {
     epoch++;
     prefetchVersion++;
@@ -49,6 +53,8 @@ const useUploadQueueStore = create((set, get) => ({
       lastBatchSummary: null,
       error: null,
       uploadProgress: null,
+      isStarting: false,
+      uploadErrors: [],
     });
   },
   pinDetailPreview(jobId) {
@@ -254,7 +260,7 @@ const useUploadQueueStore = create((set, get) => ({
             ...base,
             id: j.id,
             status:
-              j.status === "failed" || j.status === "uploading"
+              j.status === "uploaded" ? "uploaded" : j.status === "failed" || j.status === "uploading"
                 ? "error"
                 : j.status === "processing"
                   ? "processing"
@@ -292,23 +298,27 @@ const useUploadQueueStore = create((set, get) => ({
     }
   },
   async addFiles(files) {
-    if (get().uploadProgress) {
+    if (get().uploadProgress || get().isStarting) {
       set({ error: "Espera a que termine la carga actual." });
       return 0;
     }
     const company = requireCompany(),
       version = epoch;
-    set({ uploadProgress: { done: 0, total: files.length } });
+    set({ uploadProgress: { done: 0, total: files.length }, uploadErrors: [], error: null });
     let added = 0;
     let nextFile = 0;
     const uploadNext = async () => {
       while (version === epoch && nextFile < files.length) {
         const file = files[nextFile++];
         try {
-          await uploadDocument(file, company.id);
+          const jobId = await uploadDocument(file, company.id);
           added++;
+          if (version === epoch) set(state => ({ queue: state.queue.some(row => row.jobId === jobId) ? state.queue : [...state.queue, {
+            id: jobId, jobId, name: file.name, size: file.size, mimeType: documentMimeType(file),
+            status: "uploaded", serverStatus: "uploaded", tempPreviewUrl: null, objectPath: null, file: null,
+          }] }));
         } catch (err) {
-          if (version === epoch) set({ error: err.message });
+          if (version === epoch) set(state => ({ uploadErrors: [...state.uploadErrors, { name: file.name, message: err.message }] }));
         }
         if (version === epoch)
           set((state) => ({
@@ -325,6 +335,26 @@ const useUploadQueueStore = create((set, get) => ({
       await get().hydrate();
     }
     return added;
+  },
+  async startUploaded() {
+    if (get().uploadProgress || get().isStarting) return false;
+    const company = requireCompany(), version = epoch;
+    const jobIds = [...new Set(get().queue.filter(item => item.status === "uploaded").map(item => item.jobId))];
+    if (!jobIds.length) return false;
+    set({ isStarting: true, error: null });
+    try {
+      await documentRequest("start", { companyId: company.id, jobIds });
+      // Prompt dispatch immediately; the scheduled worker is the durable fallback.
+      void wakeExtractionQueue().catch(() => {});
+      if (version !== epoch) return false;
+      await get().hydrate();
+      return true;
+    } catch (err) {
+      if (version === epoch) set({ error: err.message });
+      return false;
+    } finally {
+      if (version === epoch) set({ isStarting: false });
+    }
   },
   updateReview(id, patch) {
     const item = get().queue.find((q) => q.id === id);
@@ -358,6 +388,7 @@ const useUploadQueueStore = create((set, get) => ({
     await Promise.all([...pendingReviews.values()].map((p) => p.promise));
   },
   async removeItem(id) {
+    if (get().isStarting || get().uploadProgress) return;
     const item = get().queue.find((q) => q.id === id);
     if (!item) return;
     try {
@@ -381,7 +412,7 @@ const useUploadQueueStore = create((set, get) => ({
     if (!item) return;
     try {
       await documentRequest(
-        item.serverStatus === "uploading" ? "enqueue" : "retry",
+        item.serverStatus === "uploading" ? "complete" : "retry",
         { jobId: item.jobId },
       );
       await get().hydrate();

@@ -48,10 +48,10 @@ export async function uploadDocument(file, companyId) {
         });
       if (error) throw error;
     }
-    await documentRequest("enqueue", { jobId: prepared.jobId });
+    await documentRequest("complete", { jobId: prepared.jobId });
     return prepared.jobId;
   } catch (err) {
-    // A failed enqueue remains visible and can be retried without uploading again.
+    // A failed validation remains visible and can be retried without uploading again.
     throw new Error(
       err.message + " El archivo pendiente aparecerá en la cola.",
       { cause: err },

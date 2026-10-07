@@ -8,12 +8,12 @@ import {
   respondError,
 } from "../server/admin.js";
 import { inspectDocument, MIME_TYPES } from "../server/documentInput.js";
-export default async function handler(req, res) {
+export const createDocumentsHandler = (getDb = adminClient) => async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Usa POST" });
   let db, user;
   try {
-    db = adminClient();
+    db = getDb();
     user = await authenticate(req, db);
     const body = req.body || {};
     if (body.action === "prepare") {
@@ -52,6 +52,15 @@ export default async function handler(req, res) {
           token: signed.data.token,
         });
     }
+    if (body.action === "start") {
+      if (!uuid(body.companyId) || !Array.isArray(body.jobIds) ||
+          body.jobIds.length < 1 || body.jobIds.length > 1000 || !body.jobIds.every(uuid))
+        throw new Error("INVALID_BATCH");
+      const started = checked(await db.rpc("start_uploaded_extractions", {
+        p_user: user.id, p_company: body.companyId, p_jobs: [...new Set(body.jobIds)],
+      }));
+      return res.status(200).json({ started });
+    }
     if (!uuid(body.jobId)) throw new Error("JOB_NOT_FOUND");
     const job = checked(
       await db
@@ -62,7 +71,9 @@ export default async function handler(req, res) {
         .single(),
     );
     if (!job) throw new Error("JOB_NOT_FOUND");
-    if (body.action === "enqueue") {
+    // Older cached clients use "enqueue" after uploading. It now only stages
+    // the validated original; only the explicit "start" action queues work.
+    if (body.action === "complete" || body.action === "enqueue") {
       if (job.status !== "uploading")
         return res.status(200).json({ jobId: job.id, status: job.status });
       const blob = checked(
@@ -99,4 +110,5 @@ export default async function handler(req, res) {
   } catch (err) {
     return respondError(res, err);
   }
-}
+};
+export default createDocumentsHandler();

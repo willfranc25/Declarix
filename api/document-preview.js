@@ -14,7 +14,7 @@ export const createPreviewHandler = (getDb = adminClient) => async (req, res) =>
     const job = checked(await db.from("extraction_jobs")
       .select("id,user_id,object_path,mime_type,status")
       .eq("id", jobId).eq("user_id", user.id).maybeSingle());
-    if (!job || job.status !== "ready" || !job.mime_type?.startsWith("image/"))
+    if (!job || !["uploaded", "queued", "processing", "ready"].includes(job.status) || !job.mime_type?.startsWith("image/"))
       return res.status(404).json({ error: "Vista previa no disponible" });
     const variant = req.query?.variant ?? "review";
     if (!validPreviewVariant(variant)) return res.status(400).json({ error: "INVALID_PREVIEW_VARIANT" });
