@@ -5,7 +5,7 @@ vi.mock('../services/supabaseClient',()=>({supabase:{from:()=>({select:()=>({eq:
 import store from '../store/uploadQueueStore';
 import {setActiveOrganization} from '../services/organizationService';
 const company=(id:string)=>({id,accountant_id:'user',name:id,archived:false});
-beforeEach(()=>{vi.clearAllMocks();store.getState().reset();setActiveOrganization(company('a'));mocks.patch.mockResolvedValue(undefined);mocks.upload.mockResolvedValue('new');mocks.jobs.mockResolvedValue([]);});
+beforeEach(()=>{vi.clearAllMocks();mocks.request.mockReset().mockResolvedValue({started:1});store.getState().reset();setActiveOrganization(company('a'));mocks.patch.mockResolvedValue(undefined);mocks.upload.mockResolvedValue('new');mocks.jobs.mockResolvedValue([]);});
 const ready={id:'job',filename:'photo.png',mime_type:'image/png',status:'ready',file_bytes:20,object_path:'user/a/job',result:{documents:[{providerName:'A',date:null,totalAmount:null}]},review:{}};
 describe('durable company queue',()=>{
  it('retains unknown fields and provenance for manual review',async()=>{
@@ -75,6 +75,33 @@ describe('durable company queue',()=>{
   let release:any;mocks.request.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
   const pending=store.getState().startUploaded();setActiveOrganization(company('b'));store.getState().reset();release({started:1});
   expect(await pending).toBe(false);expect(store.getState().queue).toEqual([]);expect(mocks.jobs).toHaveBeenCalledTimes(1);
+ });
+ it('unlocks completed uploads while the background refresh is slow',async()=>{
+  let release:any;mocks.jobs.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  expect(await store.getState().addFiles([new File(['a'],'a.png')])).toBe(1);
+  expect(store.getState().uploadProgress).toBeNull();
+  expect(store.getState().queue[0].status).toBe('uploaded');
+  release([{...ready,id:'new',status:'uploaded'}]);await Promise.resolve();
+ });
+ it('shows accepted extraction immediately and ignores a stale poll',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}]);await store.getState().hydrate();
+  let stale:any,latest:any;
+  mocks.jobs.mockImplementationOnce(()=>new Promise(resolve=>{stale=resolve;}))
+   .mockImplementationOnce(()=>new Promise(resolve=>{latest=resolve;}));
+  const oldPoll=store.getState().hydrate();
+  expect(await store.getState().startUploaded()).toBe(true);
+  expect(store.getState().isStarting).toBe(false);expect(store.getState().queue[0].status).toBe('waiting');
+  stale([{...ready,status:'uploaded'}]);await oldPoll;
+  expect(store.getState().queue[0].status).toBe('waiting');
+  latest([{...ready,status:'processing'}]);await Promise.resolve();
+ });
+ it('keeps confirmation errors visible across polling and clears them on a successful retry',async()=>{
+  mocks.jobs.mockResolvedValue([{...ready,status:'uploaded'}]);await store.getState().hydrate();
+  mocks.request.mockRejectedValueOnce(new Error('Offline'));
+  expect(await store.getState().startUploaded()).toBe(false);
+  await store.getState().hydrate();
+  expect(store.getState().startError).toBe('Offline');expect(store.getState().isStarting).toBe(false);
+  expect(await store.getState().startUploaded()).toBe(true);expect(store.getState().startError).toBeNull();
  });
 });
 

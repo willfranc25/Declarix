@@ -75,6 +75,7 @@ export default function UploadPage() {
   const isStarting = useUploadQueueStore(s=>s.isStarting);
   const uploadErrors = useUploadQueueStore(s=>s.uploadErrors);
   const storeError = useUploadQueueStore(s=>s.error);
+  const startError = useUploadQueueStore(s=>s.startError);
   const startUploaded = useUploadQueueStore(s=>s.startUploaded);
   const addFiles = useUploadQueueStore((s) => s.addFiles);
   const removeItem = useUploadQueueStore((s) => s.removeItem);
@@ -92,6 +93,16 @@ export default function UploadPage() {
   }, [preview?.jobId]);
 
   const { addToast } = useToast();
+  const busy = Boolean(uploadProgress || isStarting);
+  const uploadPercent = uploadProgress ? Math.round(uploadProgress.done / uploadProgress.total * 100) : 0;
+  const handleExtract = async () => {
+    if (await startUploaded()) {
+      addToast('Extracción iniciada. Puedes cerrar la app y continuará en segundo plano.', 'success');
+    } else {
+      const state = useUploadQueueStore.getState();
+      addToast(state.startError || 'Espera a que termine la carga actual antes de extraer.', 'error');
+    }
+  };
 
   // Validar un archivo individual
   const validateFile = (file) => {
@@ -126,12 +137,12 @@ export default function UploadPage() {
     if (validFiles.length > 0) {
       const added = await addFiles(validFiles);
       if (added > 0) {
-        addToast(`${added} archivo(s) subidos. Pulsa Cargar boletas para extraer los datos.`, 'success');
+        addToast(`${added} archivo(s) subidos. Pulsa Extraer para comenzar.`, 'success');
       }
     }
   };
 
-  const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); if (!busy) setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
   const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
   const handleDrop = (e) => {
@@ -200,6 +211,13 @@ export default function UploadPage() {
         .upload-page-container .queue-item {
           min-height: 44px;
         }
+        .upload-page-container .upload-animation {
+          display: flex; flex-direction: column; align-items: center; gap: 14px;
+          width: 100%; color: var(--color-accent);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .upload-page-container .spinner { animation: none; }
+        }
 
         @keyframes toastSlideIn {
           from {
@@ -220,7 +238,7 @@ export default function UploadPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Cargar documentos</h1>
-          <p className="page-subtitle">Primero sube tus archivos y revisa que estén completos. Después pulsa Cargar boletas para extraer los datos.</p>
+          <p className="page-subtitle">Primero sube tus archivos y revisa que estén completos. Después pulsa Extraer para obtener los datos.</p>
         </div>
       </div>
 
@@ -233,7 +251,8 @@ export default function UploadPage() {
           <button className="btn btn-ghost btn-sm" onClick={() => setGlobalError(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
-      {storeError && <p className="alert alert-danger" role="alert">{storeError}</p>}
+      {storeError && storeError !== startError && <p className="alert alert-danger" role="alert">{storeError}</p>}
+      {startError && <p className="alert alert-danger" role="alert">{startError}</p>}
       {uploadErrors.length > 0 && <div className="alert alert-danger" role="alert">
         <strong>No se pudieron subir {uploadErrors.length} archivo(s):</strong>
         <ul>{uploadErrors.map((failure, index) => <li key={index}>{failure.name}: {failure.message}</li>)}</ul>
@@ -243,16 +262,28 @@ export default function UploadPage() {
       {/* Zona de Dropzone (sin card contenedora: la dropzone ES la superficie) */}
       <div>
         <div
-          className={`drop-zone ${isDragging ? 'dragging' : ''}`}
+          className={`drop-zone ${isDragging && !busy ? 'dragging' : ''}`}
           role="button" tabIndex={uploadProgress || isStarting ? -1 : 0} aria-label="Seleccionar documentos" aria-disabled={Boolean(uploadProgress || isStarting)}
-          onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInputRef.current?.click();}}}
+          aria-busy={busy}
+          onKeyDown={e=>{if(!busy && (e.key==='Enter'||e.key===' ')){e.preventDefault();fileInputRef.current?.click();}}}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           onClick={() => { if (!uploadProgress && !isStarting) fileInputRef.current?.click(); }}
-          style={{ cursor: 'pointer' }}
+          style={{ cursor: busy ? 'wait' : 'pointer' }}
         >
+          {busy ? <div className="upload-animation" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" style={{ width: 42, height: 42 }} />
+            <strong>{uploadProgress ? `Subiendo archivos: ${uploadProgress.done} de ${uploadProgress.total}` : 'Iniciando extracción…'}</strong>
+            {uploadProgress && <>
+              <div role="progressbar" aria-label="Archivos subidos" aria-valuemin={0} aria-valuemax={uploadProgress.total} aria-valuenow={uploadProgress.done}
+                style={{ width: 'min(100%, 360px)', height: 6, background: 'var(--color-border)', borderRadius: 6, overflow: 'hidden' }}>
+                <div style={{ width: `${uploadPercent}%`, height: '100%', background: 'var(--color-accent)', transition: 'width .2s ease' }} />
+              </div>
+              <p className="drop-zone-hint">{uploadPercent === 100 ? 'Verificando los archivos subidos…' : 'Guardando tus archivos. Mantén abierta esta ventana.'}</p>
+            </>}
+          </div> : <>
           <div className="drop-zone-icon">
             <Icon name="photo" size={18} />
           </div>
@@ -262,6 +293,7 @@ export default function UploadPage() {
           <p className="drop-zone-hint">
             Fotos JPEG, PNG o WEBP hasta 50 MB · PDF o XML hasta 20 MB · puedes seleccionar varios a la vez
           </p>
+          </>}
         </div>
 
         {/* Botón separado para foto directa con la cámara (solo toma 1 a la vez) */}
@@ -269,12 +301,13 @@ export default function UploadPage() {
           type="button"
           className="btn btn-secondary w-full mt-4"
           disabled={Boolean(uploadProgress || isStarting)}
+          aria-busy={busy}
           onClick={(e) => {
             e.stopPropagation();
             cameraInputRef.current?.click();
           }}
         >
-          <Icon name="camera" /> Tomar foto con la cámara
+          {busy ? <><span className="spinner" aria-hidden="true" style={{ width: 18, height: 18 }} /> {uploadProgress ? `Subiendo… ${uploadProgress.done} de ${uploadProgress.total}` : 'Iniciando extracción…'}</> : <><Icon name="camera" /> Tomar foto con la cámara</>}
         </button>
 
         {/* Selector de galería: sin `capture` para no forzar la cámara y permitir multiselección */}
@@ -306,8 +339,8 @@ export default function UploadPage() {
             <p className="text-sm text-muted">Guardados correctamente. Todavía no se han extraído sus datos.</p>
           </div>
           <button className="btn btn-primary" disabled={Boolean(uploadProgress || isStarting)}
-            onClick={async () => { if (await startUploaded()) addToast('Extracción iniciada. Puedes cerrar la app y continuará en segundo plano.', 'success'); }}>
-            {isStarting ? 'Iniciando…' : `Cargar boletas (${uploadedFiles.length})`}
+            onClick={handleExtract}>
+            {isStarting ? <><span className="spinner" aria-hidden="true" style={{ width: 16, height: 16 }} /> Iniciando…</> : `Extraer (${uploadedFiles.length})`}
           </button>
         </div>
         {uploadProgress && <p className="text-sm text-muted" role="status">Espera a que termine la subida antes de confirmar.</p>}
@@ -323,7 +356,7 @@ export default function UploadPage() {
             </div>
           </article>)}
         </div>
-        <p className="text-xs text-muted">Puedes agregar más archivos o quitar alguno antes de confirmar. Si sales de la app, quedarán pendientes hasta que pulses Cargar boletas.</p>
+        <p className="text-xs text-muted">Puedes agregar más archivos o quitar alguno antes de confirmar. Si sales de la app, quedarán pendientes hasta que pulses Extraer.</p>
       </section>}
 
       {/* Card de progreso (prototipo: caption pequeño + % en mono + barra fina) */}
@@ -513,7 +546,7 @@ export default function UploadPage() {
       >
         <span style={{ fontWeight: 700, color: 'var(--color-accent)', flexShrink: 0 }}>Tip</span>
         <span>
-          Selecciona tus archivos, revisa las imágenes subidas y pulsa <strong>Cargar boletas</strong>.
+          Selecciona tus archivos, revisa las imágenes subidas y pulsa <strong>Extraer</strong>.
           Desde ese momento la extracción continúa aunque cierres la ventana. Cuando termine, usa{' '}
           <strong style={{ color: 'var(--color-text-primary)' }}>Revisar todos</strong> para corregir e importar en lote.
         </span>

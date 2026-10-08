@@ -17,6 +17,7 @@ import { documentKey, normalizeDocumentType, withVoucherFolio } from "../utils/d
 import useInvoiceStore from "./invoiceStore";
 import { documentMimeType } from "../utils/uploadLimits";
 let epoch = 0;
+let hydrationSequence = 0;
 let prefetchVersion = 0;
 const previews = new Map();
 const originals = new Map();
@@ -33,6 +34,7 @@ const useUploadQueueStore = create((set, get) => ({
   error: null,
   uploadProgress: null,
   isStarting: false,
+  startError: null,
   uploadErrors: [],
   reset() {
     epoch++;
@@ -54,6 +56,7 @@ const useUploadQueueStore = create((set, get) => ({
       error: null,
       uploadProgress: null,
       isStarting: false,
+      startError: null,
       uploadErrors: [],
     });
   },
@@ -193,6 +196,7 @@ const useUploadQueueStore = create((set, get) => ({
     const company = requireCompany(),
       version = epoch,
       generation = getWorkspaceGeneration();
+    const read = ++hydrationSequence;
     try {
       const [jobs, savedInvoices] = await Promise.all([listJobs(company.id), listInvoiceKeys(company.id)]);
       const sourceRows = [];
@@ -271,7 +275,7 @@ const useUploadQueueStore = create((set, get) => ({
                 : j.error_message || j.error_code,
           });
       }
-      if (version !== epoch || generation !== getWorkspaceGeneration()) return;
+      if (version !== epoch || generation !== getWorkspaceGeneration() || read !== hydrationSequence) return;
       if (get().isHydrated && !get().error && JSON.stringify(get().queue) === JSON.stringify(queue)) return;
       const wasProcessing = get().isProcessing;
       const processing = queue.some((q) =>
@@ -294,7 +298,7 @@ const useUploadQueueStore = create((set, get) => ({
           : {}),
       });
     } catch (err) {
-      if (version === epoch) set({ error: err.message, isHydrated: true });
+      if (version === epoch && read === hydrationSequence) set({ error: err.message, isHydrated: true });
     }
   },
   async addFiles(files) {
@@ -313,6 +317,7 @@ const useUploadQueueStore = create((set, get) => ({
         try {
           const jobId = await uploadDocument(file, company.id);
           added++;
+          if (version === epoch) hydrationSequence++;
           if (version === epoch) set(state => ({ queue: state.queue.some(row => row.jobId === jobId) ? state.queue : [...state.queue, {
             id: jobId, jobId, name: file.name, size: file.size, mimeType: documentMimeType(file),
             status: "uploaded", serverStatus: "uploaded", tempPreviewUrl: null, objectPath: null, file: null,
@@ -331,26 +336,35 @@ const useUploadQueueStore = create((set, get) => ({
     };
     await Promise.all(Array.from({ length: Math.min(3, files.length) }, uploadNext));
     if (version === epoch) {
+      // uploadDocument has already confirmed each original on the server.
+      // An unrelated invoice refresh must not keep Extraer disabled.
       set({ uploadProgress: null });
-      await get().hydrate();
+      void get().hydrate();
     }
     return added;
   },
   async startUploaded() {
     if (get().uploadProgress || get().isStarting) return false;
-    const company = requireCompany(), version = epoch;
+    const version = epoch;
     const jobIds = [...new Set(get().queue.filter(item => item.status === "uploaded").map(item => item.jobId))];
-    if (!jobIds.length) return false;
-    set({ isStarting: true, error: null });
+    if (!jobIds.length) { set({ startError: "No hay archivos pendientes de extraer. Actualiza la página para revisar la cola." }); return false; }
+    set({ isStarting: true, error: null, startError: null });
     try {
+      const company = requireCompany();
       await documentRequest("start", { companyId: company.id, jobIds });
       // Prompt dispatch immediately; the scheduled worker is the durable fallback.
       void wakeExtractionQueue().catch(() => {});
       if (version !== epoch) return false;
-      await get().hydrate();
+      hydrationSequence++;
+      // Accepted work must appear immediately; a slow invoice refresh should
+      // not make a successful confirmation look unresponsive.
+      set(state => ({ isProcessing: true, queue: state.queue.map(item =>
+        jobIds.includes(item.jobId) && item.status === "uploaded"
+          ? { ...item, status: "waiting", serverStatus: "queued" } : item) }));
+      void get().hydrate();
       return true;
     } catch (err) {
-      if (version === epoch) set({ error: err.message });
+      if (version === epoch) set({ error: err.message, startError: err.message });
       return false;
     } finally {
       if (version === epoch) set({ isStarting: false });
