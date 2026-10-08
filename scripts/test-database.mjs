@@ -22,6 +22,7 @@ await db.exec(
 );
 await db.exec(`create policy "Permitir todo en storage" on storage.objects for all using(bucket_id='images');`);
 let confirmationMigration;
+let rutMigration;
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -36,6 +37,7 @@ for (const file of (
     )
   ).replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/i, "");
   if (file === '20261007132035_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
+  if (file.endsWith('_confirm_printed_rut.sql')) { rutMigration=sql; continue; }
   try {
     await db.exec(sql);
   } catch (err) {
@@ -423,4 +425,37 @@ await db.query('select public.cancel_extraction($1,$2)',[a,stagedIds.pop()]);
 assert.equal((await db.query('select public.start_uploaded_extractions($1,$2,$3) n',[a,ca,stagedIds])).rows[0].n,24);
 assert.equal((await db.query('select reserved from public.accountant_accounts where user_id=$1',[a])).rows[0].reserved,reservedBefore+24);
 console.log('PASS: 25 uploaded originals wait for confirmation, atomic rollback, removal before confirmation, idempotency and owner/company authorization.');
+await admin();
+const invoiceDigest=async()=> (await db.query('select md5(string_agg((to_jsonb(i)-\'rutConfirmation\')::text,\'\' order by id)) digest from public.invoices i')).rows[0].digest;
+const beforeRutMigration=await invoiceDigest();
+await db.exec('reset role');
+await db.exec(rutMigration);
+assert.equal(await invoiceDigest(),beforeRutMigration,'Adding manual confirmation must preserve all previous invoice values');
+await asUser(a);
+const printedRutInvoice=(rut,confirmation,folio='printed-rut')=>db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber",date,"totalAmount","expenseType","taxStatus",deleted,"rutConfirmation")
+ values($1,$2,'Proveedor',$3,'Boleta',$4,'2026-08-01',1000,'Estacionamiento','pending',false,$5) returning id,"providerRut","rutConfirmation"`,[a,ca,rut,folio,confirmation]);
+await fail(()=>printedRutInvoice('78.119.065-K',null),/Confirma/);
+await fail(()=>printedRutInvoice('78.119.065-K',{confirmed:true,rut:'78119066K'}),/Confirma/);
+await fail(()=>printedRutInvoice('',{confirmed:true,rut:''}),/RUT inválido/);
+await fail(()=>printedRutInvoice('abc',{confirmed:true,rut:'ABC'}),/RUT inválido/);
+await fail(()=>printedRutInvoice('78.119.065-K',{confirmed:'true',rut:'78119065K'}),/Confirma/);
+const acceptedRut=(await printedRutInvoice('78.119.065-K',{confirmed:true,rut:'78119065K',by:b,at:'1900-01-01'})).rows[0];
+assert.equal(acceptedRut.providerRut,'78.119.065-K','The printed RUT is never silently corrected');
+assert.equal(acceptedRut.rutConfirmation.by,a,'Actor must come from authenticated identity');
+assert.notEqual(acceptedRut.rutConfirmation.at,'1900-01-01');
+await fail(()=>db.query('update public.invoices set "providerRut"=$1 where id=$2',['78119066-K',acceptedRut.id]),/Confirma/);
+await db.query('update public.invoices set notes=$1 where id=$2',['Reviewed printed value',acceptedRut.id]);
+assert.deepEqual((await db.query('select "rutConfirmation" from public.invoices where id=$1',[acceptedRut.id])).rows[0].rutConfirmation,acceptedRut.rutConfirmation,'Unrelated edits preserve the original confirmation');
+await fail(()=>printedRutInvoice('78.119.065-K',{confirmed:true,rut:'78119065K'}),/Ya existe/);
+await fail(()=>db.query('update public.invoices set "totalAmount"=0 where id=$1',[acceptedRut.id]),/positivo/);
+await db.query('insert into public.period_closures(organization_id,period) values($1,\'2026-07\')',[ca]);
+await fail(()=>db.query('update public.invoices set date=\'2026-07-01\' where id=$1',[acceptedRut.id]),/cerrado/);
+await db.query('delete from public.period_closures where organization_id=$1 and period=\'2026-07\'',[ca]);
+await asUser(b);
+assert.equal((await db.query('select count(*)::int n from public.invoices where id=$1',[acceptedRut.id])).rows[0].n,0);
+await fail(()=>printedRutInvoice('78.119.065-K',{confirmed:true,rut:'78119065K'},'other-owner'),/propietario|row-level security/);
+await asUser(a);
+await db.query('update public.invoices set "providerRut"=\'76123456-0\' where id=$1',[acceptedRut.id]);
+assert.equal((await db.query('select "rutConfirmation" from public.invoices where id=$1',[acceptedRut.id])).rows[0].rutConfirmation,null,'Correcting the RUT clears the exception');
+console.log('PASS: printed RUT exceptions require exact manual confirmation; authoritative actor/time, original preservation, edit invalidation, duplicates, closed periods and owner isolation.');
 await db.close();

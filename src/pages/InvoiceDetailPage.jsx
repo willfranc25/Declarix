@@ -1,6 +1,7 @@
 import DocumentActivity from '../components/DocumentActivity';
 import DocumentEditor from '../components/DocumentEditor';
 import DocumentPreview from '../components/DocumentPreview';
+import { hasRutConfirmation } from '../utils/documentRules';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
@@ -125,6 +126,9 @@ export default function InvoiceDetailPage() {
         {/* Info */}
         <div className="card">
           <h3 className="card-title mb-4">Datos del Comprobante</h3>
+          {hasRutConfirmation(invoice) && <p className="alert alert-warning" role="status">
+            RUT guardado según el original y confirmado manualmente. No supera la validación del dígito verificador.
+          </p>}
           <div className="detail-info-grid">
             {fields.map((f) => (
               <div key={f.label} className={`detail-field ${f.full ? 'form-full' : ''}`}>

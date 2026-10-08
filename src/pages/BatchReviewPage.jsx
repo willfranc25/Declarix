@@ -3,7 +3,9 @@ import logger from '../utils/logger';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
-import { formatRut } from '../utils/rutValidator';
+import { formatRut, cleanRut } from '../utils/rutValidator';
+import { hasRutConfirmation } from '../utils/documentRules';
+import RutConfirmation from '../components/RutConfirmation';
 import {
   deriveRowsFromQueue,
   countExtracting,
@@ -99,8 +101,9 @@ export default function BatchReviewPage() {
   );
   const dupCount = rows.filter((r) => r.isDuplicate).length;
   const okCount = rows.length - errorRowIds.size;
+  const confirmedRutCount = rows.filter(hasRutConfirmation).length;
   const visibleRows = showOnlyProblems
-    ? rows.filter((r) => errorRowIds.has(r.id) || r.isDuplicate)
+    ? rows.filter((r) => errorRowIds.has(r.id) || r.isDuplicate || hasRutConfirmation(r))
     : rows;
 
   // ── Navegación del modo enfocado ──
@@ -200,6 +203,7 @@ export default function BatchReviewPage() {
     if (!row) return;
 
     const patch = { [key]: value };
+    if (key === 'providerRut' && cleanRut(value) !== cleanRut(row.providerRut)) patch.rutConfirmation = null;
     if (key === 'documentNumber') patch.folioReview = null;
     if (key === 'documentType') {
       if (value === 'Comprobante de pago electrónico') {
@@ -569,6 +573,7 @@ export default function BatchReviewPage() {
           <p className="page-subtitle">Compara cada dato extraído contra la foto original antes de guardar.</p>
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="badge badge-success">{okCount} OK</span>
+            {confirmedRutCount > 0 && <span className="badge badge-warning">{confirmedRutCount} RUT confirmado(s) según original</span>}
             {errorRowIds.size > 0 && (
               <span className="badge badge-danger">{errorRowIds.size} con errores</span>
             )}
@@ -578,7 +583,7 @@ export default function BatchReviewPage() {
             {extractingCount > 0 && (
               <span className="badge badge-info animate-pulse">{extractingCount} extrayéndose…</span>
             )}
-            {(errorRowIds.size > 0 || dupCount > 0) && (
+            {(errorRowIds.size > 0 || dupCount > 0 || confirmedRutCount > 0) && (
               <label className="text-sm flex items-center gap-2" style={{ cursor: 'pointer', userSelect: 'none' }}>
                 <input
                   type="checkbox"
@@ -739,6 +744,7 @@ export default function BatchReviewPage() {
                       style={fieldError('providerRut') ? { borderColor: 'var(--color-danger)' } : undefined}
                     />
                     {fieldError('providerRut') && <span className="form-error">{errors.providerRut}</span>}
+                    <RutConfirmation document={activeRow} disabled={isSaving} onChange={value => updateReview(activeRow.id, { rutConfirmation: value })} />
                   </div>
                   <div className="form-group">
                     <div className="form-label flex items-center">Folio / N° documento{zoomButton('documentNumber', 'Folio / N° documento')}</div>
@@ -1033,6 +1039,7 @@ export default function BatchReviewPage() {
                               title={hasCellError ? errors.providerRut : hasAmountError ? errors.amounts : ''}
                             />
                           )}
+                          {col.key === 'providerRut' && <RutConfirmation document={row} disabled={isSaving} onChange={value => updateReview(row.id, { rutConfirmation: value })} />}
                         </td>
                       );
                     })}

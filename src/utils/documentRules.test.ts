@@ -3,6 +3,18 @@ import {civilDate,documentErrors,normalizeDocument,signedAmount,documentKey} fro
 import {reconcileRCV} from './reconciliation';
 const valid={providerName:'Proveedor',providerRut:'76123456-0',documentType:'Factura',documentNumber:'1',date:'2026-01-01',expenseType:'Insumos',netAmount:1000,exemptAmount:200,ivaAmount:190,specificTax:10,otherTax:20,withholdingAmount:30,totalAmount:1390};
 describe('document correctness',()=>{
+ it('allows only an explicit confirmation bound to a complete printed RUT',()=>{
+  const doc={...valid,providerRut:'78.119.065-K'};
+  expect(documentErrors(doc).providerRut).toBeTruthy();
+  const accepted={...doc,rutConfirmation:{rut:'78119065K',confirmed:true}};
+  expect(documentErrors(accepted)).toEqual({});
+  expect(normalizeDocument(accepted)).toMatchObject({providerRut:'78.119.065-K',rutConfirmation:{rut:'78119065K',confirmed:true}});
+  expect(documentErrors({...accepted,providerRut:'78119066-K'}).providerRut).toBeTruthy();
+  expect(documentErrors({...accepted,providerRut:''}).providerRut).toBe('Falta RUT');
+  expect(documentErrors({...accepted,providerRut:'abc',rutConfirmation:{rut:'ABC',confirmed:true}}).providerRut).toBeTruthy();
+  expect(documentErrors({...accepted,totalAmount:0}).totalAmount).toBeTruthy();
+  expect(normalizeDocument({...accepted,providerRut:'76123456-0'}).rutConfirmation).toBeNull();
+ });
  it('does not fabricate unknown dates or amounts',()=>{expect(normalizeDocument({})).toMatchObject({date:null,totalAmount:null,netAmount:null});});
  it('rejects impossible civil dates',()=>{expect(civilDate('2026-02-30')).toBeNull();expect(civilDate('2024-02-29')).toBeTruthy();});
  it('balances exempt amounts, taxes and retentions',()=>{expect(documentErrors(valid,'2026-09-24')).toEqual({});expect(documentErrors({...valid,otherTax:0},'2026-09-24').amounts).toBeTruthy();});

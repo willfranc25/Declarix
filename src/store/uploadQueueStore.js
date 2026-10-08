@@ -243,6 +243,7 @@ const useUploadQueueStore = create((set, get) => ({
               pendingReviews.get(id)?.patch || j.review?.[index] || {};
             const original = withVoucherFolio({
               ...data,
+              rutConfirmation: null,
               documentType: normalizeDocumentType(data.documentType),
               imagePath: j.object_path,
               source_job_id: j.id,

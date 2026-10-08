@@ -1,4 +1,10 @@
-import { validateRut, cleanRut } from "./rutValidator.js";
+import { validateRut, cleanRut, hasRutFormat } from "./rutValidator.js";
+
+// A manual confirmation is bound to this exact RUT, never to later edits.
+export function hasRutConfirmation(doc) {
+  return hasRutFormat(doc.providerRut) && doc.rutConfirmation?.confirmed === true &&
+    doc.rutConfirmation.rut === cleanRut(doc.providerRut);
+}
 
 export function normalizeDocumentType(value) {
   if (typeof value !== "string") return null;
@@ -78,9 +84,9 @@ export function documentKey(doc) {
 export function documentErrors(doc, today = todayChile()) {
   const errors = {};
   if (!doc.providerName?.trim()) errors.providerName = "Falta proveedor";
-  if (!validateRut(doc.providerRut || ""))
+  if (!validateRut(doc.providerRut || "") && !hasRutConfirmation(doc))
     errors.providerRut = doc.providerRut
-      ? "El RUT leído no coincide con su dígito verificador. Compáralo con la foto."
+      ? "El RUT no coincide con su dígito verificador. Revisa la foto o confirma que coincide con el original."
       : "Falta RUT";
   if (isPaymentVoucher(doc)) {
     if (doc.documentNumber !== "0000") errors.documentNumber = "El voucher sin folio SII usa 0000";
@@ -149,6 +155,8 @@ export function normalizeDocument(raw) {
           ? Number(raw[key])
           : null;
   out.documentCode = Number(raw.documentCode) || null;
+  out.rutConfirmation = hasRutConfirmation(raw) && !validateRut(raw.providerRut)
+    ? { ...raw.rutConfirmation, rut: cleanRut(raw.providerRut), confirmed: true } : null;
   out.taxStatus = "pending";
   out.status = "pending";
   return withVoucherFolio(out);
