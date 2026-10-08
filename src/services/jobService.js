@@ -3,11 +3,35 @@ import { documentMimeType } from "../utils/uploadLimits";
 import { supabase } from "./supabaseClient";
 let processingQueue;
 export async function documentRequest(action, payload) {
+  if (action === "start") {
+    const controller = new AbortController();
+    const timeoutMessage = "La confirmación tardó demasiado. Revisa la cola y pulsa Extraer nuevamente; no necesitas volver a subir los archivos.";
+    let timer;
+    try {
+      return await Promise.race([
+        sendDocumentRequest(action, payload, controller.signal),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error(timeoutMessage));
+          }, 30_000);
+        }),
+      ]);
+    } catch (err) {
+      if (controller.signal.aborted) throw new Error(timeoutMessage, { cause: err });
+      throw err;
+    } finally { clearTimeout(timer); }
+  }
+  return sendDocumentRequest(action, payload);
+}
+async function sendDocumentRequest(action, payload, signal) {
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  signal?.throwIfAborted();
   if (!session) throw new Error("Inicia sesión nuevamente.");
   const response = await fetch("/api/documents", {
+    signal,
     method: "POST",
     headers: {
       "Content-Type": "application/json",

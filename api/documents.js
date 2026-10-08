@@ -59,6 +59,7 @@ export const createDocumentsHandler = (getDb = adminClient) => async (req, res) 
       const started = checked(await db.rpc("start_uploaded_extractions", {
         p_user: user.id, p_company: body.companyId, p_jobs: [...new Set(body.jobIds)],
       }));
+      console.info("[documents] extraction confirmed", { requested: new Set(body.jobIds).size, started });
       return res.status(200).json({ started });
     }
     if (!uuid(body.jobId)) throw new Error("JOB_NOT_FOUND");
@@ -108,6 +109,11 @@ export const createDocumentsHandler = (getDb = adminClient) => async (req, res) 
     }
     return res.status(400).json({ error: "Acción inválida" });
   } catch (err) {
+    // Diagnose failures without logging tokens, filenames, object paths or SQL.
+    const action = ["prepare", "complete", "enqueue", "start", "retry", "cancel"].includes(req.body?.action) ? req.body.action : "unknown";
+    if (err.status !== 401) console.error("[documents] request failed", {
+      action, code: /^[A-Z0-9_]{1,40}$/i.test(err.code || "") ? err.code : "REQUEST_FAILED",
+    });
     return respondError(res, err);
   }
 };

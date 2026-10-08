@@ -131,6 +131,7 @@ declare module '*store/uploadQueueStore' {
     isProcessing: boolean;
     isHydrated: boolean;
     isStarting: boolean;
+    startError: string | null;
     uploadProgress: { done: number; total: number } | null;
     uploadErrors: { name: string; message: string }[];
     error: string | null;
