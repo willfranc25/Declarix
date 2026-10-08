@@ -3,6 +3,8 @@ import { DOCUMENT_TYPES, EXPENSE_TYPES } from "../data/expenseTypes";
 import { useCompany } from "../context/CompanyContext";
 import { documentErrors, AMOUNT_FIELDS, withVoucherFolio, isPaymentVoucher } from "../utils/documentRules";
 import useInvoiceStore from "../store/invoiceStore";
+import RutConfirmation from './RutConfirmation';
+import { cleanRut } from '../utils/rutValidator';
 const LABELS = {
   providerName: "Proveedor",
   providerRut: "RUT emisor",
@@ -29,6 +31,7 @@ export default function DocumentEditor({ invoice, onClose }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const set = (key, value) => setDraft((d) => withVoucherFolio({ ...d, [key]: value,
+    ...(key === 'providerRut' && cleanRut(value) !== cleanRut(d.providerRut) ? { rutConfirmation: null } : {}),
     ...(key === 'documentType' && isPaymentVoucher(d) && value !== d.documentType ? { documentNumber: null } : {}),
   }));
   const categories = activeCompany.categories?.length
@@ -110,6 +113,7 @@ export default function DocumentEditor({ invoice, onClose }) {
           </label>
         );
       })}
+      <RutConfirmation document={draft} disabled={busy} onChange={value => set('rutConfirmation', value)} />
       <div className="flex gap-2">
         <button className="btn btn-primary" disabled={busy}>
           Guardar cambios

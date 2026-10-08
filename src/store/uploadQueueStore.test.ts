@@ -8,6 +8,14 @@ const company=(id:string)=>({id,accountant_id:'user',name:id,archived:false});
 beforeEach(()=>{vi.clearAllMocks();mocks.request.mockReset().mockResolvedValue({started:1});store.getState().reset();setActiveOrganization(company('a'));mocks.patch.mockResolvedValue(undefined);mocks.upload.mockResolvedValue('new');mocks.jobs.mockResolvedValue([]);});
 const ready={id:'job',filename:'photo.png',mime_type:'image/png',status:'ready',file_bytes:20,object_path:'user/a/job',result:{documents:[{providerName:'A',date:null,totalAmount:null}]},review:{}};
 describe('durable company queue',()=>{
+ it('accepts a RUT exception only from manual review, never from model output',async()=>{
+  const confirmation={confirmed:true,rut:'78119065K'};
+  const result={documents:[{providerRut:'78119065-K',rutConfirmation:confirmation}]};
+  mocks.jobs.mockResolvedValue([{...ready,result}]);await store.getState().hydrate();
+  expect(store.getState().queue[0].extractedData?.rutConfirmation).toBeNull();
+  mocks.jobs.mockResolvedValue([{...ready,result,review:{0:{rutConfirmation:confirmation}}}]);await store.getState().hydrate();
+  expect(store.getState().queue[0].review?.rutConfirmation).toEqual(confirmation);
+ });
  it('retains unknown fields and provenance for manual review',async()=>{
   mocks.jobs.mockResolvedValue([ready]);await store.getState().hydrate();
   expect(store.getState().queue[0].extractedData).toMatchObject({date:null,totalAmount:null,source_job_id:'job',source_index:0,imagePath:'user/a/job'});

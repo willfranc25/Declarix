@@ -113,6 +113,41 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     renderPage();
     expect(screen.getByText(/No hay boletas para revisar/i)).toBeInTheDocument();
   });
+  it('saves an invalid printed RUT only after manual confirmation, including the problems filter', async () => {
+    const user=userEvent.setup();
+    useUploadQueueStore.setState({queue:[doneItem('rut', {extractedData:{...doneItem('rut').extractedData,providerRut:'78119065-K'}})] as any});
+    renderPage();
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    expect(saved).toHaveLength(0);
+    await user.click(screen.getByRole('checkbox',{name:'Mostrar solo con problemas'}));
+    await user.click(screen.getByRole('checkbox',{name:'Confirmo que el RUT coincide con el original'}));
+    expect(screen.getByLabelText('RUT proveedor')).toHaveValue('78119065-K');
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    await waitFor(()=>expect(saved).toHaveLength(1));
+    expect(saved[0]).toMatchObject({providerRut:'78119065-K',rutConfirmation:{confirmed:true,rut:'78119065K'}});
+  });
+  it('requires a fresh confirmation after changing the printed RUT', async () => {
+    const user=userEvent.setup();
+    useUploadQueueStore.setState({queue:[doneItem('rut', {extractedData:{...doneItem('rut').extractedData,providerRut:'78119065-K'}})] as any});
+    renderPage();
+    await user.click(screen.getByRole('checkbox',{name:'Confirmo que el RUT coincide con el original'}));
+    const input=screen.getByLabelText('RUT proveedor');
+    await user.clear(input);await user.type(input,'78119066-K');
+    expect(screen.getByRole('checkbox',{name:'Confirmo que el RUT coincide con el original'})).not.toBeChecked();
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    expect(saved).toHaveLength(0);
+  });
+  it('confirms from the table and preserves the exception during bulk save', async () => {
+    const user=userEvent.setup();
+    useUploadQueueStore.setState({queue:[doneItem('rut', {extractedData:{...doneItem('rut').extractedData,providerRut:'78119065-K'}}),doneItem('valid')] as any});
+    renderPage();await user.click(screen.getByRole('button',{name:'Tabla'}));
+    await user.click(screen.getByRole('button',{name:'Guardar todos (2)'}));
+    expect(saved).toHaveLength(0);
+    await user.click(screen.getByRole('checkbox',{name:'Confirmo que el RUT coincide con el original'}));
+    await user.click(screen.getByRole('button',{name:'Guardar todos (2)'}));
+    await waitFor(()=>expect(saved).toHaveLength(2));
+    expect(saved.find(row=>row.providerRut==='78119065-K').rutConfirmation).toMatchObject({confirmed:true,rut:'78119065K'});
+  });
 
   it('muestra los datos extraídos y marca la boleta sin RUT', () => {
     // La segunda boleta viene sin RUT (extracción parcial)

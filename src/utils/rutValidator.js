@@ -6,6 +6,11 @@ export function cleanRut(rut) {
   return rut.replace(/[-.\s]/g, '').toUpperCase();
 }
 
+export function hasRutFormat(rut) {
+  const cleaned = cleanRut(rut);
+  return /^\d{7,8}[\dK]$/.test(cleaned) && Number(cleaned.slice(0, -1)) > 0;
+}
+
 /**
  * Valida un RUT chileno usando el algoritmo módulo 11.
  */
