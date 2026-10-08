@@ -140,11 +140,11 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
   it('confirms from the table and preserves the exception during bulk save', async () => {
     const user=userEvent.setup();
     useUploadQueueStore.setState({queue:[doneItem('rut', {extractedData:{...doneItem('rut').extractedData,providerRut:'78119065-K'}}),doneItem('valid')] as any});
-    renderPage();await user.click(screen.getByRole('button',{name:'Tabla',exact:true}));
-    await user.click(screen.getByRole('button',{name:'Guardar todos (2)',exact:true}));
+    renderPage();await user.click(screen.getByRole('button',{name:'Tabla'}));
+    await user.click(screen.getByRole('button',{name:'Guardar todos (2)'}));
     expect(saved).toHaveLength(0);
     await user.click(screen.getByRole('checkbox',{name:'Confirmo que el RUT coincide con el original'}));
-    await user.click(screen.getByRole('button',{name:'Guardar todos (2)',exact:true}));
+    await user.click(screen.getByRole('button',{name:'Guardar todos (2)'}));
     await waitFor(()=>expect(saved).toHaveLength(2));
     expect(saved.find(row=>row.providerRut==='78119065-K').rutConfirmation).toMatchObject({confirmed:true,rut:'78119065K'});
   });

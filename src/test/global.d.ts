@@ -120,6 +120,7 @@ declare module '*store/uploadQueueStore' {
     progress: number;
     error: string | null;
     extractedData: Record<string, any> | null;
+    review?: Record<string, any> | null;
     isDuplicate: boolean;
     burstWaits: number;
     tempPreviewUrl: string;

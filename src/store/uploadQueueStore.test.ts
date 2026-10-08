@@ -12,9 +12,9 @@ describe('durable company queue',()=>{
   const confirmation={confirmed:true,rut:'78119065K'};
   const result={documents:[{providerRut:'78119065-K',rutConfirmation:confirmation}]};
   mocks.jobs.mockResolvedValue([{...ready,result}]);await store.getState().hydrate();
-  expect(store.getState().queue[0].extractedData.rutConfirmation).toBeNull();
+  expect(store.getState().queue[0].extractedData?.rutConfirmation).toBeNull();
   mocks.jobs.mockResolvedValue([{...ready,result,review:{0:{rutConfirmation:confirmation}}}]);await store.getState().hydrate();
-  expect(store.getState().queue[0].review.rutConfirmation).toEqual(confirmation);
+  expect(store.getState().queue[0].review?.rutConfirmation).toEqual(confirmation);
  });
  it('retains unknown fields and provenance for manual review',async()=>{
   mocks.jobs.mockResolvedValue([ready]);await store.getState().hydrate();
