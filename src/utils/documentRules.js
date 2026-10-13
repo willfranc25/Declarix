@@ -80,6 +80,8 @@ export function documentKey(doc) {
     "Factura Electrónica": "Factura",
     "Boleta Electrónica": "Boleta",
   };
+  // Manually assigned placeholders cannot identify two purchases as the same receipt.
+  if (/^0{3,}$/.test(String(doc.documentNumber).trim())) return null;
   const type = normalizeDocumentType(doc.documentType);
   return `${cleanRut(doc.providerRut)}|${types[type] || type}|${normalizedFolio(doc.documentNumber)}`;
 }

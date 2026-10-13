@@ -25,6 +25,7 @@ let confirmationMigration;
 let rutMigration;
 let archiveMigration;
 let duplicateMigration;
+let missingFolioMigration;
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -42,6 +43,7 @@ for (const file of (
   if (file.endsWith('_confirm_printed_rut.sql')) { rutMigration=sql; continue; }
   if (file.endsWith('_archive_legacy_receipt_duplicates.sql')) { archiveMigration=sql; continue; }
   if (file.endsWith('_normalize_receipt_duplicate_folios.sql')) { duplicateMigration=sql; continue; }
+  if (file.endsWith('_manual_missing_folio_marker.sql')) { missingFolioMigration=sql; continue; }
   try {
     await db.exec(sql);
   } catch (err) {
@@ -514,4 +516,19 @@ await db.query('select public.cancel_extraction($1,$2)',[a,hashJobs[1]]);
 await db.query('select public.enqueue_extraction($1,$2,$3,1)',[a,hashJobs[2],'same-file-hash']);
 assert.equal((await db.query('select status from public.extraction_jobs where id=$1',[hashJobs[1]])).rows[0].status,'cancelled');
 console.log('PASS: identical file rejection, renamed files, company isolation, numeric folio separators/zeros, changed totals and separate voucher operations.');
+await db.exec('reset role');
+const beforeMissingFolioMigration=await invoiceDigest();
+await db.exec(missingFolioMigration);
+assert.equal(await invoiceDigest(),beforeMissingFolioMigration,'Placeholder migration must preserve every existing receipt');
+await asUser(a);
+await insertDuplicateProbe(ca,'76123456-0','Boleta','000');
+await insertDuplicateProbe(ca,'76123456-0','Boleta','000',null,2000);
+await insertDuplicateProbe(ca,'76123456-0','Boleta','0000');
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Boleta','00308528325'),/Ya existe/);
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Comprobante de pago electrónico','0000','operation-a'),/Ya existe/);
+await fail(()=>insertDuplicateProbe(ca,'','Boleta','000'),/RUT inválido/);
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Boleta','000',null,0),/positivo/);
+await asUser(b);
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Boleta','000'),/propietario|row-level security/);
+console.log('PASS: manual no-folio placeholders preserve distinct purchases, real-folio/voucher duplicates, validation, owner isolation and migration data integrity.');
 await db.close();

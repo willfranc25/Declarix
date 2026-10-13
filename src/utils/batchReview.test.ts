@@ -25,6 +25,11 @@ const validBoletaData = {
 };
 
 describe('deriveRowsFromQueue', () => {
+  it('does not discard distinct purchases with the same manual no-folio marker', () => {
+    const a={id:'a',status:'done',extractedData:{...validBoletaData,documentNumber:'000'}};
+    const b={...a,id:'b',extractedData:{...a.extractedData,date:'2026-01-16'}};
+    expect(deriveRowsFromQueue([a,b],[a.extractedData]).map(row=>row.isDuplicate)).toEqual([false,false]);
+  });
   it('identifies the same receipt twice in a batch, even with a different filename and folio formatting', () => {
     const a={id:'a',status:'done',name:'original.jpg',extractedData:{...validBoletaData,documentNumber:'001.234'}};
     const b={...a,id:'b',name:'new-photo.jpg',extractedData:{...validBoletaData,documentNumber:'1234',providerRut:'123456785'}};
