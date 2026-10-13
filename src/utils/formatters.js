@@ -61,9 +61,8 @@ export function getMonthName(month) {
 }
 
 /**
- * Estado de un comprobante frente a la declaración: binario a propósito.
- * Todo lo que no fue exportado en una rendición sigue "Pendiente"
- * (los valores legacy 'reviewed'/'approved' cuentan como pendiente).
+ * Etapas independientes de revisión, exportación y declaración.
+ * Los registros antiguos sin estado se muestran como pendientes.
  */
 export function getStatusLabel(taxStatus) {
   return ({declared:'Declarado', exported:'Exportado', reviewed:'Revisado'})[taxStatus] || 'Pendiente';

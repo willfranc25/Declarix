@@ -167,12 +167,7 @@ const useInvoiceStore = create((set, get) => ({
         if (y !== filters.year) return false;
       }
       if (filters.expenseType && inv.expenseType !== filters.expenseType) return false;
-      if (filters.taxStatus) {
-        // Binario: todo lo que no está declarado cuenta como pendiente
-        const isDeclared = inv.taxStatus === 'declared';
-        if (filters.taxStatus === 'declared' && !isDeclared) return false;
-        if (filters.taxStatus === 'pending' && isDeclared) return false;
-      }
+      if (filters.taxStatus && (inv.taxStatus ?? 'pending') !== filters.taxStatus) return false;
       if (filters.providerSearch && filters.providerSearch.trim()) {
         const search = filters.providerSearch.toLowerCase().trim();
         if (!inv.providerName.toLowerCase().includes(search)) return false;

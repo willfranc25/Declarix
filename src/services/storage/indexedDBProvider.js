@@ -30,8 +30,7 @@ const indexedDBProvider = {
       if (filters.providerSearch && !String(inv.providerName || '').toLowerCase().includes(filters.providerSearch.trim().toLowerCase())) return false;
       if (filters.expenseType && inv.expenseType !== filters.expenseType) return false;
       if (filters.documentType && inv.documentType !== filters.documentType) return false;
-      if (filters.taxStatus === 'declared' && inv.taxStatus !== 'declared') return false;
-      if (filters.taxStatus === 'pending' && inv.taxStatus === 'declared') return false;
+      if (filters.taxStatus && (inv.taxStatus ?? 'pending') !== filters.taxStatus) return false;
       return true;
     });
     const start = (page - 1) * pageSize;

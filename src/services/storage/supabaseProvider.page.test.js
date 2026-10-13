@@ -31,6 +31,17 @@ beforeEach(() => {
 });
 
 describe('paginated receipt query', () => {
+  it('requests only pending or legacy unset states, rather than all undeclared receipts',async()=>{
+    await provider.getPage({filters:{taxStatus:'pending',year:2026}});
+    expect(calls.find(call=>call.method==='or')?.args).toEqual(['taxStatus.eq.pending,taxStatus.is.null']);
+    expect(calls.some(call=>call.method==='eq'&&call.args[0]==='organization_id'&&call.args[1]==='company')).toBe(true);
+    expect(calls.some(call=>call.method==='gte'&&call.args[1]==='2026-01-01')).toBe(true);
+  });
+  it.each(['reviewed','exported','declared'])('requests only the exact %s status',async status=>{
+    await provider.getPage({filters:{taxStatus:status}});
+    expect(calls.filter(call=>call.method==='eq'&&call.args[0]==='taxStatus').map(call=>call.args)).toEqual([['taxStatus',status]]);
+    expect(calls.some(call=>call.method==='or')).toBe(false);
+  });
   it('requests only the selected 25 rows and uses the upload job timestamp', async () => {
     const result = await provider.getPage({ page: 2, pageSize: 25, filters: { year: 2026, month: 9, providerSearch: 'Prov' } });
     expect(calls.find((call) => call.table === 'invoices' && call.method === 'range')?.args).toEqual([25, 49]);

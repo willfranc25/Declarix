@@ -160,6 +160,13 @@ declare module '*store/uploadQueueStore' {
   export default useUploadQueueStore;
 }
 
+declare module '*services/storage/indexedDBProvider' {
+  const provider: {
+    getPage(options?: {page?: number; pageSize?: number; filters?: Record<string, unknown>}): Promise<{rows: any[]; total: number}>;
+  };
+  export default provider;
+}
+
 declare module '*store/invoiceStore' {
   import { StoreApi, UseBoundStore } from 'zustand';
   interface Invoice {
@@ -178,7 +185,7 @@ declare module '*store/invoiceStore' {
     ivaAmount: number;
     totalAmount: number;
     status: 'pending' | 'reviewed' | 'approved';
-    taxStatus: 'pending' | 'reviewed' | 'declared';
+    taxStatus: 'pending' | 'reviewed' | 'exported' | 'declared';
     notes: string;
     createdAt: string;
     updatedAt: string;
@@ -197,7 +204,7 @@ declare module '*store/invoiceStore' {
     clearFilters: () => void;
     getFilteredInvoices: () => Invoice[];
     clearError: () => void;
-    updateTaxStatus: (id: string, status: 'pending' | 'reviewed' | 'declared') => Promise<void>;
+    updateTaxStatus: (id: string, status: 'pending' | 'reviewed' | 'exported' | 'declared') => Promise<void>;
   }
   const useInvoiceStore: UseBoundStore<StoreApi<InvoiceStore>>;
   export default useInvoiceStore;
