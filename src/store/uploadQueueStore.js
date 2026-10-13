@@ -16,6 +16,7 @@ import { supabase } from "../services/supabaseClient";
 import { documentKey, normalizeDocumentType, withVoucherFolio } from "../utils/documentRules";
 import useInvoiceStore from "./invoiceStore";
 import { documentMimeType } from "../utils/uploadLimits";
+import { deriveRowsFromQueue } from "../utils/batchReview";
 let epoch = 0;
 let hydrationSequence = 0;
 let prefetchVersion = 0;
@@ -28,6 +29,7 @@ const previewRequests = new Map();
 const pendingReviews = new Map();
 const useUploadQueueStore = create((set, get) => ({
   queue: [],
+  knownInvoiceKeys: [],
   isProcessing: false,
   isHydrated: false,
   lastBatchSummary: null,
@@ -50,6 +52,7 @@ const useUploadQueueStore = create((set, get) => ({
     pendingReviews.clear();
     set({
       queue: [],
+      knownInvoiceKeys: [],
       isProcessing: false,
       isHydrated: false,
       lastBatchSummary: null,
@@ -277,13 +280,17 @@ const useUploadQueueStore = create((set, get) => ({
           });
       }
       if (version !== epoch || generation !== getWorkspaceGeneration() || read !== hydrationSequence) return;
-      if (get().isHydrated && !get().error && JSON.stringify(get().queue) === JSON.stringify(queue)) return;
+      const marked = new Map(deriveRowsFromQueue(queue, [], [...invoiceKeys]).map(row => [row.id, row.isDuplicate]));
+      for (const row of queue) if (marked.has(row.id)) row.isDuplicate = marked.get(row.id);
+      if (get().isHydrated && !get().error && JSON.stringify(get().queue) === JSON.stringify(queue) &&
+          JSON.stringify(get().knownInvoiceKeys) === JSON.stringify([...invoiceKeys])) return;
       const wasProcessing = get().isProcessing;
       const processing = queue.some((q) =>
         ["pending", "processing", "waiting"].includes(q.status),
       );
       set({
         queue,
+        knownInvoiceKeys: [...invoiceKeys],
         isHydrated: true,
         isProcessing: processing,
         error: null,

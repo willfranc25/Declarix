@@ -24,6 +24,7 @@ await db.exec(`create policy "Permitir todo en storage" on storage.objects for a
 let confirmationMigration;
 let rutMigration;
 let archiveMigration;
+let duplicateMigration;
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -40,6 +41,7 @@ for (const file of (
   if (file === '20261007132035_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
   if (file.endsWith('_confirm_printed_rut.sql')) { rutMigration=sql; continue; }
   if (file.endsWith('_archive_legacy_receipt_duplicates.sql')) { archiveMigration=sql; continue; }
+  if (file.endsWith('_normalize_receipt_duplicate_folios.sql')) { duplicateMigration=sql; continue; }
   try {
     await db.exec(sql);
   } catch (err) {
@@ -462,6 +464,7 @@ assert.equal((await db.query('select "rutConfirmation" from public.invoices wher
 console.log('PASS: printed RUT exceptions require exact manual confirmation; authoritative actor/time, original preservation, edit invalidation, duplicates, closed periods and owner isolation.');
 await db.exec('reset role');
 await db.exec(archiveMigration);
+await db.exec(duplicateMigration);
 // Rehearse the legacy duplicates/invalid values that predate invoice validation.
 await db.exec('alter table public.invoices disable trigger accountant_invoice_guard');
 const legacyRows=(await db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber",date,"totalAmount","expenseType","taxStatus",deleted)
@@ -487,4 +490,28 @@ await db.query('insert into public.period_closures(organization_id,period) value
 await fail(()=>db.query('update public.invoices set deleted=true where id=$1',[closedArchive.id]),/cerrado/);
 assert.equal((await db.query("select count(*)::int n from public.invoice_audit where invoice_id=$1 and after_data->>'deleted'='true'",[legacyRows[1].id])).rows[0].n,1);
 console.log('PASS: reversible legacy archive, unchanged financial fields, audited duplicate removal, validated restores, closed periods and owner isolation.');
+await db.query('delete from public.period_closures where organization_id=$1 and period=\'2026-07\'',[ca]);
+const insertDuplicateProbe=(company,rut,type,folio,reference=null,total=1000)=>db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber",date,"totalAmount","expenseType","taxStatus",deleted,"referenceNumber")
+ values($1,$2,'Duplicate probe',$3,$4,$5,'2026-08-01',$6,'Insumos','reviewed',false,$7) returning id`,[a,company,rut,type,folio,total,reference]);
+await insertDuplicateProbe(ca,'76.123.456-0','Boleta Electrónica','00308.528.325');
+await fail(()=>insertDuplicateProbe(ca,'761234560','Boleta','308528325'),/Ya existe/);
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Boleta','308 528 325'),/Ya existe/);
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Boleta','00308528325',null,2000),/Ya existe/);
+await insertDuplicateProbe(ca,'76123456-0','Boleta','308528326');
+await insertDuplicateProbe(ca2,'76123456-0','Boleta','308528325');
+await insertDuplicateProbe(ca,'76123456-0','Comprobante de pago electrónico','0000','operation-a');
+await insertDuplicateProbe(ca,'76123456-0','Comprobante de pago electrónico','0000','operation-b');
+await fail(()=>insertDuplicateProbe(ca,'76123456-0','Comprobante de pago electrónico','0000','operation-a'),/Ya existe/);
+await admin();
+const hashJobs=[];
+for(const company of [ca,ca,ca2]){
+ const id=(await db.query('select gen_random_uuid() id')).rows[0].id;
+ await db.query('select public.prepare_extraction($1,$2,$3,$4,$5,$6)',[a,company,id,'renamed-photo.png','image/png',100]);hashJobs.push(id);
+}
+await db.query('select public.enqueue_extraction($1,$2,$3,1)',[a,hashJobs[0],'same-file-hash']);
+await fail(()=>db.query('select public.enqueue_extraction($1,$2,$3,1)',[a,hashJobs[1],'same-file-hash']),/duplicate key/);
+await db.query('select public.cancel_extraction($1,$2)',[a,hashJobs[1]]);
+await db.query('select public.enqueue_extraction($1,$2,$3,1)',[a,hashJobs[2],'same-file-hash']);
+assert.equal((await db.query('select status from public.extraction_jobs where id=$1',[hashJobs[1]])).rows[0].status,'cancelled');
+console.log('PASS: identical file rejection, renamed files, company isolation, numeric folio separators/zeros, changed totals and separate voucher operations.');
 await db.close();

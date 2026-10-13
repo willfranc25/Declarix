@@ -62,6 +62,12 @@ export const isPaymentVoucher = (doc) => normalizeDocumentType(doc.documentType)
 export function withVoucherFolio(doc) {
   return isPaymentVoucher(doc) ? { ...doc, documentNumber: "0000", folioReview: null } : doc;
 }
+export function normalizedFolio(value) {
+  const folio = String(value || '').trim();
+  return /^[\d.\s]+$/.test(folio)
+    ? folio.replace(/[.\s]/g, '').replace(/^0+(?=\d)/, '')
+    : folio.toUpperCase();
+}
 export function documentKey(doc) {
   if (!doc.providerRut || !doc.documentNumber || !doc.documentType) return null;
   if (isPaymentVoucher(doc)) {
@@ -75,11 +81,7 @@ export function documentKey(doc) {
     "Boleta Electrónica": "Boleta",
   };
   const type = normalizeDocumentType(doc.documentType);
-  return `${cleanRut(doc.providerRut)}|${types[type] || type}|${String(
-    doc.documentNumber,
-  )
-    .trim()
-    .replace(/^0+(?=\d)/, "")}`;
+  return `${cleanRut(doc.providerRut)}|${types[type] || type}|${normalizedFolio(doc.documentNumber)}`;
 }
 export function documentErrors(doc, today = todayChile()) {
   const errors = {};
