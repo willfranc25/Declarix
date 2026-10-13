@@ -11,7 +11,7 @@ import { inspectDocument, MIME_TYPES } from "../server/documentInput.js";
 export const createDocumentsHandler = (getDb = adminClient) => async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Usa POST" });
-  let db, user;
+  let db, user, uploadingJobId;
   try {
     db = getDb();
     user = await authenticate(req, db);
@@ -77,6 +77,7 @@ export const createDocumentsHandler = (getDb = adminClient) => async (req, res) 
     if (body.action === "complete" || body.action === "enqueue") {
       if (job.status !== "uploading")
         return res.status(200).json({ jobId: job.id, status: job.status });
+      uploadingJobId = job.id;
       const blob = checked(
         await db.storage.from("documents").download(job.object_path),
       );
@@ -109,6 +110,13 @@ export const createDocumentsHandler = (getDb = adminClient) => async (req, res) 
     }
     return res.status(400).json({ error: "Acción inválida" });
   } catch (err) {
+    if (err.code === '23505' && uploadingJobId && user) {
+      // The hash constraint rejected this copy before extraction. Release only
+      // its own reservation; retain the original and the existing job.
+      try {
+        checked(await db.rpc('cancel_extraction', { p_user: user.id, p_job: uploadingJobId }));
+      } catch { console.error('[documents] duplicate cleanup failed', { code: 'DUPLICATE_CLEANUP_FAILED' }); }
+    }
     // Diagnose failures without logging tokens, filenames, object paths or SQL.
     const action = ["prepare", "complete", "enqueue", "start", "retry", "cancel"].includes(req.body?.action) ? req.body.action : "unknown";
     if (err.status !== 401) console.error("[documents] request failed", {

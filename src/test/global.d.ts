@@ -64,7 +64,7 @@ declare module '*utils/reportPeriod' {
 }
 
 declare module '*utils/batchReview' {
-  export function deriveRowsFromQueue(queue: any[]): any[];
+  export function deriveRowsFromQueue(queue: any[], savedInvoices?: any[], savedKeys?: string[]): any[];
   export function countExtracting(queue: any[]): number;
   export function getRowErrors(row: any): Record<string, string>;
   export function isRowValid(row: any): boolean;
@@ -129,6 +129,7 @@ declare module '*store/uploadQueueStore' {
     reset: () => void;
     flushReviews: () => Promise<void>;
     queue: QueueItem[];
+    knownInvoiceKeys: string[];
     isProcessing: boolean;
     isHydrated: boolean;
     isStarting: boolean;

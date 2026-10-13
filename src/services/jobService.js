@@ -41,7 +41,7 @@ async function sendDocumentRequest(action, payload, signal) {
   });
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.error || "No se pudo completar la carga.");
+    throw Object.assign(new Error(data.error || "No se pudo completar la carga."), { code: data.code });
   return data;
 }
 export async function fetchDocumentPreview(jobId, variant = "review") {
@@ -75,6 +75,7 @@ export async function uploadDocument(file, companyId) {
     await documentRequest("complete", { jobId: prepared.jobId });
     return prepared.jobId;
   } catch (err) {
+    if (err.code === 'DUPLICATE_FILE') throw err;
     // A failed validation remains visible and can be retried without uploading again.
     throw new Error(
       err.message + " El archivo pendiente aparecerá en la cola.",
@@ -124,7 +125,7 @@ export async function listInvoiceKeys(companyId) {
   for (let from = 0; ; from += 500) {
     const { data, error } = await supabase.from("invoices")
       .select("providerRut,documentNumber,documentType,referenceNumber,date,totalAmount")
-      .eq("organization_id", companyId).eq("deleted", false)
+      .eq("organization_id", companyId).eq("deleted", false).order("id")
       .range(from, from + 499);
     if (error) throw error;
     rows.push(...data);

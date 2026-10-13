@@ -22,7 +22,7 @@ async function fixture() {
   const invoke=async(body,headers={authorization:'Bearer test'})=>{
     const res=response();await createDocumentsHandler(()=>db)({method:'POST',headers,body},res);return res;
   };
-  return {job,calls,invoke};
+  return {job,calls,invoke,db};
 }
 test('complete and legacy enqueue validate and stage originals; neither starts extraction',async()=>{
   for(const action of ['complete','enqueue']) {
@@ -37,6 +37,15 @@ test('a truncated upload cannot become successfully uploaded',async()=>{
   const f=await fixture();f.job.file_bytes++;
   const res=await f.invoke({action:'complete',jobId});
   assert.equal(res.code,400);assert.equal(f.job.status,'uploading');assert.equal(f.calls.length,0);
+});
+test('an identical file is rejected without extraction and releases only the rejected copy',async()=>{
+  const f=await fixture();
+  f.db.rpc=async(name,args)=>{f.calls.push({name,args});return name==='enqueue_extraction'
+    ? {error:{code:'23505',message:'duplicate key'}} : {data:1};};
+  const res=await f.invoke({action:'complete',jobId});
+  assert.equal(res.code,409);assert.equal(res.body.code,'DUPLICATE_FILE');
+  assert.deepEqual(f.calls.map(c=>c.name),['enqueue_extraction','cancel_extraction']);
+  assert.deepEqual(f.calls[1].args,{p_user:'owner',p_job:jobId});
 });
 test('only authenticated explicit confirmation submits a bounded company snapshot',async()=>{
   const f=await fixture();

@@ -25,6 +25,18 @@ const validBoletaData = {
 };
 
 describe('deriveRowsFromQueue', () => {
+  it('identifies the same receipt twice in a batch, even with a different filename and folio formatting', () => {
+    const a={id:'a',status:'done',name:'original.jpg',extractedData:{...validBoletaData,documentNumber:'001.234'}};
+    const b={...a,id:'b',name:'new-photo.jpg',extractedData:{...validBoletaData,documentNumber:'1234',providerRut:'123456785'}};
+    const rows=deriveRowsFromQueue([a,b]);
+    expect(rows.map(r=>r.isDuplicate)).toEqual([false,true]);
+    expect(getRowErrors(rows[1]).duplicate).toMatch(/lote/);
+  });
+  it('rechecks corrected identifiers against saved receipts and releases a different folio', () => {
+    const item={id:'a',status:'done',extractedData:{...validBoletaData}};
+    expect(deriveRowsFromQueue([item],[validBoletaData])[0].isDuplicate).toBe(true);
+    expect(deriveRowsFromQueue([{...item,review:{documentNumber:'101'}}],[validBoletaData])[0].isDuplicate).toBe(false);
+  });
   it('solo toma items extraídos (done con extractedData) y fusiona las correcciones', () => {
     const queue = [
       { id: '1', status: 'done', name: 'a.jpg', file: 'blob-a', tempPreviewUrl: 'url-a', isDuplicate: false, extractedData: { ...validBoletaData }, review: null },

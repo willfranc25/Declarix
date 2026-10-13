@@ -104,7 +104,7 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
     navigateMock.mockReset();
     saved.length = 0;
     useInvoiceStore.setState({ invoices: [] });
-    useUploadQueueStore.setState({ queue: [], isProcessing: false, isHydrated: true,
+    useUploadQueueStore.setState({ queue: [], knownInvoiceKeys: [], isProcessing: false, isHydrated: true,
       removeItems: async (ids) => {useUploadQueueStore.setState(s=>({queue:s.queue.filter(q=>!ids.includes(q.id))}));},
     });
   });
@@ -112,6 +112,21 @@ describe('BatchReviewPage — flujo revisar → guardar', () => {
   it('estado vacío invita a cargar boletas', () => {
     renderPage();
     expect(screen.getByText(/No hay boletas para revisar/i)).toBeInTheDocument();
+  });
+  it('blocks a repeated receipt in the batch and lets the first copy be saved once', async () => {
+    const user=userEvent.setup();
+    useUploadQueueStore.setState({queue:[doneItem('original'),doneItem('copy')] as any});
+    renderPage();
+    await user.click(screen.getByRole('button',{name:'Boleta siguiente'}));
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    expect(saved).toHaveLength(0);
+    expect(screen.getAllByText(/repetido en el lote/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button',{name:'Boleta anterior'}));
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    await waitFor(()=>expect(saved).toHaveLength(1));
+    expect(screen.getAllByText(/ya está guardado en la empresa/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button',{name:/Guardar y seguir/i}));
+    expect(saved).toHaveLength(1);
   });
   it('saves an invalid printed RUT only after manual confirmation, including the problems filter', async () => {
     const user=userEvent.setup();

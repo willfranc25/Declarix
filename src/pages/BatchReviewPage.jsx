@@ -36,7 +36,7 @@ export default function BatchReviewPage() {
   const {activeCompany} = useCompany();
   const categories = activeCompany?.categories?.length ? activeCompany.categories : EXPENSE_TYPES;
   const navigate = useNavigate();
-  const { addInvoice } = useInvoiceStore();
+  const { addInvoice, invoices } = useInvoiceStore();
 
   /**
    * Fuente única de verdad: la cola de subida (persistida en IndexedDB).
@@ -45,10 +45,11 @@ export default function BatchReviewPage() {
    *   recargas, cierres de ventana y de sesión.
    */
   const queue = useUploadQueueStore((s) => s.queue);
+  const knownInvoiceKeys = useUploadQueueStore((s) => s.knownInvoiceKeys);
   const updateReview = useUploadQueueStore((s) => s.updateReview);
   const removeItems = useUploadQueueStore((s) => s.removeItems);
 
-  const rows = useMemo(() => deriveRowsFromQueue(queue), [queue]);
+  const rows = useMemo(() => deriveRowsFromQueue(queue, invoices, knownInvoiceKeys), [queue, invoices, knownInvoiceKeys]);
 
   // Boletas aún en extracción: se muestran como "en camino"
   const extractingCount = countExtracting(queue);
@@ -717,7 +718,9 @@ export default function BatchReviewPage() {
                   <div className="alert alert-warning" style={{ padding: 'var(--space-3)' }}>
                     <Icon name="copy" size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                     <div className="text-xs">
-                      Posible duplicado: ya existe un comprobante con el mismo RUT, tipo de documento e identificador.
+                      {activeRow.duplicateKind === 'batch'
+                        ? 'Duplicado en este lote: conserva una sola copia del comprobante.'
+                        : 'Duplicado: ya existe un comprobante con el mismo RUT, tipo de documento e identificador.'}
                     </div>
                   </div>
                 )}

@@ -1,13 +1,23 @@
 import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({jobs:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn(),preview:vi.fn(),wake:vi.fn().mockResolvedValue(undefined)}));
-vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:vi.fn().mockResolvedValue([]),fetchDocumentPreview:mocks.preview,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request,wakeExtractionQueue:mocks.wake}));
+const mocks=vi.hoisted(()=>({jobs:vi.fn(),keys:vi.fn(),upload:vi.fn(),patch:vi.fn(),request:vi.fn(),preview:vi.fn(),wake:vi.fn().mockResolvedValue(undefined)}));
+vi.mock('../services/jobService',()=>({listJobs:mocks.jobs,listInvoiceKeys:mocks.keys,fetchDocumentPreview:mocks.preview,uploadDocument:mocks.upload,patchReview:mocks.patch,documentRequest:mocks.request,wakeExtractionQueue:mocks.wake}));
 vi.mock('../services/supabaseClient',()=>({supabase:{from:()=>({select:()=>({eq:()=>({in:()=>({range:async()=>({data:[],error:null})})})})}),storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'https://example.test/preview'}})})}}}));
 import store from '../store/uploadQueueStore';
 import {setActiveOrganization} from '../services/organizationService';
 const company=(id:string)=>({id,accountant_id:'user',name:id,archived:false});
-beforeEach(()=>{vi.clearAllMocks();mocks.request.mockReset().mockResolvedValue({started:1});store.getState().reset();setActiveOrganization(company('a'));mocks.patch.mockResolvedValue(undefined);mocks.upload.mockResolvedValue('new');mocks.jobs.mockResolvedValue([]);});
+beforeEach(()=>{vi.clearAllMocks();mocks.keys.mockResolvedValue([]);mocks.request.mockReset().mockResolvedValue({started:1});store.getState().reset();setActiveOrganization(company('a'));mocks.patch.mockResolvedValue(undefined);mocks.upload.mockResolvedValue('new');mocks.jobs.mockResolvedValue([]);});
 const ready={id:'job',filename:'photo.png',mime_type:'image/png',status:'ready',file_bytes:20,object_path:'user/a/job',result:{documents:[{providerName:'A',date:null,totalAmount:null}]},review:{}};
 describe('durable company queue',()=>{
+ it('recognizes duplicates within a fresh batch and across all saved invoice keys',async()=>{
+  const document={providerRut:'76123456-0',documentType:'Boleta',documentNumber:'001.234'};
+  mocks.jobs.mockResolvedValue([{...ready,result:{documents:[document]}},{...ready,id:'other-photo',result:{documents:[{...document,documentNumber:'1234'}]}}]);
+  await store.getState().hydrate();
+  expect(store.getState().queue.map(q=>q.isDuplicate)).toEqual([false,true]);
+  mocks.keys.mockResolvedValue([document]);await store.getState().hydrate();
+  expect(store.getState().queue.map(q=>q.isDuplicate)).toEqual([true,true]);
+  expect(store.getState().knownInvoiceKeys).toHaveLength(1);
+  store.getState().reset();expect(store.getState().knownInvoiceKeys).toEqual([]);
+ });
  it('accepts a RUT exception only from manual review, never from model output',async()=>{
   const confirmation={confirmed:true,rut:'78119065K'};
   const result={documents:[{providerRut:'78119065-K',rutConfirmation:confirmation}]};
