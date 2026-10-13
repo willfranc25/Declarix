@@ -23,6 +23,7 @@ await db.exec(
 await db.exec(`create policy "Permitir todo en storage" on storage.objects for all using(bucket_id='images');`);
 let confirmationMigration;
 let rutMigration;
+let archiveMigration;
 for (const file of (
   await readdir(new URL("../supabase/migrations/", import.meta.url))
 ).sort()) {
@@ -38,6 +39,7 @@ for (const file of (
   ).replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/i, "");
   if (file === '20261007132035_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
   if (file.endsWith('_confirm_printed_rut.sql')) { rutMigration=sql; continue; }
+  if (file.endsWith('_archive_legacy_receipt_duplicates.sql')) { archiveMigration=sql; continue; }
   try {
     await db.exec(sql);
   } catch (err) {
@@ -458,4 +460,31 @@ await asUser(a);
 await db.query('update public.invoices set "providerRut"=\'76123456-0\' where id=$1',[acceptedRut.id]);
 assert.equal((await db.query('select "rutConfirmation" from public.invoices where id=$1',[acceptedRut.id])).rows[0].rutConfirmation,null,'Correcting the RUT clears the exception');
 console.log('PASS: printed RUT exceptions require exact manual confirmation; authoritative actor/time, original preservation, edit invalidation, duplicates, closed periods and owner isolation.');
+await db.exec('reset role');
+await db.exec(archiveMigration);
+// Rehearse the legacy duplicates/invalid values that predate invoice validation.
+await db.exec('alter table public.invoices disable trigger accountant_invoice_guard');
+const legacyRows=(await db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber",date,"totalAmount","expenseType","taxStatus",deleted)
+ values($1,$2,'Legacy','76123456-0','Boleta','legacy-duplicate','2026-08-01',1000,'Insumos','pending',false),
+ ($1,$2,'Legacy','76123456-0','Boleta','legacy-duplicate','2026-08-01',1000,'Insumos','pending',false),
+ ($1,$2,'Legacy','','Boleta','','2026-08-01',1000,'Insumos','pending',false)
+ returning id`,[a,ca])).rows;
+await db.exec('alter table public.invoices enable trigger accountant_invoice_guard');
+await asUser(a);
+await fail(()=>db.query('update public.invoices set deleted=true,"totalAmount"=2000 where id=$1',[legacyRows[1].id]),/Ya existe/);
+await db.query('update public.invoices set deleted=true where id=$1',[legacyRows[1].id]);
+await db.query('update public.invoices set "taxStatus"=\'reviewed\' where id=$1',[legacyRows[0].id]);
+await fail(()=>db.query('update public.invoices set deleted=false where id=$1',[legacyRows[1].id]),/Ya existe/);
+await db.query('update public.invoices set deleted=true where id=$1',[legacyRows[2].id]);
+await fail(()=>db.query('update public.invoices set deleted=false where id=$1',[legacyRows[2].id]),/RUT inválido/);
+await fail(()=>db.query('update public.invoices set deleted=true,organization_id=$1 where id=$2',[cb,legacyRows[0].id]),/reasignar/);
+await asUser(b);
+assert.equal((await db.query('update public.invoices set deleted=true where id=$1 returning id',[legacyRows[0].id])).rows.length,0);
+await asUser(a);
+const closedArchive=(await db.query(`insert into public.invoices(user_id,organization_id,"providerName","providerRut","documentType","documentNumber",date,"totalAmount","expenseType","taxStatus",deleted)
+ values($1,$2,'Closed archive','76123456-0','Boleta','closed-archive','2026-07-01',1000,'Insumos','reviewed',false) returning id`,[a,ca])).rows[0];
+await db.query('insert into public.period_closures(organization_id,period) values($1,\'2026-07\')',[ca]);
+await fail(()=>db.query('update public.invoices set deleted=true where id=$1',[closedArchive.id]),/cerrado/);
+assert.equal((await db.query("select count(*)::int n from public.invoice_audit where invoice_id=$1 and after_data->>'deleted'='true'",[legacyRows[1].id])).rows[0].n,1);
+console.log('PASS: reversible legacy archive, unchanged financial fields, audited duplicate removal, validated restores, closed periods and owner isolation.');
 await db.close();
