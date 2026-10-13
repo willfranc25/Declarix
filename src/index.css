@@ -1927,11 +1927,12 @@ img { max-width: 100%; height: auto; }
 
 /* Menú "⋯" de acciones por fila (evita íconos siempre visibles junto a borrar) */
 .row-actions-menu {
-  position: absolute;
-  top: calc(100% + 2px);
-  right: 0;
-  z-index: 40;
+  position: fixed;
+  z-index: 80;
   min-width: 160px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
