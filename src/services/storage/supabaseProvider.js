@@ -76,8 +76,8 @@ const supabaseProvider = {
     }
     if (filters.expenseType) query = query.eq("expenseType", filters.expenseType);
     if (filters.documentType) query = query.eq("documentType", filters.documentType);
-    if (filters.taxStatus === "declared") query = query.eq("taxStatus", "declared");
-    if (filters.taxStatus === "pending") query = query.or('taxStatus.neq.declared,taxStatus.is.null');
+    if (filters.taxStatus === "pending") query = query.or('taxStatus.eq.pending,taxStatus.is.null');
+    else if (filters.taxStatus) query = query.eq("taxStatus", filters.taxStatus);
     if (filters.year && filters.month) {
       const month = String(filters.month).padStart(2, "0");
       const next = new Date(Date.UTC(Number(filters.year), Number(filters.month), 1)).toISOString().slice(0, 10);

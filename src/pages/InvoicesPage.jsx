@@ -143,7 +143,7 @@ function InvoiceRow({
         {formatCurrency(signedAmount(inv, 'totalAmount'))}
       </td>
 
-      {/* Estado binario: Pendiente (sin declarar) / Declarada (ya exportada) */}
+      {/* Revisión, exportación y declaración son estados distintos. */}
       <td data-label="Estado">
         <span className={`badge badge-${getStatusVariant(inv.taxStatus)}`}>
           {getStatusLabel(inv.taxStatus)}
@@ -338,7 +338,7 @@ export default function InvoicesPage() {
   if (filters.providerSearch) activeFilterLabels.push(`Proveedor: ${filters.providerSearch}`);
   if (filters.expenseType) activeFilterLabels.push(`Gasto: ${filters.expenseType}`);
   if (filters.documentType) activeFilterLabels.push(`Documento: ${filters.documentType}`);
-  if (filters.taxStatus) activeFilterLabels.push(filters.taxStatus === 'declared' ? 'Declaradas' : 'Pendientes');
+  if (filters.taxStatus) activeFilterLabels.push(getStatusLabel(filters.taxStatus));
 
   const [deleteId, setDeleteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -624,11 +624,12 @@ export default function InvoicesPage() {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Estado</label>
-            <select className="form-select" value={filters.taxStatus || ''} onChange={(e) => setFilters({ taxStatus: e.target.value || undefined })}>
+            <label className="form-label" htmlFor="invoice-status-filter">Estado</label>
+            <select id="invoice-status-filter" className="form-select" value={filters.taxStatus || ''} onChange={(e) => setFilters({ taxStatus: e.target.value || undefined })}>
               <option value="">Todos</option>
-              <option value="pending">Pendiente</option>
-              <option value="declared">Declarada</option>
+              {['pending', 'reviewed', 'exported', 'declared'].map(status => (
+                <option key={status} value={status}>{getStatusLabel(status)}</option>
+              ))}
             </select>
           </div>
           <div className="form-group" style={isMobile ? { width: '100%' } : { alignSelf: 'flex-end' }}>

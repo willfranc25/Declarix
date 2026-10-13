@@ -6,6 +6,11 @@ import {setActiveOrganization} from '../services/organizationService';
 const valid={providerName:'Proveedor',providerRut:'76123456-0',documentType:'Factura',documentNumber:'1',date:'2026-01-01',expenseType:'Insumos',netAmount:1000,ivaAmount:190,totalAmount:1190};
 beforeEach(()=>{vi.clearAllMocks();store.getState().reset();setActiveOrganization({id:'a'});mocks.save.mockImplementation(async data=>({...data,id:'id',taxStatus:'reviewed'}));mocks.saveWithImage.mockImplementation(async data=>({...data,id:'image-id',taxStatus:'reviewed'}));});
 describe('invoice store isolation and dates',()=>{
+ it.each(['pending','reviewed','exported','declared'])('filters only %s receipts, treating a missing legacy status as pending',status=>{
+  const rows=['pending','reviewed','exported','declared',null].map((taxStatus,index)=>({...valid,id:String(index),taxStatus}));
+  store.setState({invoices:rows as any});store.getState().setFilters({taxStatus:status});
+  expect(store.getState().getFilteredInvoices().map(i=>i.id)).toEqual(status==='pending'?['0','4']:[String(['pending','reviewed','exported','declared'].indexOf(status))]);
+ });
  it('validates before persistence',async()=>{await expect(store.getState().addInvoice({...valid,providerRut:'bad'})).rejects.toThrow('RUT');expect(mocks.save).not.toHaveBeenCalled();});
  it('saves reviewed data without uploading an original a second time',async()=>{const row=await store.getState().addInvoice(valid);expect(row.taxStatus).toBe('reviewed');expect(store.getState().invoices).toHaveLength(1);});
  it('does not put a late response into another workspace',async()=>{
