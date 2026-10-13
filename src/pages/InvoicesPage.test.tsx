@@ -17,6 +17,27 @@ import localProvider from '../services/storage/indexedDBProvider';
 beforeEach(()=>{invoiceStore.getState().reset();getPage.mockReset();localRows.length=0;});
 
 describe('Comprobantes', () => {
+  it('opens actions outside the clipped table, closes with Escape and keeps the selected receipt',async()=>{
+    getPage.mockResolvedValue({total:1,rows:[{id:'receipt',providerName:'Proveedor menú',date:'2026-10-07',totalAmount:2600,taxStatus:'reviewed'}]});
+    render(<MemoryRouter><InvoicesPage /></MemoryRouter>);
+    const trigger=await screen.findByRole('button',{name:'Más acciones de Proveedor menú'});
+    vi.spyOn(trigger,'getBoundingClientRect').mockReturnValue(new DOMRect(800,400,32,30));
+    await userEvent.click(trigger);
+    const menu=screen.getByRole('menu',{name:'Acciones del comprobante'});
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.closest('.table-container')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded','true');
+    expect(screen.getByRole('menuitem',{name:'Ver detalle'})).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem',{name:'Marcar declarada'})).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('menuitem',{name:'Eliminar'}));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('Confirmar eliminación');
+  });
   it('separates every state in the actual filter flow and clears the selection',async()=>{
     const states=['pending','reviewed','exported','declared',null];
     const names=['Pendiente real','NEW MARKET SPA','Exportada real','Declarada real','Pendiente antiguo'];

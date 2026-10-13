@@ -35,11 +35,11 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock ResizeObserver
-g.ResizeObserver = vi.fn().mockImplementation(() => ({
+g.ResizeObserver = vi.fn().mockImplementation(function () { return {
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
-}));
+}; });
 
 // Mock Crypto for UUID
 Object.defineProperty(g, 'crypto', {

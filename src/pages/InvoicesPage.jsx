@@ -1,6 +1,6 @@
 import { signedAmount } from '../utils/documentRules';
 import logger from '../utils/logger';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useInvoiceStore from '../store/invoiceStore';
 import { formatCurrency, formatDate, formatDateTime, getStatusLabel, getStatusVariant } from '../utils/formatters';
@@ -10,6 +10,7 @@ import { EXPENSE_TYPES, DOCUMENT_TYPES } from '../data/expenseTypes';
 import Icon from '../components/ui/Icon';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
+import AnchoredMenu from '../components/ui/AnchoredMenu';
 
 function getActivePreset(filters) {
   const now = new Date();
@@ -48,6 +49,8 @@ function InvoiceRow({
   const [isDragging, setIsDragging] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
+  const menuAnchor = useRef(null);
+  const menuId = useId();
 
   const maxSwipe = -100; // pixels to show the actions
 
@@ -153,16 +156,19 @@ function InvoiceRow({
       {/* Acciones: menú "⋯" en vez de íconos siempre visibles (evita borrado accidental) */}
       <td data-label="Acciones" className="table-mobile-hidden text-center" style={{ position: 'relative' }}>
         <button
+          ref={menuAnchor}
           className="btn btn-ghost btn-sm"
           onClick={(e) => { e.stopPropagation(); onToggleMenu(inv.id); }}
           title="Más acciones"
+          aria-label={`Más acciones de ${inv.providerName || 'este comprobante'}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
+          aria-controls={menuOpen ? menuId : undefined}
         >
           ⋯
         </button>
         {menuOpen && (
-          <div className="row-actions-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+          <AnchoredMenu anchorRef={menuAnchor} id={menuId} onClose={() => onToggleMenu(null)}>
             <button role="menuitem" onClick={() => { onToggleMenu(null); navigate(`/invoices/${inv.id}`); }}>
               <Icon name="eye" size={15} /> Ver detalle
             </button>
@@ -176,7 +182,7 @@ function InvoiceRow({
             <button role="menuitem" className="danger" onClick={() => { onToggleMenu(null); setDeleteId(inv.id); }}>
               <Icon name="trash" size={15} /> Eliminar
             </button>
-          </div>
+          </AnchoredMenu>
         )}
       </td>
     </>
@@ -346,15 +352,10 @@ export default function InvoicesPage() {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const { addToast } = useToast();
 
-  useEffect(() => {
-    if (!openMenuId) return;
-    const closeMenu = () => setOpenMenuId(null);
-    document.addEventListener('click', closeMenu);
-    return () => document.removeEventListener('click', closeMenu);
-  }, [openMenuId]);
 
   // Mobile and Pull-to-Refresh states
   const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => { if (isMobile) setOpenMenuId(null); }, [isMobile]);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
