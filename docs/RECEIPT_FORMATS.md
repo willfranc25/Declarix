@@ -4,6 +4,8 @@ Un «Comprobante de pago electrónico» sin folio SII usa el texto `0000` en el 
 
 La referencia de operación sigue siendo opcional y separada. Los duplicados de vouchers requieren emisor + referencia + fecha + total; sin referencia no se inventa una coincidencia por compartir `0000`. La idempotencia por archivo y resultado de origen sigue activa. Las boletas y facturas mantienen su regla de emisor + tipo + folio.
 
+Un folio faltante puede completarse manualmente con `000` por decisión del propietario, dejando constancia en las notas. Los marcadores de tres o más ceros no representan un folio oficial ni permiten identificar duplicados por emisor y folio. La extracción no los asigna automáticamente a boletas o facturas: sigue solicitando revisión cuando no puede leer el folio. Los duplicados por archivo/origen y los vouchers con referencia continúan protegidos. Un RUT completo con dígito verificador distinto se conserva mediante la confirmación explícita existente; no se inventan números ni se convierte un identificador extranjero en RUT chileno.
+
 ## Panel privado
 
 Ruta `/developer/formats`, accesible desde el menú de cuenta solo para un desarrollador autorizado. El servidor valida la sesión y consulta `private.developer_accounts` en cada operación. La migración habilita únicamente la cuenta existente y confirmada del propietario. No se usan correos ni metadatos editables del cliente para autorizar solicitudes. Para autorizar otra cuenta, un administrador de base de datos debe insertar su UUID en esa tabla; no existe un endpoint público para hacerlo.
