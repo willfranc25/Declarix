@@ -39,7 +39,7 @@ for (const file of (
       "utf8",
     )
   ).replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/i, "");
-  if (file === '20261007132035_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
+  if (file === '20261007133411_confirm_receipt_upload.sql') { confirmationMigration=sql; continue; }
   if (file.endsWith('_confirm_printed_rut.sql')) { rutMigration=sql; continue; }
   if (file.endsWith('_archive_legacy_receipt_duplicates.sql')) { archiveMigration=sql; continue; }
   if (file.endsWith('_normalize_receipt_duplicate_folios.sql')) { duplicateMigration=sql; continue; }

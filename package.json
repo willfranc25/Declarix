@@ -13,6 +13,7 @@
     "lint": "eslint src server api scripts --quiet",
     "typecheck": "tsc --noEmit",
     "test:db": "node scripts/test-database.mjs",
+    "verify:backup": "node scripts/verify-backup.mjs",
     "test:server": "node --test server/*.test.mjs",
     "worker": "node --env-file=.env.worker scripts/worker.mjs"
   },
