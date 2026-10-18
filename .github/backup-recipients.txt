@@ -1,0 +1,2 @@
+# Public encryption recipient. The recovery identity is kept outside GitHub.
+age1ydfkw8w9zc06c65vp57ptv2k977lwgm0vpykukwpun9m3h5y4d9s49dc4s

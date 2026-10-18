@@ -3,7 +3,7 @@ name: Backup diario de la base de datos
 # El tier gratuito de Supabase no incluye respaldos: este workflow hace un
 # pg_dump diario, verifica una restauración de datos y cifra el artifact (30 días).
 # Los artifacts de un repositorio público NO son privados.
-# Requiere la variable BACKUP_AGE_RECIPIENT (clave pública age). La clave privada
+# Usa .github/backup-recipients.txt (clave pública age). La clave privada
 # de recuperación debe conservarse fuera de GitHub. Nunca subir dumps sin cifrar.
 #
 # Requiere el secret SUPABASE_DB_URL con la cadena de conexión
@@ -15,6 +15,12 @@ name: Backup diario de la base de datos
 # Este dump contiene metadata de Storage, no los bytes de los originales.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/backup.yml
+      - .github/backup-recipients.txt
+      - scripts/verify-backup.mjs
   schedule:
     - cron: '0 7 * * *'   # 07:00 UTC ≈ 03:00 Chile
   workflow_dispatch:        # permite ejecutarlo a mano desde Actions
@@ -28,11 +34,10 @@ jobs:
       - name: Verificar configuración
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: |
           set -euo pipefail
-          if [ -z "$DB_URL" ] || [ -z "$AGE_RECIPIENT" ]; then
-            echo "::error::Falta SUPABASE_DB_URL o BACKUP_AGE_RECIPIENT. No se publicará un respaldo sin cifrar."
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Falta SUPABASE_DB_URL. No se publicará un respaldo sin cifrar."
             exit 1
           fi
 
@@ -59,12 +64,10 @@ jobs:
           pnpm verify:backup "declarix-backup-${FECHA}.sql.gz"
 
       - name: Cifrar el respaldo verificado
-        env:
-          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: |
           set -euo pipefail
           for file in declarix-backup-*.sql.gz; do
-            age -r "$AGE_RECIPIENT" -o "$file.age" "$file"
+            age -R .github/backup-recipients.txt -o "$file.age" "$file"
             rm -- "$file"
           done
 

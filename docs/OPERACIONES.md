@@ -49,12 +49,15 @@ Un artifact de Actions hereda el acceso de lectura del repositorio. No publicar
 dumps sin cifrar en repositorios públicos. La configuración del workflow exige:
 
 - Secret `SUPABASE_DB_URL`: conexión de base de datos solo en el runner.
-- Variable `BACKUP_AGE_RECIPIENT`: clave pública age; nunca la clave privada.
+- Archivo `.github/backup-recipients.txt`: clave pública age; nunca la clave privada.
 
 Crear la clave en una máquina segura con `age-keygen -o declarix-recovery.key`.
 Guardar la clave privada de recuperación fuera de GitHub y conservar una segunda
-copia segura. Configurar su clave pública en Actions antes de activar el workflow.
-Si falta configuración, el job falla y no publica artifacts sin cifrar.
+copia segura. Registrar solo su clave pública en `.github/backup-recipients.txt` antes de activar el workflow.
+El destinatario registrado tiene una identidad de recuperación custodiada por separado.
+La prueba de cifrado, descifrado y restauración debe completarse antes de activar
+el workflow. Si falta configuración o el destinatario es inválido, el job falla
+y no publica artifacts sin cifrar.
 
 El workflow comprueba una restauración de datos aislada y luego publica solo
 `.sql.gz.age`. Para ensayar recuperación:
