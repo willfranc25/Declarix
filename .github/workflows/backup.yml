@@ -60,8 +60,8 @@ jobs:
           docker run --rm postgres:17-alpine \
             pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists \
             | gzip > "declarix-backup-${FECHA}.sql.gz"
-          ls -lh declarix-backup-*.sql.gz
-          pnpm verify:backup "declarix-backup-${FECHA}.sql.gz"
+          pnpm verify:backup "declarix-backup-${FECHA}.sql.gz" > "$RUNNER_TEMP/backup-verification.json"
+          echo "Restauración de datos verificada; informe retenido solo en el runner."
 
       - name: Cifrar el respaldo verificado
         run: |
